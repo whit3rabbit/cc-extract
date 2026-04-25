@@ -391,17 +391,46 @@ class TestPatchCheckMode:
         assert target_path.read_text(encoding="utf-8") == "before only\n"
 
 
+def create_mock_standalone_graph_patcher(content=b"console.log('before');\n"):
+    name = b"app.js"
+    data_buffer = bytearray()
+    
+    name_off = len(data_buffer)
+    data_buffer.extend(name)
+    name_len = len(name)
+    
+    cont_off = len(data_buffer)
+    data_buffer.extend(content)
+    cont_len = len(content)
+    
+    smap_off, smap_len = 0, 0
+    bc_off, bc_len = 0, 0
+    mod_offset = len(data_buffer)
+    
+    struct_data = struct.pack("<IIIIIIII", name_off, name_len, cont_off, cont_len, smap_off, smap_len, bc_off, bc_len)
+    struct_data += bytes(16)
+    struct_data += struct.pack("BBBB", 2, 1, 1, 0)
+    
+    module_table = struct_data
+    mod_length = len(module_table)
+    byte_count = mod_offset + mod_length
+    
+    offsets_struct = struct.pack("<QIIIIII", byte_count, mod_offset, mod_length, 0, 0, 0, 0)
+    trailer = b"\n---- Bun! ----\n"
+    
+    return data_buffer + module_table + offsets_struct + trailer
+
 class TestEndToEndPatchFlow:
     def test_extract_apply_patch_and_pack_round_trip(self, tmp_path):
         bun_offset = 0x4000
         original_data = b"console.log('before');\n"
-        raw_path = "file:///app.js"
-        entry = make_v2_entry(raw_path, original_data)
-        bun_size = len(entry) + 32
+        payload = create_mock_standalone_graph_patcher(original_data)
+        bun_size = len(payload) + 8
 
         base_binary = tmp_path / "claude"
         binary = bytearray(create_mock_macho(bun_offset, bun_size))
-        binary[bun_offset:bun_offset + len(entry)] = entry
+        struct.pack_into("<Q", binary, bun_offset, bun_size)
+        binary[bun_offset + 8:bun_offset + 8 + len(payload)] = payload
         base_binary.write_bytes(binary)
 
         extract_dir = tmp_path / "extract"

@@ -14,7 +14,7 @@ GCS_LIST_API = f"https://storage.googleapis.com/storage/v1/b/{GCS_BUCKET_NAME}/o
 PACKAGE_NAME = "@anthropic-ai/claude-code"
 NPM_REGISTRY_URL = f"https://registry.npmjs.org/{PACKAGE_NAME}"
 REQUEST_TIMEOUT = 30
-HTTP_USER_AGENT = "cc-extractor/0.1.0"
+HTTP_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
 DOWNLOAD_BLOCK_SIZE = 8192
 LIST_PAGE_SIZE = 1000
 

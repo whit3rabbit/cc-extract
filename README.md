@@ -10,6 +10,8 @@ A standalone Python tool for downloading, extracting, and repacking Bun bundles 
 - Patch
 - Repack
 
+Based on work by: https://github.com/vicnaum/bun-demincer
+
 ## Getting Started
 
 ### 1. Clone the repository
