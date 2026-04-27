@@ -26,7 +26,8 @@ python3 main.py unpack <binary> --out <dir>
 python3 main.py replace-entry <binary> <entry-js> --out <binary>
 python3 main.py apply-binary <binary> --config <config.json> [--overlays <overlays.json>]
 python3 main.py pack <dir> <base> <out>
-pytest -q
+python3 -m pytest -q
+CC_EXTRACTOR_RUN_REAL_BINARY_TEST=1 python3 -m pytest -q tests/test_integration_real_binary.py
 ```
 
 ## Architecture
@@ -66,6 +67,8 @@ macho.py                     -> Legacy Mach-O header update helper
 ## Development Notes
 
 - Tests use `pytest`.
+- The real binary integration test is skipped unless `CC_EXTRACTOR_RUN_REAL_BINARY_TEST=1` is set. It downloads a host-platform Claude Code binary, patches a temporary copy, executes `claude --version`, verifies patched JS markers, and extracts the patched bundle.
+- Set `CC_EXTRACTOR_REAL_BINARY_VERSION=<version>` to pin that integration test to a specific Claude Code version instead of `latest`.
 - Runtime dependencies: `ratatui`, `tqdm`.
 - Python 3.8+.
 - No extra runtime dependency is required for P5. The unpacked fallback shells out to `npm` only when that helper is used.

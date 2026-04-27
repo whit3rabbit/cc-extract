@@ -137,8 +137,16 @@ cc_extractor/
 ## Development
 
 ```bash
-pytest -q
-python -m compileall -q cc_extractor tests
+python3 -m pytest -q
+python3 -m compileall -q cc_extractor tests
 ```
 
-Network integration tests, if added later, should stay gated behind an explicit environment variable because real Claude Code binaries are large.
+The default test suite does not download real Claude Code binaries.
+Run the gated integration test explicitly when you need live binary coverage:
+
+```bash
+CC_EXTRACTOR_RUN_REAL_BINARY_TEST=1 python3 -m pytest -q tests/test_integration_real_binary.py
+CC_EXTRACTOR_RUN_REAL_BINARY_TEST=1 CC_EXTRACTOR_REAL_BINARY_VERSION=2.1.119 python3 -m pytest -q tests/test_integration_real_binary.py
+```
+
+The integration test downloads the host-platform Claude Code binary, patches a temporary copy with a tiny theme config, executes `claude --version`, verifies patched JS markers, and extracts the patched bundle. It is intentionally gated because the download is large and depends on network access.
