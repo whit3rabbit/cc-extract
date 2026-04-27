@@ -182,3 +182,6 @@ cython_debug/
 
 # Extracted files
 extracted_files/
+
+# Syn
+.syntext/

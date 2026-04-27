@@ -4,7 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A standalone Python tool for extracting and repacking Bun bundles inside Claude Code Mach-O binaries. Used for research and educational purposes.
+A standalone Python tool for extracting and eventually repacking Bun standalone bundles inside Claude Code binaries. Used for research and educational purposes.
+
+Reference architecture for the migration:
+https://github.com/numman-ali/cc-mirror/compare/main...whit3rabbit:cc-mirror:feat/bun-extract
 
 ## Commands
 
@@ -17,7 +20,9 @@ pip install -e '.[dev]'  # Include pytest
 python3 main.py download [version]       # Download Claude Code artifact, or pick interactively when omitted
 python3 main.py download --latest        # Download the latest Claude Code artifact without prompting
 python3 main.py download --npm [version] # Download Anthropic NPM tarball instead
+python3 main.py inspect <binary> --json  # Inspect Bun platform, module table, and entry point
 python3 main.py extract <binary> <dir>   # Extract Bun bundle from a Claude Code binary
+python3 main.py unpack <binary> --out <dir> # Alias for extract
 python3 main.py pack <dir> <base> <out>  # Repack directory into a Claude Code binary
 pytest -q                                # Run tests
 ```
@@ -27,14 +32,17 @@ pytest -q                                # Run tests
 ```
 main.py / __main__.py     → CLI entry point with argparse subcommands
 downloader.py             → Fetches binaries from Google Cloud Storage or NPM tarballs
-extractor.py              → Mach-O parsing to locate and extract __BUN section entries
-bundler.py                → Reconstructs Bun bundle format and manages binary injection
-macho.py                  → Handles low-level Mach-O header updates (filesize, vmsize, offsets)
+bun_extract/parser.py     → Shared Bun binary parser for Mach-O, ELF, and PE
+bun_extract/extract.py    → Writes extracted module files and `.bundle_manifest.json`
+extractor.py              → Compatibility wrapper over bun_extract
+bundler.py                → Legacy compatibility packer until binary_patcher repack lands
+macho.py                  → Legacy Mach-O header update helper
 ```
 
 - **download**: Downloads Claude Code binary artifacts or the Anthropic NPM package
-- **extract**: Parses Mach-O to find `__BUN` segment, extracts files + generates `.bundle_manifest.json`
-- **pack**: Uses manifest to rebuild bundle, appends to binary if larger than original, updates Mach-O headers
+- **inspect**: Parses a binary and reports platform, module count, module size, and entry path
+- **extract/unpack**: Parses Mach-O, ELF, or PE Bun payloads, extracts files, and generates `.bundle_manifest.json`
+- **pack**: Legacy manifest pack path, cross-platform resize is planned in `binary_patcher`
 
 ## Development Notes
 

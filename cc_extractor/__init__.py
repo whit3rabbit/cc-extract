@@ -1,12 +1,19 @@
 from importlib import import_module
 
-__all__ = ["download_binary", "download_npm", "extract_all", "pack_bundle"]
+__all__ = [
+    "download_binary",
+    "download_npm",
+    "extract_all",
+    "pack_bundle",
+    "parse_bun_binary",
+]
 
 _EXPORTS = {
     "download_binary": ".downloader",
     "download_npm": ".downloader",
     "extract_all": ".extractor",
     "pack_bundle": ".bundler",
+    "parse_bun_binary": ".bun_extract",
 }
 
 

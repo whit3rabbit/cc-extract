@@ -4,6 +4,30 @@ import struct
 from .macho import patch_macho
 from .extractor import find_bun_section_offset
 
+ENCODING_IDS = {
+    "binary": 0,
+    "latin1": 1,
+    "utf8": 2,
+}
+
+LOADER_IDS = {
+    "file": 0,
+    "js": 1,
+    "wasm": 9,
+    "napi": 10,
+}
+
+FORMAT_IDS = {
+    "none": 0,
+    "esm": 1,
+    "cjs": 2,
+}
+
+SIDE_IDS = {
+    "server": 0,
+    "client": 1,
+}
+
 def pack_bundle(indir, out_binary, base_binary):
     manifest_path = os.path.join(indir, ".bundle_manifest.json")
     if not os.path.exists(manifest_path):
@@ -75,11 +99,11 @@ def pack_bundle(indir, out_binary, base_binary):
         padding_hex = mod.get("paddingHex", "00" * 16)
         struct_data += bytes.fromhex(padding_hex)
         
-        struct_data += struct.pack("BBBB", 
-            mod["encoding"], 
-            mod["loader"], 
-            mod["format"], 
-            mod["side"]
+        struct_data += struct.pack("BBBB",
+            _flag_byte(mod["encoding"], ENCODING_IDS, "encoding"),
+            _flag_byte(mod["loader"], LOADER_IDS, "loader"),
+            _flag_byte(mod["format"], FORMAT_IDS, "format"),
+            _flag_byte(mod["side"], SIDE_IDS, "side")
         )
         
         module_structs.extend(struct_data)
@@ -156,6 +180,14 @@ def pack_bundle(indir, out_binary, base_binary):
                 f.write(new_binary_data)
 
     print(f"[+] Successfully bundled to {out_binary}")
+
+
+def _flag_byte(value, lookup, field_name):
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value in lookup:
+        return lookup[value]
+    raise ValueError(f"Invalid module {field_name} flag: {value!r}")
 
 if __name__ == "__main__":
     import sys
