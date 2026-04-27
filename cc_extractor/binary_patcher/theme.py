@@ -1,3 +1,4 @@
+# Adapted from tweakcc 303b756 src/patches/themes.ts. See THIRD_PARTY_NOTICES.md.
 import json
 import re
 from dataclasses import dataclass

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cc-extractor"
 version = "0.1.0"
-description = "A tool for extracting and packing Bun bundles in Claude Code Mach-O binaries"
+description = "A tool for extracting, patching, and repacking Bun standalone Claude Code binaries"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
@@ -17,9 +17,14 @@ authors = [
 ]
 license = { text = "MIT" }
 classifiers = [
+    "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Software Development :: Build Tools",
 ]
 
 [project.optional-dependencies]
