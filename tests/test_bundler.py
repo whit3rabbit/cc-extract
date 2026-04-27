@@ -99,3 +99,13 @@ class TestPatchMacho:
         new_offset = 0x5000
         new_size = 0x800
         patch_macho(str(binary_path), new_offset, new_size)
+
+        patched = binary_path.read_bytes()
+        segment_off = 32
+        section_off = segment_off + 72
+        aligned_size = (new_size + 0x3FFF) & (~0x3FFF)
+        assert struct.unpack_from("<Q", patched, segment_off + 32)[0] == aligned_size
+        assert struct.unpack_from("<Q", patched, segment_off + 40)[0] == new_offset
+        assert struct.unpack_from("<Q", patched, segment_off + 48)[0] == new_size
+        assert struct.unpack_from("<Q", patched, section_off + 40)[0] == new_size
+        assert struct.unpack_from("<I", patched, section_off + 48)[0] == new_offset

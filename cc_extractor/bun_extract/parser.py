@@ -104,6 +104,8 @@ def _locate_payload(data, trailer_offset, byte_count):
             section_size = section.section_size
             has_code_signature = section.has_code_signature
             return "macho", macho_data_start(section.section_offset), section_offset, section_size, has_code_signature
+        # Some stripped or fixture binaries keep a valid Bun trailer without a discoverable container section.
+        # In that case the trailer-relative layout is still authoritative.
         return "macho", elf_data_start(trailer_offset, byte_count), section_offset, section_size, has_code_signature
 
     if is_pe(data):
@@ -112,11 +114,13 @@ def _locate_payload(data, trailer_offset, byte_count):
             section_offset = section.pointer_to_raw_data
             section_size = section.size_of_raw_data
             return "pe", pe_data_start(section.pointer_to_raw_data), section_offset, section_size, has_code_signature
+        # Preserve the detected container type, but locate the payload from the Bun trailer.
         return "pe", elf_data_start(trailer_offset, byte_count), section_offset, section_size, has_code_signature
 
     if is_elf(data):
         return "elf", elf_data_start(trailer_offset, byte_count), section_offset, section_size, has_code_signature
 
+    # Raw Bun payloads have no container magic, so use the same trailer-relative layout as ELF.
     return "elf", elf_data_start(trailer_offset, byte_count), section_offset, section_size, has_code_signature
 
 

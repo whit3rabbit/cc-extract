@@ -41,7 +41,7 @@ def patch_macho(binary_path, new_offset, new_size):
                     f.seek(offset + 48)
                     f.write(struct.pack(endian + "Q", new_size)) # filesize
                     
-                    # update fileoffset too? if it moved
+                    # Keep the segment file offset aligned with the rewritten __bun section.
                     f.seek(offset + 40)
                     f.write(struct.pack(endian + "Q", new_offset))
                     

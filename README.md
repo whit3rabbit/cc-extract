@@ -70,7 +70,7 @@ python3 main.py apply-binary /path/to/claude --config ./config.json
 python3 main.py apply-binary /path/to/claude --config ./config.json --overlays ./overlays.json
 ```
 
-`config.json` may provide themes as either `{"themes": [...]}` or `{"settings": {"themes": [...]}}`. Prompt overlay misses are reported in the structured JSON result and are not fatal. Theme anchor misses return `anchor-not-found`.
+`config.json` may provide themes as either `{"themes": [...]}` or `{"settings": {"themes": [...]}}`. Prompt overlay misses are reported in the structured JSON result and are not fatal. Theme anchor misses return `anchor-not-found`. On Mach-O binaries, patches that would grow the bundled entry JS are skipped without writing and return `ok: true` with `skipped_reason: "macho-grow-not-supported"`.
 
 ### Legacy Text Patch Manifests
 

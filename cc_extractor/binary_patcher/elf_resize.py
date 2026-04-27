@@ -45,16 +45,17 @@ def repack_elf(data, info, new_raw_bytes, new_offsets_struct):
         )
 
     prefix = bytearray(data[: info.data_start])
+    tail = bytearray(data[tail_start:])
+    old_section_table = _read_section_header_table(prefix) if tail else None
+
     if len(prefix) >= ELF_E_SHOFF + 8:
         _shift_u64_if_past(prefix, ELF_E_SHOFF, info.data_start, delta)
         _shift_u64_if_past(prefix, ELF_E_PHOFF, info.data_start, delta)
         _grow_pt_load_covering_section(prefix, info.data_start - MACHO_SECTION_HEADER_SIZE, delta)
 
-    tail = bytearray(data[tail_start:])
     if tail:
-        table = _read_section_header_table(prefix)
-        if table is not None:
-            bun_header_off = _find_bun_section_header_offset(data, table)
+        if old_section_table is not None:
+            bun_header_off = _find_bun_section_header_offset(data, old_section_table)
             if bun_header_off is not None and bun_header_off >= tail_start:
                 offset_within_tail = bun_header_off - tail_start
                 if offset_within_tail + ELF_SH_SIZE + 8 <= len(tail):

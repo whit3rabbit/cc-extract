@@ -1,9 +1,11 @@
+import struct
+
 import pytest
 
 from cc_extractor.binary_patcher import replace_entry_js
 from cc_extractor.binary_patcher.pe_resize import PeNotLastSectionError, repack_pe
 from cc_extractor.bun_extract import parse_bun_binary
-from cc_extractor.bun_extract.constants import OFFSETS_SIZE
+from cc_extractor.bun_extract.constants import OFFSETS_SIZE, TRAILER
 from tests.helpers.bun_fixture import build_bun_fixture
 
 
@@ -17,6 +19,137 @@ THREE_MODULES = [
 def _content(data, info, index):
     module = info.modules[index]
     return data[info.data_start + module.cont_off : info.data_start + module.cont_off + module.cont_len].decode("utf-8")
+
+
+def _raw_bundle_bytes():
+    fixture = build_bun_fixture(
+        platform="elf",
+        module_struct_size=52,
+        modules=THREE_MODULES,
+        entry_point_id=1,
+    )
+    info = parse_bun_binary(fixture["buf"])
+    offsets_start = info.trailer_offset - OFFSETS_SIZE
+    return (
+        fixture["buf"][info.data_start : info.data_start + info.byte_count],
+        fixture["buf"][offsets_start : info.trailer_offset],
+    )
+
+
+def _build_elf_with_resize_headers(*, late_phoff=False):
+    raw_bytes, offsets = _raw_bundle_bytes()
+    data_start = 0x108
+    section_payload_start = data_start - 8
+    tail_start = data_start + len(raw_bytes) + OFFSETS_SIZE + len(TRAILER)
+    shent_size = 64
+    shnum = 2
+    shstr = b"\x00.bun\x00.shstrtab\x00"
+    shstr_off = tail_start + shent_size * shnum
+
+    section_table = bytearray(shent_size * shnum)
+    old_section_size = 8 + len(raw_bytes) + OFFSETS_SIZE + len(TRAILER)
+    struct.pack_into("<I", section_table, 0, 1)
+    struct.pack_into("<Q", section_table, 24, section_payload_start)
+    struct.pack_into("<Q", section_table, 32, old_section_size)
+    struct.pack_into("<I", section_table, shent_size, 6)
+    struct.pack_into("<Q", section_table, shent_size + 24, shstr_off)
+    struct.pack_into("<Q", section_table, shent_size + 32, len(shstr))
+
+    prefix = bytearray(data_start)
+    prefix[:4] = b"\x7fELF"
+    phoff = shstr_off + len(shstr) + 32 if late_phoff else 64
+    phnum = 0 if late_phoff else 1
+    struct.pack_into("<Q", prefix, 32, phoff)
+    struct.pack_into("<Q", prefix, 40, tail_start)
+    struct.pack_into("<H", prefix, 54, 56)
+    struct.pack_into("<H", prefix, 56, phnum)
+    struct.pack_into("<H", prefix, 58, shent_size)
+    struct.pack_into("<H", prefix, 60, shnum)
+    struct.pack_into("<H", prefix, 62, 1)
+    struct.pack_into("<Q", prefix, section_payload_start, len(raw_bytes))
+
+    if not late_phoff:
+        old_file_size = tail_start + len(section_table) + len(shstr)
+        struct.pack_into("<I", prefix, phoff, 1)
+        struct.pack_into("<Q", prefix, phoff + 8, 0)
+        struct.pack_into("<Q", prefix, phoff + 32, old_file_size)
+        struct.pack_into("<Q", prefix, phoff + 40, old_file_size)
+
+    buf = bytes(prefix) + raw_bytes + offsets + TRAILER + bytes(section_table) + shstr
+    return buf, {
+        "bun_section_header_off": tail_start,
+        "phoff": phoff,
+        "section_payload_start": section_payload_start,
+        "tail_start": tail_start,
+    }
+
+
+def _build_signed_macho_with_linkedit():
+    raw_bytes, offsets = _raw_bundle_bytes()
+    lc_segment_64 = 0x19
+    lc_code_signature = 0x1D
+    bun_segment_size = 72 + 80
+    linkedit_segment_size = 72
+    code_sig_cmd_size = 16
+    section_offset = 32 + bun_segment_size + linkedit_segment_size + code_sig_cmd_size
+    section_size = 8 + len(raw_bytes) + OFFSETS_SIZE + len(TRAILER)
+    sig_size = 0x80
+
+    header = bytearray(section_offset)
+    struct.pack_into("<I", header, 0, 0xFEEDFACF)
+    struct.pack_into("<I", header, 16, 3)
+    struct.pack_into("<I", header, 20, bun_segment_size + linkedit_segment_size + code_sig_cmd_size)
+
+    bun_segment_off = 32
+    struct.pack_into("<I", header, bun_segment_off, lc_segment_64)
+    struct.pack_into("<I", header, bun_segment_off + 4, bun_segment_size)
+    header[bun_segment_off + 8 : bun_segment_off + 24] = b"__BUN".ljust(16, b"\x00")
+    struct.pack_into("<Q", header, bun_segment_off + 32, section_size)
+    struct.pack_into("<Q", header, bun_segment_off + 40, section_offset)
+    struct.pack_into("<Q", header, bun_segment_off + 48, section_size)
+    struct.pack_into("<I", header, bun_segment_off + 64, 1)
+
+    section_header_off = bun_segment_off + 72
+    header[section_header_off : section_header_off + 16] = b"__bun".ljust(16, b"\x00")
+    header[section_header_off + 16 : section_header_off + 32] = b"__BUN".ljust(16, b"\x00")
+    struct.pack_into("<Q", header, section_header_off + 40, section_size)
+    struct.pack_into("<I", header, section_header_off + 48, section_offset)
+
+    linkedit_off = bun_segment_off + bun_segment_size
+    linkedit_vmsize = 0x400
+    linkedit_filesize = 0x300
+    struct.pack_into("<I", header, linkedit_off, lc_segment_64)
+    struct.pack_into("<I", header, linkedit_off + 4, linkedit_segment_size)
+    header[linkedit_off + 8 : linkedit_off + 24] = b"__LINKEDIT".ljust(16, b"\x00")
+    struct.pack_into("<Q", header, linkedit_off + 32, linkedit_vmsize)
+    struct.pack_into("<Q", header, linkedit_off + 40, section_offset + section_size)
+    struct.pack_into("<Q", header, linkedit_off + 48, linkedit_filesize)
+
+    code_sig_off = linkedit_off + linkedit_segment_size
+    struct.pack_into("<I", header, code_sig_off, lc_code_signature)
+    struct.pack_into("<I", header, code_sig_off + 4, code_sig_cmd_size)
+    struct.pack_into("<I", header, code_sig_off + 8, section_offset + section_size)
+    struct.pack_into("<I", header, code_sig_off + 12, sig_size)
+
+    size_header = struct.pack("<Q", len(raw_bytes))
+    buf = bytes(header) + size_header + raw_bytes + offsets + TRAILER + (b"S" * sig_size)
+    return buf, {
+        "code_sig_cmd_size": code_sig_cmd_size,
+        "lc_code_signature": lc_code_signature,
+        "linkedit_off": linkedit_off,
+        "sig_size": sig_size,
+    }
+
+
+def _has_load_command(data, command):
+    cursor = 32
+    for _ in range(struct.unpack_from("<I", data, 16)[0]):
+        cmd = struct.unpack_from("<I", data, cursor)[0]
+        cmdsize = struct.unpack_from("<I", data, cursor + 4)[0]
+        if cmd == command:
+            return True
+        cursor += cmdsize
+    return False
 
 
 @pytest.mark.parametrize("platform", ["elf", "macho", "pe"])
@@ -103,6 +236,62 @@ def test_replace_entry_js_strips_macho_code_signature():
     assert result.signature_stripped is True
     assert reparsed.has_code_signature is False
     assert _content(result.buf, reparsed, 1) == "Y" * 32
+
+
+def test_replace_entry_js_updates_realistic_elf_resize_headers():
+    data, meta = _build_elf_with_resize_headers()
+    info = parse_bun_binary(data)
+    old_e_shoff = struct.unpack_from("<Q", data, 40)[0]
+    old_pt_filesz = struct.unpack_from("<Q", data, meta["phoff"] + 32)[0]
+    old_pt_memsz = struct.unpack_from("<Q", data, meta["phoff"] + 40)[0]
+    old_size_prefix = struct.unpack_from("<Q", data, meta["section_payload_start"])[0]
+    old_bun_section_size = struct.unpack_from("<Q", data, meta["bun_section_header_off"] + 32)[0]
+
+    result = replace_entry_js(data, info, b"X" * 64)
+
+    out = result.buf
+    moved_bun_header_off = meta["bun_section_header_off"] + result.delta
+    assert result.delta == 48
+    assert struct.unpack_from("<Q", out, 40)[0] == old_e_shoff + result.delta
+    assert struct.unpack_from("<Q", out, meta["phoff"] + 32)[0] == old_pt_filesz + result.delta
+    assert struct.unpack_from("<Q", out, meta["phoff"] + 40)[0] == old_pt_memsz + result.delta
+    assert struct.unpack_from("<Q", out, meta["section_payload_start"])[0] == old_size_prefix + result.delta
+    assert struct.unpack_from("<Q", out, moved_bun_header_off + 32)[0] == old_bun_section_size + result.delta
+    reparsed = parse_bun_binary(out)
+    assert _content(out, reparsed, 1) == "X" * 64
+
+
+def test_replace_entry_js_shifts_late_elf_program_header_offset():
+    data, _ = _build_elf_with_resize_headers(late_phoff=True)
+    info = parse_bun_binary(data)
+    old_e_phoff = struct.unpack_from("<Q", data, 32)[0]
+
+    result = replace_entry_js(data, info, b"X" * 64)
+
+    assert struct.unpack_from("<Q", result.buf, 32)[0] == old_e_phoff + result.delta
+
+
+def test_replace_entry_js_strips_macho_code_signature_and_shrinks_linkedit():
+    data, meta = _build_signed_macho_with_linkedit()
+    info = parse_bun_binary(data)
+    old_ncmds = struct.unpack_from("<I", data, 16)[0]
+    old_sizeofcmds = struct.unpack_from("<I", data, 20)[0]
+    old_linkedit_vmsize = struct.unpack_from("<Q", data, meta["linkedit_off"] + 32)[0]
+    old_linkedit_filesize = struct.unpack_from("<Q", data, meta["linkedit_off"] + 48)[0]
+
+    result = replace_entry_js(data, info, b"Y" * 32)
+
+    out = result.buf
+    assert info.has_code_signature is True
+    assert result.signature_stripped is True
+    assert struct.unpack_from("<I", out, 16)[0] == old_ncmds - 1
+    assert struct.unpack_from("<I", out, 20)[0] == old_sizeofcmds - meta["code_sig_cmd_size"]
+    assert struct.unpack_from("<Q", out, meta["linkedit_off"] + 32)[0] == old_linkedit_vmsize - meta["sig_size"]
+    assert struct.unpack_from("<Q", out, meta["linkedit_off"] + 48)[0] == old_linkedit_filesize - meta["sig_size"]
+    assert _has_load_command(out, meta["lc_code_signature"]) is False
+    reparsed = parse_bun_binary(out)
+    assert reparsed.has_code_signature is False
+    assert _content(out, reparsed, 1) == "Y" * 32
 
 
 def test_pe_last_section_guard_rejects_not_last_bun_section():

@@ -1,9 +1,10 @@
 import json
+import struct
 
 import pytest
 
 from cc_extractor.bun_extract import BunFormatError, extract_all, parse_bun_binary
-from cc_extractor.bun_extract.constants import OFFSETS_SIZE, TRAILER
+from cc_extractor.bun_extract.constants import MACHO_MAGIC_64, OFFSETS_SIZE, PE_DOS_MAGIC, TRAILER
 from cc_extractor.__main__ import inspect_binary
 from cc_extractor.extractor import extract_all as extract_binary
 from tests.helpers.bun_fixture import build_bun_fixture
@@ -55,6 +56,45 @@ def test_parse_pe_fixture():
     assert info.platform == "pe"
     assert info.data_start == fixture["expected"]["data_start"]
     assert len(info.modules) == 3
+
+
+def test_parse_macho_without_section_uses_trailer_relative_payload():
+    fixture = build_bun_fixture(platform="elf", module_struct_size=52, modules=SAMPLE_MODULES)
+    data = bytearray(fixture["buf"])
+    struct.pack_into("<I", data, 0, MACHO_MAGIC_64)
+
+    info = parse_bun_binary(bytes(data))
+
+    assert info.platform == "macho"
+    assert info.section_offset is None
+    assert info.data_start == fixture["expected"]["data_start"]
+    assert info.modules[0].name == "src/entrypoints/cli.js"
+
+
+def test_parse_pe_without_section_uses_trailer_relative_payload():
+    fixture = build_bun_fixture(platform="elf", module_struct_size=52, modules=SAMPLE_MODULES)
+    data = bytearray(fixture["buf"])
+    struct.pack_into("<H", data, 0, PE_DOS_MAGIC)
+
+    info = parse_bun_binary(bytes(data))
+
+    assert info.platform == "pe"
+    assert info.section_offset is None
+    assert info.data_start == fixture["expected"]["data_start"]
+    assert info.modules[0].name == "src/entrypoints/cli.js"
+
+
+def test_parse_raw_payload_uses_elf_trailer_relative_payload():
+    fixture = build_bun_fixture(platform="elf", module_struct_size=52, modules=SAMPLE_MODULES)
+    data = bytearray(fixture["buf"])
+    data[:4] = b"RAW!"
+
+    info = parse_bun_binary(bytes(data))
+
+    assert info.platform == "elf"
+    assert info.section_offset is None
+    assert info.data_start == fixture["expected"]["data_start"]
+    assert info.modules[0].name == "src/entrypoints/cli.js"
 
 
 def test_module_table_size_36():
