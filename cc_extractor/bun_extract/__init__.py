@@ -1,5 +1,6 @@
 from .extract import ExtractAllResult, extract_all
 from .parser import parse_bun_binary
+from .replace import ReplaceResult, replace_module
 from .types import BunBinaryInfo, BunFormatError, BunModule, ModuleNotFound, SizeMismatch
 
 __all__ = [
@@ -8,7 +9,9 @@ __all__ = [
     "BunModule",
     "ExtractAllResult",
     "ModuleNotFound",
+    "ReplaceResult",
     "SizeMismatch",
     "extract_all",
     "parse_bun_binary",
+    "replace_module",
 ]

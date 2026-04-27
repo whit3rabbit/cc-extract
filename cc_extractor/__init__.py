@@ -6,6 +6,8 @@ __all__ = [
     "extract_all",
     "pack_bundle",
     "parse_bun_binary",
+    "replace_entry_js",
+    "replace_module",
 ]
 
 _EXPORTS = {
@@ -14,6 +16,8 @@ _EXPORTS = {
     "extract_all": ".extractor",
     "pack_bundle": ".bundler",
     "parse_bun_binary": ".bun_extract",
+    "replace_entry_js": ".binary_patcher",
+    "replace_module": ".bun_extract",
 }
 
 

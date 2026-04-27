@@ -11,6 +11,7 @@ def build_bun_fixture(
     flags=0,
     with_code_signature=False,
     trailing_padding=0,
+    pe_extra_section_after=False,
 ):
     modules = modules or []
     table_info = _build_raw_bytes_and_table(module_struct_size, modules)
@@ -21,7 +22,7 @@ def build_bun_fixture(
     if platform == "macho":
         return _build_macho(table_info, offsets, with_code_signature, trailing_padding)
     if platform == "pe":
-        return _build_pe(table_info, offsets)
+        return _build_pe(table_info, offsets, pe_extra_section_after)
     raise ValueError(f"Unsupported fixture platform: {platform}")
 
 
@@ -122,23 +123,36 @@ def _build_elf(table_info, offsets):
 
 
 def _build_macho(table_info, offsets, with_code_signature, trailing_padding):
-    header = bytearray(4096)
+    segment_cmd_size = 72 + 80
+    code_sig_cmd_size = 16 if with_code_signature else 0
+    section_offset = 32 + segment_cmd_size + code_sig_cmd_size
+    section_data_len = len(table_info["raw_bytes"]) + OFFSETS_SIZE + len(TRAILER)
+    section_size = 8 + section_data_len
+
+    header = bytearray(section_offset)
     struct.pack_into("<I", header, 0, 0xFEEDFACF)
+    struct.pack_into("<I", header, 16, 1 + (1 if with_code_signature else 0))
+    struct.pack_into("<I", header, 20, segment_cmd_size + code_sig_cmd_size)
 
-    if with_code_signature:
-        struct.pack_into("<I", header, 16, 1)
-        struct.pack_into("<I", header, 20, 16)
-        struct.pack_into("<I", header, 32, 0x1D)
-        struct.pack_into("<I", header, 36, 16)
+    segment_off = 32
+    struct.pack_into("<I", header, segment_off, 0x19)
+    struct.pack_into("<I", header, segment_off + 4, segment_cmd_size)
+    header[segment_off + 8 : segment_off + 24] = b"__BUN\x00" + (b"\x00" * 10)
+    struct.pack_into("<Q", header, segment_off + 32, section_size)
+    struct.pack_into("<Q", header, segment_off + 40, section_offset)
+    struct.pack_into("<Q", header, segment_off + 48, section_size)
+    struct.pack_into("<I", header, segment_off + 64, 1)
 
-    section_header_off = 256
+    section_header_off = segment_off + 72
     header[section_header_off : section_header_off + 16] = b"__bun\x00" + (b"\x00" * 10)
     header[section_header_off + 16 : section_header_off + 32] = b"__BUN\x00" + (b"\x00" * 10)
-
-    section_offset = len(header)
-    section_data_len = len(table_info["raw_bytes"]) + OFFSETS_SIZE + len(TRAILER)
-    struct.pack_into("<Q", header, section_header_off + 40, section_data_len)
+    struct.pack_into("<Q", header, section_header_off + 40, section_size)
     struct.pack_into("<I", header, section_header_off + 48, section_offset)
+
+    if with_code_signature:
+        code_sig_off = segment_off + segment_cmd_size
+        struct.pack_into("<I", header, code_sig_off, 0x1D)
+        struct.pack_into("<I", header, code_sig_off + 4, code_sig_cmd_size)
 
     size_header = bytearray(8)
     struct.pack_into("<Q", size_header, 0, len(table_info["raw_bytes"]))
@@ -154,7 +168,7 @@ def _build_macho(table_info, offsets, with_code_signature, trailing_padding):
     }
 
 
-def _build_pe(table_info, offsets):
+def _build_pe(table_info, offsets, extra_section_after):
     dos = bytearray(64)
     struct.pack_into("<H", dos, 0, 0x5A4D)
     pe_offset = 0x80
@@ -163,12 +177,18 @@ def _build_pe(table_info, offsets):
     nt_prefix = bytes(pe_offset - len(dos))
     coff = bytearray(24)
     struct.pack_into("<I", coff, 0, 0x00004550)
-    struct.pack_into("<H", coff, 6, 1)
+    struct.pack_into("<H", coff, 6, 2 if extra_section_after else 1)
     struct.pack_into("<H", coff, 20, 0)
 
-    section_header = bytearray(40)
-    section_header[:5] = b".bun\x00"
-    header = bytearray(bytes(dos) + nt_prefix + bytes(coff) + bytes(section_header))
+    bun_section_header = bytearray(40)
+    bun_section_header[:5] = b".bun\x00"
+    section_headers = bytearray(bun_section_header)
+    if extra_section_after:
+        extra_section_header = bytearray(40)
+        extra_section_header[:7] = b".extra\x00"
+        section_headers.extend(extra_section_header)
+
+    header = bytearray(bytes(dos) + nt_prefix + bytes(coff) + bytes(section_headers))
 
     pointer_to_raw_data = len(header)
     size_of_raw_data = len(table_info["raw_bytes"]) + OFFSETS_SIZE + len(TRAILER)
@@ -176,7 +196,14 @@ def _build_pe(table_info, offsets):
     struct.pack_into("<I", header, section_base + 16, size_of_raw_data)
     struct.pack_into("<I", header, section_base + 20, pointer_to_raw_data)
 
-    buf = bytes(header) + table_info["raw_bytes"] + offsets + TRAILER
+    extra = b""
+    if extra_section_after:
+        extra = b"EXTRA_SECTION_DATA"
+        extra_base = section_base + 40
+        struct.pack_into("<I", header, extra_base + 16, len(extra))
+        struct.pack_into("<I", header, extra_base + 20, pointer_to_raw_data + size_of_raw_data)
+
+    buf = bytes(header) + table_info["raw_bytes"] + offsets + TRAILER + extra
     return {
         "platform": "pe",
         "buf": buf,

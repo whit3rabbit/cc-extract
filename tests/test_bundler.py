@@ -2,7 +2,9 @@ import json
 import struct
 import pytest
 from cc_extractor.bundler import pack_bundle
+from cc_extractor.extractor import extract_all
 from cc_extractor.macho import LC_SEGMENT_64, MACHO_MAGIC_64, patch_macho
+from tests.helpers.bun_fixture import build_bun_fixture
 
 def create_test_macho(bun_offset, bun_size):
     header = bytearray(32)
@@ -67,10 +69,13 @@ class TestPackBundle:
         }
         write_manifest(indir, manifest)
 
-        bun_offset = 0x4000
-        bun_size = 0x1000
         base_binary = tmp_path / 'base'
-        base_binary.write_bytes(create_test_macho(bun_offset, bun_size))
+        base_fixture = build_bun_fixture(
+            platform="macho",
+            module_struct_size=52,
+            modules=[{"name": rel_path, "content": "console.log(0);"}],
+        )
+        base_binary.write_bytes(base_fixture["buf"])
 
         out_binary = tmp_path / 'output'
         pack_bundle(str(indir), str(out_binary), str(base_binary))
@@ -78,6 +83,11 @@ class TestPackBundle:
         assert out_binary.exists()
         out_data = out_binary.read_bytes()
         assert b"\n---- Bun! ----\n" in out_data
+
+        roundtrip_dir = tmp_path / "roundtrip"
+        manifest = extract_all(str(out_binary), str(roundtrip_dir))
+        assert manifest["platform"] == "macho"
+        assert (roundtrip_dir / rel_path).read_bytes() == file_data
 
 class TestPatchMacho:
     def test_patch_macho_updates_headers(self, tmp_path):

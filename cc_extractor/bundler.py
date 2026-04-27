@@ -1,8 +1,9 @@
 import os
 import json
 import struct
-from .macho import patch_macho
-from .extractor import find_bun_section_offset
+
+from .bun_extract import parse_bun_binary
+from .binary_patcher import repack_binary
 
 ENCODING_IDS = {
     "binary": 0,
@@ -32,15 +33,32 @@ def pack_bundle(indir, out_binary, base_binary):
     manifest_path = os.path.join(indir, ".bundle_manifest.json")
     if not os.path.exists(manifest_path):
         raise ValueError(f"No .bundle_manifest.json found in {indir}")
-        
+
     with open(manifest_path, "r") as f:
         manifest = json.load(f)
-        
+
     print(f"[*] Packing {len(manifest.get('modules', []))} modules from {indir}...")
-    
+
+    with open(base_binary, "rb") as f:
+        binary_data = f.read()
+    info = parse_bun_binary(binary_data)
+    new_raw_bytes, new_offsets_struct = _build_bundle_payload(indir, manifest)
+    repacked = repack_binary(binary_data, info, new_raw_bytes, new_offsets_struct)
+
+    with open(out_binary, "wb") as f:
+        f.write(repacked.buf)
+
+    print(f"[+] Successfully bundled to {out_binary}")
+
+
+def _build_bundle_payload(indir, manifest):
+    module_size = int(manifest.get("moduleSize", 52))
+    if module_size not in (36, 52):
+        raise ValueError(f"Unsupported moduleSize in manifest: {module_size}")
+
     data_buffer = bytearray()
     module_structs = bytearray()
-    
+
     # 1. Include execArgv if present
     argv_path = os.path.join(indir, "exec_argv.bin")
     exec_argv_offset = 0
@@ -51,14 +69,14 @@ def pack_bundle(indir, out_binary, base_binary):
         exec_argv_offset = len(data_buffer)
         exec_argv_length = len(argv_bytes)
         data_buffer.extend(argv_bytes)
-    
+
     # 2. Iterate and append modules
     for mod in manifest.get("modules", []):
         name_bytes = mod["name"].encode("utf-8")
         name_off = len(data_buffer)
         name_len = len(name_bytes)
         data_buffer.extend(name_bytes)
-        
+
         cont_off, cont_len = 0, 0
         if mod.get("sourceFile"):
             source_path = os.path.join(indir, mod["sourceFile"])
@@ -68,7 +86,7 @@ def pack_bundle(indir, out_binary, base_binary):
                 cont_off = len(data_buffer)
                 cont_len = len(content_bytes)
                 data_buffer.extend(content_bytes)
-        
+
         smap_off, smap_len = 0, 0
         if mod.get("sourcemapFile"):
             smap_path = os.path.join(indir, mod["sourcemapFile"])
@@ -78,7 +96,7 @@ def pack_bundle(indir, out_binary, base_binary):
                 smap_off = len(data_buffer)
                 smap_len = len(smap_bytes)
                 data_buffer.extend(smap_bytes)
-        
+
         bc_off, bc_len = 0, 0
         if mod.get("bytecodeFile"):
             bc_path = os.path.join(indir, mod["bytecodeFile"])
@@ -88,98 +106,70 @@ def pack_bundle(indir, out_binary, base_binary):
                 bc_off = len(data_buffer)
                 bc_len = len(bc_bytes)
                 data_buffer.extend(bc_bytes)
-                
-        struct_data = struct.pack("<IIIIIIII",
-            name_off, name_len,
-            cont_off, cont_len,
-            smap_off, smap_len,
-            bc_off, bc_len
+
+        module_structs.extend(
+            _build_module_struct(
+                module_size,
+                mod,
+                name_off,
+                name_len,
+                cont_off,
+                cont_len,
+                smap_off,
+                smap_len,
+                bc_off,
+                bc_len,
+            )
         )
-        
-        padding_hex = mod.get("paddingHex", "00" * 16)
-        struct_data += bytes.fromhex(padding_hex)
-        
-        struct_data += struct.pack("BBBB",
-            _flag_byte(mod["encoding"], ENCODING_IDS, "encoding"),
-            _flag_byte(mod["loader"], LOADER_IDS, "loader"),
-            _flag_byte(mod["format"], FORMAT_IDS, "format"),
-            _flag_byte(mod["side"], SIDE_IDS, "side")
-        )
-        
-        module_structs.extend(struct_data)
-        
+
     mod_offset = len(data_buffer)
     mod_length = len(module_structs)
     byte_count = mod_offset + mod_length
-    
-    offsets_struct = struct.pack("<QIIIIII",
+
+    offsets_struct = struct.pack(
+        "<QIIIIII",
         byte_count,
         mod_offset,
         mod_length,
         manifest.get("entryPointId", 0),
         exec_argv_offset,
         exec_argv_length,
-        manifest.get("flags", 0)
+        manifest.get("flags", 0),
     )
-    
-    bundle_blob = bytearray()
-    is_macho = manifest.get("isMacho", True)
-    
-    if is_macho:
-        # Add the 8-byte u64 size header for Mach-O __BUN section
-        macho_section_size = byte_count + 32 + 16 # data + offsets + trailer
-        bundle_blob.extend(struct.pack("<Q", macho_section_size))
-        
-    bundle_blob.extend(data_buffer)
-    bundle_blob.extend(module_structs)
-    bundle_blob.extend(offsets_struct)
-    bundle_blob.extend(b"\n---- Bun! ----\n")
+    return bytes(data_buffer + module_structs), offsets_struct
 
-    with open(base_binary, "rb") as f:
-        binary_data = f.read()
-    
-    try:
-        blob, fileoff, old_size, endian = find_bun_section_offset(base_binary)
-        
-        new_size = len(bundle_blob)
-        if new_size <= old_size:
-            print(f"[*] New bundle fits in old section (new: {new_size}, old: {old_size})")
-            new_binary_data = bytearray(binary_data)
-            new_binary_data[fileoff:fileoff + new_size] = bundle_blob
-            new_binary_data[fileoff + new_size:fileoff + old_size] = b"\x00" * (old_size - new_size)
-            with open(out_binary, "wb") as f:
-                f.write(new_binary_data)
-            patch_macho(out_binary, fileoff, new_size)
-        else:
-            print(f"[*] New bundle is larger ({new_size} > {old_size}). Appending to end of binary...")
-            new_offset = len(binary_data)
-            new_binary_data = bytearray(binary_data)
-            new_binary_data.extend(bundle_blob)
-            with open(out_binary, "wb") as f:
-                f.write(new_binary_data)
-            patch_macho(out_binary, new_offset, new_size)
-    except ValueError:
-        # If not Mach-O (e.g. Linux ELF), just append to the end or replace the existing appended block
-        # For this prototype we'll try to find the old bundle and replace it
-        print("[*] Base binary is not Mach-O. Attempting to replace trailer data...")
-        trailer_offset = binary_data.rfind(b"\n---- Bun! ----\n")
-        if trailer_offset != -1:
-            os_offset = trailer_offset - 32
-            old_byte_count = struct.unpack_from("<Q", binary_data, os_offset)[0]
-            data_start = trailer_offset - old_byte_count - 32
-            
-            new_binary_data = bytearray(binary_data[:data_start])
-            new_binary_data.extend(bundle_blob)
-            with open(out_binary, "wb") as f:
-                f.write(new_binary_data)
-        else:
-            print("[*] No existing bundle found, appending...")
-            new_binary_data = bytearray(binary_data)
-            new_binary_data.extend(bundle_blob)
-            with open(out_binary, "wb") as f:
-                f.write(new_binary_data)
 
-    print(f"[+] Successfully bundled to {out_binary}")
+def _build_module_struct(
+    module_size,
+    mod,
+    name_off,
+    name_len,
+    cont_off,
+    cont_len,
+    smap_off,
+    smap_len,
+    bc_off,
+    bc_len,
+):
+    struct_data = bytearray(module_size)
+    struct.pack_into("<IIIIIIII", struct_data, 0, name_off, name_len, cont_off, cont_len, smap_off, smap_len, bc_off, bc_len)
+
+    if module_size == 52:
+        padding = bytes.fromhex(mod.get("paddingHex", "00" * 16))
+        struct_data[32:48] = padding[:16].ljust(16, b"\x00")
+        flags_base = 48
+    else:
+        flags_base = 32
+
+    struct_data[flags_base : flags_base + 4] = bytes(
+        [
+            _flag_byte(mod.get("encoding", 2), ENCODING_IDS, "encoding"),
+            _flag_byte(mod.get("loader", 1), LOADER_IDS, "loader"),
+            _flag_byte(mod.get("format", 1), FORMAT_IDS, "format"),
+            _flag_byte(mod.get("side", 0), SIDE_IDS, "side"),
+        ]
+    )
+    return bytes(struct_data)
 
 
 def _flag_byte(value, lookup, field_name):
