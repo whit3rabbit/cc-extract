@@ -1,13 +1,21 @@
 import argparse
+from dataclasses import asdict, is_dataclass
 import json
 import sys
 from pathlib import Path
 
 from .bun_extract import parse_bun_binary
+from .binary_patcher import PatchInputs, apply_patches, replace_entry_js
 from .downloader import download_binary, download_npm, resolve_requested_version
 from .extractor import extract_all
 from .bundler import pack_bundle
 from .patcher import init_patch, apply_patch
+
+
+def _to_jsonable(value):
+    if is_dataclass(value):
+        return asdict(value)
+    return value
 
 
 def inspect_binary(binary_path, as_json=False):
@@ -74,6 +82,18 @@ def main():
     inspect_parser.add_argument("binary", help="Path to Bun standalone binary")
     inspect_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
 
+    # Replace entry
+    replace_entry_parser = subparsers.add_parser("replace-entry", help="Replace the entry JS module and repack")
+    replace_entry_parser.add_argument("binary", help="Path to Bun standalone binary")
+    replace_entry_parser.add_argument("entry_js", help="Path to replacement entry JS")
+    replace_entry_parser.add_argument("--out", required=True, help="Output binary path")
+
+    # Apply binary theme/prompt patches
+    apply_binary_parser = subparsers.add_parser("apply-binary", help="Apply theme and prompt patches to a binary")
+    apply_binary_parser.add_argument("binary", help="Path to Bun standalone binary to patch in place")
+    apply_binary_parser.add_argument("--config", required=True, help="Config JSON containing settings.themes")
+    apply_binary_parser.add_argument("--overlays", help="Prompt overlay JSON")
+
     # Pack
     pk_parser = subparsers.add_parser("pack", help="Pack directory back into binary")
     pk_parser.add_argument("indir", help="Directory with extracted files and manifest")
@@ -121,6 +141,34 @@ def main():
             )
         elif args.command == "inspect":
             inspect_binary(args.binary, as_json=args.json)
+        elif args.command == "replace-entry":
+            data = Path(args.binary).read_bytes()
+            info = parse_bun_binary(data)
+            new_content = Path(args.entry_js).read_bytes()
+            result = replace_entry_js(data, info, new_content)
+            out_path = Path(args.out)
+            out_path.write_bytes(result.buf)
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "delta": result.delta,
+                        "signatureInvalidated": result.signature_invalidated,
+                        "signatureStripped": result.signature_stripped,
+                        "out": str(out_path),
+                    },
+                    indent=2,
+                )
+            )
+        elif args.command == "apply-binary":
+            config = json.loads(Path(args.config).read_text(encoding="utf-8"))
+            overlays = None
+            if args.overlays:
+                overlays = json.loads(Path(args.overlays).read_text(encoding="utf-8"))
+            result = apply_patches(PatchInputs(binary_path=args.binary, config=config, overlays=overlays))
+            print(json.dumps(_to_jsonable(result), indent=2))
+            if not result.ok:
+                sys.exit(1)
         elif args.command == "pack":
             pack_bundle(args.indir, args.out_binary, args.base_binary)
         elif args.command == "patch":
