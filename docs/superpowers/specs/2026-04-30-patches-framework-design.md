@@ -102,8 +102,12 @@ class Patch:
     name: str
     group: str                            # "ui" | "thinking" | "prompts" | "tools" | "system"
     versions_supported: str               # SemVer range, e.g. ">=2.0.20,<3"
-    versions_tested: tuple[str, ...]      # exact versions in the matrix
-    versions_blacklisted: tuple[str, ...] = ()
+    versions_tested: tuple[str, ...]      # tuple of SemVer ranges, one per matrix bucket
+                                          # e.g. (">=2.0.20,<2.1", ">=2.1.0,<2.2")
+                                          # each entry resolves at test time to the latest
+                                          # concrete version in the download index that
+                                          # satisfies the range
+    versions_blacklisted: tuple[str, ...] = ()    # exact versions known broken
     on_miss: str = "fatal"                # "fatal" | "skip" | "warn"
     apply: Callable[[str, "PatchContext"], "PatchOutcome"]
 
@@ -142,7 +146,7 @@ class PatchBlacklistedError(ValueError): ...
    - If `ctx.claude_version` is set:
      - In `versions_blacklisted`: raise `PatchBlacklistedError` (unless `ctx.force`).
      - Not satisfied by `versions_supported`: raise `PatchUnsupportedVersionError` (unless `ctx.force`).
-     - Satisfied but not in `versions_tested`: emit `warnings.warn("patch X not tested against version Y; last tested Z")`. Apply.
+     - Satisfied by `versions_supported` but no entry in `versions_tested` matches: emit `warnings.warn("patch X not tested against version Y; tested ranges: ...")`. Apply.
    - If `ctx.claude_version` is None: skip pre-flight, log a debug-level note. Mirrors today's behavior where most callers do not pass a version.
 
 2. **Apply.** Call `patch.apply(js, ctx)`. The function returns a `PatchOutcome`.
@@ -188,15 +192,15 @@ tests/patches/
   test_<patch_id>.py
 ```
 
-**Per-patch test file pattern:**
+**Per-patch test file pattern** (parametrized over the patch's own `versions_tested` ranges, each resolved to a concrete version at collection time):
 ```python
-@pytest.mark.parametrize("version", PINNED_VERSIONS)
+@pytest.mark.parametrize("version", resolve_tested_versions(themes.PATCH))
 def test_themes_l1_anchor_matches(cli_js_real, version):
     js = cli_js_real(version)
     outcome = themes.PATCH.apply(js, PatchContext(claude_version=version, config=...))
     assert outcome.status == "applied"
 
-@pytest.mark.parametrize("version", PINNED_VERSIONS)
+@pytest.mark.parametrize("version", resolve_tested_versions(themes.PATCH))
 def test_themes_l2_patched_js_parses(cli_js_real, version, parse_js):
     js = cli_js_real(version)
     outcome = themes.PATCH.apply(js, PatchContext(claude_version=version, config=...))
@@ -210,23 +214,39 @@ def test_themes_synthetic_minimal(cli_js_synthetic):
 
 **Fixtures:**
 
-- `cli_js_real(version)`: extracts the entry JS from a Claude Code binary in `downloads/`. If absent, downloads it via `cc_extractor.downloader` and caches. First run on a fresh checkout pulls each pinned binary (~30s each); subsequent runs are seconds. Cache location is the existing `downloads/` directory; gitignored.
+- `cli_js_real(version)`: extracts the entry JS from a Claude Code binary in `downloads/`. `version` is concrete (resolved from a range upstream). If absent, downloads it via `cc_extractor.downloader` and caches. First run on a fresh checkout pulls each resolved binary (~30s each); subsequent runs are seconds. Cache location is the existing `downloads/` directory; gitignored.
 - `parse_js(js)`: shells out to `node --check -`. Asserts exit code 0. Skip-with-message (not fail) if Node is not on PATH so L1 stays runnable on minimal envs while still catching parse errors when Node is available. CI has Node.
 - `cli_js_synthetic(patch_id)`: returns a small handcrafted snippet from `fixtures/synthetic.py`. One snippet per patch, kept minimal. Goal: "anchor regex still matches the shape" for fast iteration during a port.
 
-**Pinned versions** live in `tests/patches/_pinned.py`:
+**Range resolver** (in `cc_extractor/patches/_versions.py`, used by tests and CLI alike):
 ```python
-PINNED_VERSIONS = ("2.0.40", "2.1.123")
+def resolve_range_to_version(range_expr: str, *, index: Mapping[str, Any]) -> Optional[str]:
+    """Return the highest concrete version in `index` that satisfies `range_expr`,
+    or None if nothing satisfies. `index` is the parsed download-index JSON."""
 ```
-Adjustable in one place. Rationale for these picks: latest stable on the 2.1 line plus an older 2.0.x to catch range drift.
+The download index is `cc_extractor/data/download-index.seed.json` plus the live cache; same source the existing `download_index.py` uses. The resolver gives the matrix two important properties: (a) **self-updating** — when a new Claude Code release ships and lands in the index, the matrix automatically picks it up without spec edits; (b) **stable across machines** — given the same index, every machine resolves the same concrete version, so test results are reproducible.
+
+`resolve_tested_versions(patch)` is a thin pytest helper that calls `resolve_range_to_version` for each entry in `patch.versions_tested` and returns the concrete versions, deduplicated. If a range resolves to `None` (no version available), the test is parametrized to skip that bucket with a clear message.
+
+**Default test ranges** live in `tests/patches/_pinned.py` for patches that don't override:
+```python
+DEFAULT_VERSION_RANGES = (">=2.0.20,<2.1", ">=2.1.0,<3")
+```
+Most patches in the registry will use these via a helper:
+```python
+PATCH = Patch(..., versions_tested=DEFAULT_VERSION_RANGES, ...)
+```
+Patches with narrower compatibility (e.g., a tweak that only works on 2.1.x) override with their own tuple. Rationale: covers one bucket per Claude Code minor line; auto-picks the latest in each line.
 
 **Registry-level tests** (`tests/patches/test_registry.py`):
 
 - Every registered patch has non-empty `versions_tested`.
-- Every entry in `versions_tested` satisfies `versions_supported`.
-- No entry in `versions_tested` is also in `versions_blacklisted`.
+- Every entry in `versions_tested` parses as a valid SemVer range.
+- Every entry in `versions_tested` is fully contained in `versions_supported` (every version satisfying the tested range also satisfies the supported range).
+- No version in `versions_blacklisted` satisfies any entry in `versions_tested`.
 - Registry has no duplicate ids.
 - Each `versions_supported` parses cleanly.
+- For each patch, at least one entry in `versions_tested` resolves to a concrete version against the current download index (catches "I shipped a range that doesn't match anything").
 
 ### L3 (gated, real binary smoke)
 
@@ -283,7 +303,7 @@ Each step is independently reviewable and leaves the test suite green.
 
 4. **Migrate themes and prompt-overlays.** These are special: they wrap `binary_patcher/theme.py` and `binary_patcher/prompts.py`. The patch module is a thin adapter. Existing tests for `binary_patcher/theme.py` etc. stay where they are; the new `tests/patches/test_themes.py` and `test_prompt_overlays.py` cover the adapter.
 
-5. **Add L3 smoke harness.** One parametrized test that builds a default-tweak variant against each pinned version, runs the binary with a probe arg, asserts clean exit. Gated by `CC_EXTRACTOR_REAL_BINARY=1`.
+5. **Add L3 smoke harness.** One parametrized test that builds a default-tweak variant against each version resolved from `DEFAULT_VERSION_RANGES`, runs the binary with a probe arg, asserts clean exit. Gated by `CC_EXTRACTOR_REAL_BINARY=1`.
 
 6. **Add L4 harness skeleton + one snapshot test.** `hide_startup_banner` is the simplest case (banner appears or does not). Gated by `CC_EXTRACTOR_TUI_MCP=1`. Subsequent L4 coverage is incremental and not blocking framework completion.
 
@@ -300,5 +320,5 @@ After step 4, `variants/tweaks.py` is a ~50-line shim and the existing test suit
 
 ## Open questions
 
-- **Pinned versions.** Proposal: `("2.0.40", "2.1.123")`. Confirm or adjust before step 1.
+- **Default test ranges.** Proposal: `DEFAULT_VERSION_RANGES = (">=2.0.20,<2.1", ">=2.1.0,<3")` — one bucket per minor line, each resolved to its highest concrete version in the download index at test collection time. Confirm or adjust before step 1.
 - **Prompt overlays anchor-miss policy.** `binary_patcher/prompts.py` records misses non-fatally today. The new `prompt_overlays.py` will declare `on_miss="warn"` to match. Re-confirm during migration.
