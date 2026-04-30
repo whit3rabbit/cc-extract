@@ -4,7 +4,7 @@ from pathlib import Path
 
 from .prompts import apply_prompts
 from .strip_bun_wrapper import strip_bun_wrapper
-from .theme import apply_theme
+from .theme import apply_theme, themes_from_config as _themes_from_config
 
 
 class UnpackedManifestError(Exception):
@@ -97,11 +97,3 @@ def _safe_join(root, rel_path):
     if not normalized or any(segment == ".." for segment in normalized.split("/")):
         raise UnpackedManifestError(f"unsafe entry module path: {rel_path}")
     return root / normalized
-
-
-def _themes_from_config(config):
-    if config is None:
-        return []
-    if "settings" in config and isinstance(config["settings"], dict):
-        return config["settings"].get("themes") or []
-    return config.get("themes") or []

@@ -47,9 +47,14 @@ A standalone Python toolkit for extracting, patching, and repacking Bun standalo
 ## Architecture
 
 ```text
-main.py / __main__.py        -> CLI entry point with argparse subcommands
-tui.py                       -> ratatui dashboard wizard and advanced tabs
-workspace.py                 -> Centralized downloads, extractions, patch packages, profiles, and metadata
+main.py / __main__.py        -> CLI entry; `cmd_variant` dispatcher + `main()` (kept thin so tests can monkey-patch variant helpers via `cc_extractor.__main__`)
+cli/parsers.py               -> Argparse parser tree (build_parser)
+cli/handlers.py              -> Per-subcommand handlers (download/extract/inspect/replace-entry/apply-binary/pack/patch) + inspect_binary
+cli/payloads.py              -> JSON payload helpers + variant arg adders
+_utils.py                    -> Shared low-level helpers (safe_read_json, version_sort_key, utc_now, make_kebab_id); stdlib-only, no internal deps
+tui/__init__.py              -> Action layer: run_tui, dispatchers, monkey-patchable hooks (apply_patch_packages_to_native, create_variant, doctor_variant, _variant_accepts_name_text)
+tui/state.py, themes.py, options.py, rendering.py, dashboard.py, variant_actions.py, keys.py, nav.py, _runtime.py, _const.py
+workspace/__init__.py        -> Re-exports everything; submodules paths.py, models.py, artifacts.py, patches.py, settings.py
 downloader.py                -> Fetches binaries from Google Cloud Storage or NPM tarballs
 download_index.py            -> Cached live/seed download version index
 download_picker.py           -> Interactive version picker
@@ -59,20 +64,20 @@ bun_extract/replace.py       -> Same-size in-place module replacement
 binary_patcher/replace_entry.py -> Resize-capable entry JS replacement
 binary_patcher/repack.py     -> Repack dispatcher for ELF, Mach-O, and PE
 binary_patcher/*_resize.py   -> Platform-specific resize logic
-binary_patcher/theme.py      -> Theme anchor patching
+binary_patcher/theme.py      -> Theme anchor patching + `themes_from_config` helper (canonical, was duplicated 3x before)
 binary_patcher/prompts.py    -> Prompt overlay patching
 binary_patcher/index.py      -> Structured apply_patches API
 binary_patcher/codesign.py   -> Soft macOS ad-hoc signing helper
 binary_patcher/js_patch.py   -> Patch extracted entry JS
 binary_patcher/unpack_and_patch.py -> Unpacked Node fallback path
 patch_workflow.py            -> Extract, apply patch packages, repack, and write patched metadata
-variants.py                  -> Variant lifecycle (create, apply, update, remove, doctor, run) over patched binaries
-variant_tweaks.py            -> Curated tweak IDs, env-vs-binary tweak split, custom model registry
+variants/__init__.py         -> Action layer: lifecycle (create/apply/update/remove/doctor/run) + `_build_variant_from_manifest`, `_copy_patch_or_unpack_variant_binary`, `_unpack_node_runtime_variant`, `_download_source_artifact` (monkey-patched targets stay alongside callers)
+variants/model.py, builder.py, tweaks.py, wrapper.py
+variant_tweaks.py            -> Backwards-compat shim re-exporting `cc_extractor.variants.tweaks`
 providers.py                 -> Provider templates (Kimi, MiniMax, Z.AI, OpenRouter, Vercel, Ollama, NanoGPT) and env builders
 extractor.py                 -> Compatibility wrapper over bun_extract
 bundler.py                   -> Compatibility wrapper over binary_patcher.repack_binary
 patcher.py                   -> Legacy extracted-text patch manifests
-macho.py                     -> Legacy Mach-O header update helper
 tools/prompt_extractor.py    -> Tree-sitter prompt extractor that writes tweakcc-style JSON
 tools/extract_prompt_versions.py -> Download, extract, write, and validate prompt JSON files
 prompts/*.json               -> Generated prompt catalogs keyed by Claude Code version
@@ -82,7 +87,10 @@ prompts/*.json               -> Generated prompt catalogs keyed by Claude Code v
 
 - `parse_bun_binary` is the single source of truth for binary layout.
 - `extractor.py` and `bundler.py` are compatibility layers, not independent parsers.
-- `patcher.py` is only for old extracted-text patch manifests. Keep it separate from `binary_patcher`.
+- `patcher.py` is only for old extracted-text patch manifests (still live: powers `patch apply`/`patch init` CLI plus `variants` and `patch_workflow`). Keep it separate from `binary_patcher`.
+- Action layer stays in `tui/__init__.py` and `variants/__init__.py`: tests do `monkeypatch.setattr(tui, "create_variant", fake)` and `monkeypatch.setattr(variants_module, "_download_source_artifact", ...)`; patched name and call site must share the package's `__init__.py` globals. Pure helpers (rendering, options, builder utilities) belong in submodules.
+- `tests/test_downloader.py` uses `@patch("cc_extractor.downloader.X")` string paths; do not move `downloader.py` into a subpackage without updating ~35 patch decorators.
+- `cc_extractor/_utils.py` is the canonical home for cross-module helpers (`safe_read_json`, `version_sort_key`, `utc_now`, `make_kebab_id`); stdlib-only so any module can import it without circular risk.
 - The TUI opens Dashboard first, then keeps Inspect, Extract, and Patch as advanced tabs.
 - Dashboard v1 handles native binaries only. NPM downloads remain CLI-only.
 - Dashboard profiles are workspace-local JSON files under `.cc-extractor/patches/profiles/<profile-id>.json`.

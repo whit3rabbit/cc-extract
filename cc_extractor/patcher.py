@@ -1,27 +1,15 @@
-import hashlib
 import json
 from pathlib import Path
 
-from .workspace import validate_patch_package_manifest
+from .workspace import file_sha256, validate_patch_package_manifest
 
 PATCH_MANIFEST = "patch.json"
 SOURCE_METADATA = ".bundle_source.json"
 
 
-def compute_sha256(path):
-    sha256 = hashlib.sha256()
-    with open(path, "rb") as handle:
-        while True:
-            chunk = handle.read(65536)
-            if not chunk:
-                break
-            sha256.update(chunk)
-    return sha256.hexdigest()
-
-
 def build_source_metadata(binary_path, source_version=None):
     metadata = {
-        "binary_sha256": compute_sha256(binary_path),
+        "binary_sha256": file_sha256(binary_path),
     }
     if source_version is not None:
         metadata["source_version"] = source_version
@@ -165,7 +153,7 @@ def apply_patch(
     manifest = load_patch_manifest(patch_root)
     source_metadata = load_source_metadata(extract_root)
 
-    effective_checksum = compute_sha256(binary_path) if binary_path else (
+    effective_checksum = file_sha256(binary_path) if binary_path else (
         source_metadata.get("binary_sha256") if source_metadata else None
     )
     effective_version = source_version if source_version is not None else (

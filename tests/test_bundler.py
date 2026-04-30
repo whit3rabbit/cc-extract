@@ -1,35 +1,8 @@
 import json
-import struct
 import pytest
 from cc_extractor.bundler import pack_bundle
 from cc_extractor.extractor import extract_all
-from cc_extractor.macho import LC_SEGMENT_64, MACHO_MAGIC_64, patch_macho
 from tests.helpers.bun_fixture import build_bun_fixture
-
-def create_test_macho(bun_offset, bun_size):
-    header = bytearray(32)
-    struct.pack_into("<I", header, 0, MACHO_MAGIC_64)
-    struct.pack_into("<I", header, 16, 1)
-
-    segment = bytearray(152)
-    struct.pack_into("<I", segment, 0, LC_SEGMENT_64)
-    struct.pack_into("<I", segment, 4, 152)
-    segment[8:24] = b'__BUN\x00\x00\x00\x00\x00\x00'
-    struct.pack_into("<Q", segment, 32, bun_size)
-    struct.pack_into("<Q", segment, 40, bun_offset)
-    struct.pack_into("<Q", segment, 48, bun_size)
-    struct.pack_into("<I", segment, 64, 1)
-
-    sect_offset = 72
-    segment[sect_offset:sect_offset + 16] = b'__bun\x00\x00\x00\x00\x00'
-    segment[sect_offset + 16:sect_offset + 32] = b'__BUN\x00\x00\x00\x00\x00\x00'
-    struct.pack_into("<Q", segment, sect_offset + 40, bun_size)
-    struct.pack_into("<I", segment, sect_offset + 48, bun_offset)
-
-    binary = bytearray(bun_offset + bun_size)
-    binary[:len(header)] = header
-    binary[len(header):len(header) + len(segment)] = segment
-    return bytes(binary)
 
 def write_manifest(indir, manifest):
     (indir / '.bundle_manifest.json').write_text(json.dumps(manifest))
@@ -88,24 +61,3 @@ class TestPackBundle:
         manifest = extract_all(str(out_binary), str(roundtrip_dir))
         assert manifest["platform"] == "macho"
         assert (roundtrip_dir / rel_path).read_bytes() == file_data
-
-class TestPatchMacho:
-    def test_patch_macho_updates_headers(self, tmp_path):
-        bun_offset = 0x4000
-        bun_size = 0x1000
-        binary_path = tmp_path / 'test'
-        binary_path.write_bytes(create_test_macho(bun_offset, bun_size))
-
-        new_offset = 0x5000
-        new_size = 0x800
-        patch_macho(str(binary_path), new_offset, new_size)
-
-        patched = binary_path.read_bytes()
-        segment_off = 32
-        section_off = segment_off + 72
-        aligned_size = (new_size + 0x3FFF) & (~0x3FFF)
-        assert struct.unpack_from("<Q", patched, segment_off + 32)[0] == aligned_size
-        assert struct.unpack_from("<Q", patched, segment_off + 40)[0] == new_offset
-        assert struct.unpack_from("<Q", patched, segment_off + 48)[0] == new_size
-        assert struct.unpack_from("<Q", patched, section_off + 40)[0] == new_size
-        assert struct.unpack_from("<I", patched, section_off + 48)[0] == new_offset

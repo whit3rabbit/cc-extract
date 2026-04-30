@@ -1,0 +1,116 @@
+"""Internal builder helpers used by the variant action layer.
+
+These functions don't reference any monkey-patched name (the patched
+``apply_patches``/``unpack_and_patch``/``_download_source_artifact`` symbols
+all live in :mod:`cc_extractor.variants` next to their callers), so they can
+sit in their own module without breaking test fixtures.
+"""
+
+import contextlib
+import os
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from .._utils import safe_read_json as _safe_read_json
+from ..patcher import apply_patch
+from ..providers import (
+    get_provider,
+    provider_patch_config,
+    provider_prompt_overlays,
+)
+from ..workspace import (
+    NativeArtifact,
+    load_patch_profile,
+    read_json,
+    scan_patch_packages,
+    workspace_root,
+)
+from .tweaks import apply_variant_tweaks
+
+
+def resolve_source_version(version: str, root=None) -> str:
+    version = version or "latest"
+    if version != "stable":
+        return version
+    index_path = workspace_root(root) / "download-index.json"
+    index = _safe_read_json(index_path)
+    stable = index.get("binary", {}).get("stable")
+    if isinstance(stable, str) and stable:
+        return stable
+    raise ValueError("stable channel is not available in the download index")
+
+
+def patch_refs_for_profile(profile_id: Optional[str], root=None) -> List[Dict[str, str]]:
+    if not profile_id:
+        return []
+    profile = load_patch_profile(profile_id, root=root)
+    return list(profile.patches)
+
+
+def apply_patch_refs(
+    extract_dir: Path,
+    refs: List[Dict[str, str]],
+    source_artifact: NativeArtifact,
+    root=None,
+) -> None:
+    if not refs:
+        return
+    packages = {(package.patch_id, package.version): package for package in scan_patch_packages(root)}
+    for ref in refs:
+        package = packages.get((ref["id"], ref["version"]))
+        if package is None:
+            raise ValueError(f"Missing patch package {ref['id']}@{ref['version']}")
+        apply_patch(
+            package.path,
+            extract_dir,
+            binary_path=source_artifact.path,
+            source_version=source_artifact.version,
+            source_platform=source_artifact.platform,
+        )
+
+
+def patch_entry_js(extract_dir: Path, manifest_data: Dict, *, provider_key: str, tweak_ids: List[str]):
+    entry = manifest_data.get("entryPoint")
+    if not entry:
+        manifest_path = extract_dir / ".bundle_manifest.json"
+        if manifest_path.exists():
+            entry = read_json(manifest_path).get("entryPoint")
+    if not entry:
+        raise ValueError("Extracted bundle manifest did not include entryPoint")
+    entry_path = extract_dir / entry
+    if not entry_path.exists():
+        raise ValueError(f"Entry JS not found in extracted bundle: {entry}")
+    js = entry_path.read_text(encoding="utf-8")
+    provider = get_provider(provider_key)
+    result = apply_variant_tweaks(
+        js,
+        tweak_ids=tweak_ids,
+        config=provider_patch_config(provider_key),
+        overlays=provider_prompt_overlays(provider_key),
+        provider_label=provider.label,
+    )
+    entry_path.write_text(result.js, encoding="utf-8")
+    return result
+
+
+def can_use_in_place_variant_patch(source_artifact: NativeArtifact, manifest: Dict) -> bool:
+    return (
+        source_artifact.platform.startswith("darwin")
+        and not manifest.get("patches")
+    )
+
+
+@contextlib.contextmanager
+def workspace_env(root):
+    if root is None:
+        yield
+        return
+    old_value = os.environ.get("CC_EXTRACTOR_WORKSPACE")
+    os.environ["CC_EXTRACTOR_WORKSPACE"] = str(workspace_root(root))
+    try:
+        yield
+    finally:
+        if old_value is None:
+            os.environ.pop("CC_EXTRACTOR_WORKSPACE", None)
+        else:
+            os.environ["CC_EXTRACTOR_WORKSPACE"] = old_value

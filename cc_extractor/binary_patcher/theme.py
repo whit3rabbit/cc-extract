@@ -10,6 +10,15 @@ class ThemeAnchorNotFound(Exception):
         super().__init__(f"theme: failed to find {anchor} anchor in cli.js")
 
 
+def themes_from_config(config):
+    """Return the themes list from a tweakcc-style config (or empty list)."""
+    if config is None:
+        return []
+    if "settings" in config and isinstance(config["settings"], dict):
+        return config["settings"].get("themes") or []
+    return config.get("themes") or []
+
+
 @dataclass
 class ThemeResult:
     js: str

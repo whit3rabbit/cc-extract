@@ -10,7 +10,7 @@ from .codesign import try_adhoc_sign
 from .pe_resize import PeNotLastSectionError
 from .prompts import apply_prompts
 from .replace_entry import replace_entry_js
-from .theme import ThemeAnchorNotFound, apply_theme
+from .theme import ThemeAnchorNotFound, apply_theme, themes_from_config as _themes_from_config
 
 
 @dataclass
@@ -126,11 +126,3 @@ def apply_patches(inputs):
         codesign_skipped=codesign_skipped,
         skipped_reason=skipped_reason,
     )
-
-
-def _themes_from_config(config):
-    if config is None:
-        return []
-    if "settings" in config and isinstance(config["settings"], dict):
-        return config["settings"].get("themes") or []
-    return config.get("themes") or []

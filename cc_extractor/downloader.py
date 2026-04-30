@@ -8,6 +8,7 @@ from importlib import import_module
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from ._utils import version_sort_key as _version_sort_key
 from .workspace import (
     ensure_workspace,
     file_sha256,
@@ -63,18 +64,6 @@ def _make_progress(total_size, desc):
 def _sort_versions(versions):
     unique_versions = {version for version in versions if version}
     return sorted(unique_versions, key=_version_sort_key, reverse=True)
-
-
-def _version_sort_key(version):
-    parts = []
-    for part in str(version).split("."):
-        try:
-            parts.append(int(part))
-        except ValueError:
-            parts.append(-1)
-    while len(parts) < 4:
-        parts.append(0)
-    return tuple(parts)
 
 
 def _binary_list_url(page_token=None):
