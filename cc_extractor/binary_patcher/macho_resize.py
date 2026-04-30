@@ -1,3 +1,5 @@
+"""Mach-O binary resize and code-signature stripping for the .bun section."""
+
 import struct
 from dataclasses import dataclass
 

@@ -1,3 +1,5 @@
+"""Apply provider-specific Claude config merges (settings + MCP servers)."""
+
 import copy
 from dataclasses import dataclass
 from pathlib import Path

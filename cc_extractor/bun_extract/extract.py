@@ -1,9 +1,11 @@
+"""Write extracted Bun modules and manifest to disk."""
+
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-from .types import BunBinaryInfo, BunFormatError
+from .types import BunFormatError
 
 
 @dataclass

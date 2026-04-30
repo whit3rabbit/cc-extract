@@ -1,3 +1,5 @@
+"""Extract, patch, and repack a native Claude Code binary in one pass."""
+
 import os
 import shutil
 import tempfile

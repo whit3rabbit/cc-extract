@@ -1,3 +1,5 @@
+"""Strip the Bun IIFE wrapper from entry JS source."""
+
 import re
 
 

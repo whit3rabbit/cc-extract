@@ -1,3 +1,5 @@
+"""PE section discovery and data-start computation."""
+
 from dataclasses import dataclass
 import struct
 

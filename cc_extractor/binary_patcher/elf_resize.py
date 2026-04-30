@@ -1,3 +1,5 @@
+"""ELF binary resize logic for the .bun section."""
+
 import struct
 
 from cc_extractor.bun_extract.constants import MACHO_SECTION_HEADER_SIZE, OFFSETS_SIZE, TRAILER

@@ -1,3 +1,6 @@
+"""Fetch Claude Code binaries from Google Cloud Storage or NPM tarballs."""
+
+import functools
 import hashlib
 import json
 import os
@@ -5,6 +8,7 @@ import platform
 import subprocess
 import tempfile
 from importlib import import_module
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -51,7 +55,10 @@ def _get_tqdm():
 
 def _open_url(url):
     request = Request(url, headers={"User-Agent": HTTP_USER_AGENT})
-    return urlopen(request, timeout=REQUEST_TIMEOUT)
+    try:
+        return urlopen(request, timeout=REQUEST_TIMEOUT)
+    except (URLError, HTTPError) as exc:
+        raise RuntimeError(f"Failed to fetch {url}: {exc}") from exc
 
 
 def _make_progress(total_size, desc):
@@ -101,19 +108,30 @@ def _select_version_interactively(versions, latest_version, npm):
 
 
 def fetch_text(url):
-    with _open_url(url) as response:
-        return response.read().decode("utf-8").strip()
+    """Fetch a URL and return the decoded text body."""
+    try:
+        with _open_url(url) as response:
+            return response.read().decode("utf-8").strip()
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(f"Non-UTF-8 response from {url}: {exc}") from exc
 
 
 def fetch_json(url):
-    return json.loads(fetch_text(url))
+    """Fetch a URL and return the parsed JSON response."""
+    text = fetch_text(url)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Malformed JSON from {url}: {exc}") from exc
 
 
 def fetch_latest_binary_version():
+    """Fetch the latest native binary version from GCS."""
     return fetch_text(f"{GCS_BUCKET}/latest")
 
 
 def fetch_latest_npm_version():
+    """Fetch the latest NPM version from the registry."""
     metadata = fetch_json(NPM_REGISTRY_URL)
     latest_version = metadata.get("dist-tags", {}).get("latest")
     if not latest_version:
@@ -121,7 +139,9 @@ def fetch_latest_npm_version():
     return latest_version
 
 
+@functools.lru_cache(maxsize=1)
 def list_available_binary_versions():
+    """List all native binary versions published to GCS."""
     versions = []
     page_token = None
 
@@ -135,12 +155,20 @@ def list_available_binary_versions():
     return _sort_versions(versions)
 
 
+@functools.lru_cache(maxsize=1)
 def list_available_npm_versions():
+    """List all NPM versions published to the registry."""
     metadata = fetch_json(NPM_REGISTRY_URL)
     return _sort_versions(metadata.get("versions", {}).keys())
 
 
+def _clear_version_cache():
+    list_available_binary_versions.cache_clear()
+    list_available_npm_versions.cache_clear()
+
+
 def resolve_requested_version(version=None, latest=False, npm=False, selector=None):
+    """Resolve a version string, --latest flag, or interactive selection."""
     if version and latest:
         raise ValueError("Pass either a version or --latest, not both")
 
@@ -162,6 +190,7 @@ def resolve_requested_version(version=None, latest=False, npm=False, selector=No
 
 
 def _linux_uses_musl():
+    # musl libc identifies itself in ldd --version stderr; glibc does not
     try:
         with subprocess.Popen(
             ["ldd", "--version"],
@@ -177,6 +206,7 @@ def _linux_uses_musl():
 
 
 def get_platform_key():
+    """Return the platform key for the current OS and architecture."""
     system = platform.system().lower()
     arch = platform.machine().lower()
 
@@ -203,6 +233,7 @@ def get_platform_key():
 
 
 def download_file(url, out_path):
+    """Download a file from URL to out_path with optional progress bar."""
     out_dir = os.path.dirname(out_path)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
@@ -220,6 +251,7 @@ def download_file(url, out_path):
 
 
 def verify_checksum(file_path, expected_checksum):
+    """Verify a file's SHA-256 checksum against an expected hex digest."""
     sha256 = hashlib.sha256()
     with open(file_path, "rb") as handle:
         while True:
@@ -231,6 +263,7 @@ def verify_checksum(file_path, expected_checksum):
 
 
 def download_binary(version="latest", out_dir=None):
+    """Download a Claude Code native binary for the current platform."""
     use_workspace = out_dir is None
     if version == "latest":
         version = fetch_latest_binary_version()
@@ -311,6 +344,7 @@ def download_binary(version="latest", out_dir=None):
 
 
 def download_npm(version="latest", out_dir=None):
+    """Download a Claude Code NPM tarball via npm pack."""
     use_workspace = out_dir is None
     if version == "latest":
         version = fetch_latest_npm_version()

@@ -1,3 +1,5 @@
+"""Cached version index for available Claude Code downloads."""
+
 from pathlib import Path
 from typing import Dict, List, Optional
 

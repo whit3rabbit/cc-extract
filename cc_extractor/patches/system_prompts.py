@@ -1,5 +1,5 @@
 import re
-from typing import List, Dict, Any, Optional, Tuple, Callable
+from typing import List, Dict, Any, Optional, Tuple
 from . import PatchResult, build_regex_from_pieces
 
 def detect_unicode_escaping(content: str) -> bool:
@@ -32,7 +32,7 @@ def apply_system_prompts(
     prompts_data: List[Dict[str, Any]],
     patch_filter: Optional[List[str]] = None
 ) -> Tuple[str, List[PatchResult]]:
-    should_escape_non_ascii = detect_unicode_escaping(content)
+    detect_unicode_escaping(content)
     build_time = extract_build_time(content)
 
     results = []
@@ -85,7 +85,7 @@ def apply_system_prompts(
 
             # Interpolate variables from match
             # match.groups() contains what was between the pieces
-            groups = match.groups()
+            # TODO: Implement proper interpolation if needed
             
             # Tweakcc has getInterpolatedContent which puts these back into the custom content
             # We'll need a way to represent placeholders in custom_content, e.g. ${VAR}

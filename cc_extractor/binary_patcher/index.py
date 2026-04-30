@@ -1,3 +1,5 @@
+"""Structured apply_patches API for native binaries."""
+
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +40,7 @@ class PatchFailure:
 
 
 def apply_patches(inputs):
+    """Apply theme and prompt patches to a native binary."""
     if isinstance(inputs, dict):
         inputs = PatchInputs(**inputs)
 

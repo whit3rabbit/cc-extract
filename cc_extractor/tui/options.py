@@ -5,7 +5,6 @@ MenuOption, label strings, lookup helpers). They do not mutate state and do not
 call any externally-monkey-patched function.
 """
 
-from ..providers import provider_default_variant_name
 from ..variant_tweaks import CURATED_TWEAK_IDS
 from ..workspace import short_sha
 from ._const import (

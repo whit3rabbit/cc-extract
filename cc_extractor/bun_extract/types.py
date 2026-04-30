@@ -1,3 +1,5 @@
+"""Data types for Bun binary parsing results."""
+
 from dataclasses import dataclass
 from typing import List, Literal, Optional, Union
 

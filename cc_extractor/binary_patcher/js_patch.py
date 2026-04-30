@@ -1,3 +1,5 @@
+"""Patch extracted entry JS with theme and prompt replacements."""
+
 import json
 from dataclasses import dataclass
 from pathlib import Path

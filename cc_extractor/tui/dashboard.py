@@ -20,7 +20,6 @@ from ._const import DASHBOARD_STEPS, SOURCE_ARTIFACT, SOURCE_LATEST, SOURCE_VERS
 from ._runtime import run_quiet
 from .options import (
     dashboard_source_artifact,
-    loaded_profile,
     profile_by_id,
     profile_missing_refs,
     profile_refs_by_key,

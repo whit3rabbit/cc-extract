@@ -10,7 +10,7 @@ have those patches apply to the dispatch site.
 
 import sys
 
-from .cli import build_parser, inspect_binary
+from .cli import build_parser, inspect_binary  # noqa: F401 — re-exported for test imports
 from .cli import handlers as _handlers
 from .cli.payloads import (
     model_overrides_from_args,

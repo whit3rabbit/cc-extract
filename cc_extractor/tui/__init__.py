@@ -10,6 +10,47 @@ Pure helpers live in submodules (``state``, ``themes``, ``options``,
 re-exported below to keep the existing ``tui._foo`` test API stable.
 """
 
+__all__ = [
+    "TUI_THEMES", "TuiTheme",
+    "apply_patch_packages_to_native", "create_variant", "doctor_variant",
+    "download_binary", "download_versions", "extract_all",
+    "load_download_index", "list_variant_providers", "parse_bun_binary",
+    "provider_default_variant_name", "refresh_download_index", "scan_variants",
+    "CURATED_TWEAK_IDS", "DEFAULT_TWEAK_IDS",
+    "NativeArtifact", "PatchPackage", "PatchProfile",
+    "delete_patch_profile", "extraction_paths", "load_patch_profile",
+    "load_tui_settings", "native_artifact_from_path", "rename_patch_profile",
+    "save_patch_profile", "save_tui_settings", "scan_extractions",
+    "scan_native_downloads", "scan_npm_downloads", "scan_patch_packages",
+    "scan_patch_profiles", "short_sha", "workspace_root",
+    "DASHBOARD_STEPS", "DEFAULT_THEME_ID", "MenuOption", "SOURCE_ARTIFACT",
+    "SOURCE_LATEST", "SOURCE_VERSION", "TABS", "TAB_MODES", "THEME_ORDER",
+    "VARIANT_MODEL_FIELDS", "VARIANT_STEPS",
+    "_active_tab", "_body_text", "_footer_lines", "_footer_text", "_gauge_widget",
+    "_list_widget", "_tabs_widget", "_normalize_theme_id", "_theme_name",
+    "_dashboard_options", "_dashboard_source_artifact", "_loaded_profile",
+    "_profile_by_id", "_profile_refs_by_key", "_selected_patch_refs",
+    "_variant_model_display_value", "_variant_options",
+    "_selected_artifact",
+    "_run_quiet",
+    "_advance_dashboard", "_create_dashboard_profile", "_dashboard_artifact_for_run",
+    "_delete_dashboard_profile", "_load_dashboard_profile", "_overwrite_dashboard_profile",
+    "_refresh_dashboard_index", "_rename_dashboard_profile", "_require_dashboard_patches",
+    "_reset_dashboard", "_toggle_dashboard_patch",
+    "_dashboard_accepts_profile_text", "_dashboard_backspace",
+    "_variant_accepts_text", "_variant_append_text", "_variant_backspace",
+    "_activate_extract", "_activate_inspect", "_activate_patch_source",
+    "_go_back", "_move_tab", "_set_mode", "_source_artifact", "_toggle_patch",
+    "_selected_dashboard_option", "_selected_dashboard_packages",
+    "_selected_variant_option", "_selected_variant_provider",
+    "_active_theme", "_cycle_theme", "_load_saved_theme_id",
+    "_advance_variant", "_require_variant_model_mapping", "_reset_variant",
+    "_set_variant_provider_defaults", "_toggle_variant_tweak",
+    "_variant_credential_env_for_create", "_variant_model_overrides_for_create",
+    "_screen_text", "_style", "_render_frame",
+    "run_tui",
+]
+
 # Externally-supplied helpers that tests monkey-patch through ``tui.<name>``.
 # Imports must stay in this module so internal callers resolve through the
 # package globals that ``monkeypatch.setattr`` updates.

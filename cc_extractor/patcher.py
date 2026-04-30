@@ -1,3 +1,5 @@
+"""Legacy text-patch manifest system for extracted Bun bundles."""
+
 import json
 from pathlib import Path
 

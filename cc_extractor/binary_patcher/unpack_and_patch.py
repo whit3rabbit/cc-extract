@@ -1,3 +1,5 @@
+"""Unpacked Node.js fallback: extract, patch, and npm install."""
+
 import json
 import shutil
 import subprocess

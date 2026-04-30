@@ -1,3 +1,5 @@
+"""Interactive version picker with TUI and text fallback."""
+
 import sys
 from dataclasses import dataclass, field
 from typing import List, Optional

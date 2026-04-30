@@ -1,3 +1,5 @@
+"""Compatibility wrapper extracting Bun modules via bun_extract."""
+
 import struct
 from pathlib import Path
 

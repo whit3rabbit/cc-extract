@@ -1,3 +1,5 @@
+"""Same-size in-place module content replacement."""
+
 from dataclasses import dataclass
 
 from .constants import BUNFS_PATH_PREFIXES

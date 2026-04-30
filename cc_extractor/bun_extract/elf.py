@@ -1,3 +1,5 @@
+"""ELF magic detection and data-start computation."""
+
 from .constants import ELF_MAGIC_BYTES, OFFSETS_SIZE
 
 

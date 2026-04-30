@@ -1,3 +1,5 @@
+"""Soft-failing macOS ad-hoc code signing."""
+
 import platform
 import subprocess
 from dataclasses import dataclass

@@ -19,6 +19,7 @@ from .types import BunBinaryInfo, BunFormatError, BunModule
 
 
 def parse_bun_binary(data):
+    """Parse a Bun standalone binary and return structured metadata."""
     trailer_offset = _find_trailer(data)
     if trailer_offset < 0:
         raise BunFormatError(

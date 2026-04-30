@@ -47,6 +47,7 @@ def inspect_binary(binary_path, as_json=False):
 # -- top-level subcommands ----------------------------------------------------
 
 def cmd_download(args):
+    """Handle the download subcommand."""
     version = resolve_requested_version(args.version, latest=args.latest, npm=args.npm)
     if args.npm:
         download_npm(version, args.outdir)
@@ -55,6 +56,7 @@ def cmd_download(args):
 
 
 def cmd_extract(args):
+    """Handle the extract subcommand."""
     extract_all(
         args.binary,
         args.outdir,
@@ -65,6 +67,7 @@ def cmd_extract(args):
 
 
 def cmd_unpack(args):
+    """Handle the unpack subcommand."""
     extract_all(
         args.binary,
         args.out,
@@ -75,16 +78,30 @@ def cmd_unpack(args):
 
 
 def cmd_inspect(args):
+    """Handle the inspect subcommand."""
     inspect_binary(args.binary, as_json=args.json)
 
 
 def cmd_replace_entry(args):
-    data = Path(args.binary).read_bytes()
+    """Handle the replace-entry subcommand."""
+    try:
+        data = Path(args.binary).read_bytes()
+    except OSError as exc:
+        print(f"Error reading binary: {exc}", file=sys.stderr)
+        sys.exit(1)
     info = parse_bun_binary(data)
-    new_content = Path(args.entry_js).read_bytes()
+    try:
+        new_content = Path(args.entry_js).read_bytes()
+    except OSError as exc:
+        print(f"Error reading entry JS: {exc}", file=sys.stderr)
+        sys.exit(1)
     result = replace_entry_js(data, info, new_content)
     out_path = Path(args.out)
-    out_path.write_bytes(result.buf)
+    try:
+        out_path.write_bytes(result.buf)
+    except OSError as exc:
+        print(f"Error writing output: {exc}", file=sys.stderr)
+        sys.exit(1)
     print(json.dumps(
         {
             "ok": True,
@@ -98,10 +115,25 @@ def cmd_replace_entry(args):
 
 
 def cmd_apply_binary(args):
-    config = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    """Handle the apply-binary subcommand."""
+    try:
+        config = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    except OSError as exc:
+        print(f"Error reading config: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError as exc:
+        print(f"Malformed JSON in {args.config}: {exc}", file=sys.stderr)
+        sys.exit(1)
     overlays = None
     if args.overlays:
-        overlays = json.loads(Path(args.overlays).read_text(encoding="utf-8"))
+        try:
+            overlays = json.loads(Path(args.overlays).read_text(encoding="utf-8"))
+        except OSError as exc:
+            print(f"Error reading overlays: {exc}", file=sys.stderr)
+            sys.exit(1)
+        except json.JSONDecodeError as exc:
+            print(f"Malformed JSON in {args.overlays}: {exc}", file=sys.stderr)
+            sys.exit(1)
     result = apply_patches(PatchInputs(binary_path=args.binary, config=config, overlays=overlays))
     print(json.dumps(to_jsonable(result), indent=2))
     if not result.ok:
@@ -109,10 +141,12 @@ def cmd_apply_binary(args):
 
 
 def cmd_pack(args):
+    """Handle the pack subcommand."""
     pack_bundle(args.indir, args.out_binary, args.base_binary)
 
 
 def cmd_patch(args, patch_parser):
+    """Handle the patch init/apply subcommands."""
     if args.patch_command == "init":
         init_patch(args.patch_dir)
     elif args.patch_command == "apply":

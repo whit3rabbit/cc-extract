@@ -291,7 +291,10 @@ def run_variant(name: str, args: Optional[List[str]] = None, root=None) -> int:
     wrapper = Path(variant.manifest.get("paths", {}).get("wrapper", ""))
     if not wrapper.exists():
         raise ValueError(f"Variant wrapper is missing: {wrapper}")
-    result = subprocess.run([str(wrapper), *(args or [])], check=False)
+    try:
+        result = subprocess.run([str(wrapper), *(args or [])], check=False, timeout=300)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"Variant '{name}' timed out after 300s") from exc
     return result.returncode
 
 

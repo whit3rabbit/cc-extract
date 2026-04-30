@@ -1,3 +1,5 @@
+"""PE binary resize logic for the .bun section."""
+
 import struct
 
 from cc_extractor.bun_extract.constants import OFFSETS_SIZE, PE_DOS_MAGIC, PE_NT_SIGNATURE, TRAILER

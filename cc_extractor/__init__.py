@@ -1,3 +1,5 @@
+"""Standalone toolkit for extracting, patching, and repacking Claude Code binaries."""
+
 from importlib import import_module
 
 __all__ = [

@@ -1,3 +1,5 @@
+"""Platform dispatcher that delegates to ELF, Mach-O, or PE repack."""
+
 from dataclasses import dataclass
 
 from .elf_resize import repack_elf
@@ -16,6 +18,7 @@ class RepackResult:
 
 
 def repack_binary(data, info, new_raw_bytes, new_offsets_struct):
+    """Dispatch binary repack to the correct platform handler."""
     if info.platform == "elf":
         return RepackResult(
             buf=repack_elf(data, info, new_raw_bytes, new_offsets_struct),

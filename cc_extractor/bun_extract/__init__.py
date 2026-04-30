@@ -1,3 +1,5 @@
+"""Bun standalone binary parsing, extraction, and replacement."""
+
 from .extract import ExtractAllResult, extract_all
 from .parser import parse_bun_binary
 from .replace import ReplaceResult, replace_module

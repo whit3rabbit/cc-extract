@@ -1,3 +1,5 @@
+"""Prompt overlay injection via tail-anchor replacement."""
+
 # Prompt tail anchors are adapted from tweakcc prompt catalogs. See THIRD_PARTY_NOTICES.md.
 from dataclasses import dataclass
 

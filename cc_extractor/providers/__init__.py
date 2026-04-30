@@ -1,3 +1,5 @@
+"""Provider templates and env builders for alternate Claude Code backends."""
+
 from .config import PLACEHOLDER_CREDENTIAL, ProviderConfigResult, apply_provider_claude_config
 from .loader import (
     build_provider_env,

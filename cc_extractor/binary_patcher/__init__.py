@@ -1,3 +1,5 @@
+"""Binary patching: theme, prompt, entry JS, and repack."""
+
 from .codesign import AdhocSignResult, try_adhoc_sign
 from .index import PatchFailure, PatchInputs, PatchSuccess, apply_patches
 from .prompts import OVERLAY_MARKERS, PromptResult, apply_prompts

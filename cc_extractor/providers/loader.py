@@ -1,3 +1,5 @@
+"""Provider registry loading and env builder."""
+
 import copy
 import json
 from pathlib import Path

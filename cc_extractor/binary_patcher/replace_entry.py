@@ -1,3 +1,5 @@
+"""Same-size or grow entry JS replacement with pointer relocation."""
+
 import struct
 from dataclasses import dataclass
 
@@ -20,6 +22,7 @@ class ReplaceEntryResult:
 
 
 def replace_entry_js(data, info, new_content):
+    """Replace entry JS with pointer relocation and platform-specific repack."""
     if info.entry_point_id < 0 or info.entry_point_id >= len(info.modules):
         raise BunFormatError(
             f"Entry module id {info.entry_point_id} out of range (have {len(info.modules)} modules)"

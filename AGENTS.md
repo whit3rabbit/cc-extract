@@ -26,6 +26,10 @@ A standalone Python toolkit for extracting, patching, and repacking Bun standalo
 .venv/bin/python -m cc_extractor  # opens the TUI when attached to a TTY
 .venv/bin/python -m pytest -q
 
+# Lint
+ruff check cc_extractor/ tools/ main.py
+ruff check --fix cc_extractor/ tools/ main.py  # autofix
+
 # Variants (isolated, named patched Claude Code installs)
 .venv/bin/python main.py variant providers
 .venv/bin/python main.py variant create <name> [--provider <key>] [--tweak <id> ...] [--claude-version <v>]
@@ -114,6 +118,7 @@ prompts/*.json               -> Generated prompt catalogs keyed by Claude Code v
 ## Development Notes
 
 - Use `.venv/bin/python` for Python commands from the repository root.
+- Linter: `ruff` (installed via Homebrew, not in venv). No `ruff.toml` config; defaults only. `tui/__init__.py` uses `__all__` for re-export suppression.
 - Tests use `pytest`.
 - Prompt extractor tests live under `tests/`.
 - Prompt extraction dev dependencies include `tree-sitter` and `tree-sitter-javascript`.
