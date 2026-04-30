@@ -3,9 +3,20 @@ import json
 import os
 import platform
 import subprocess
+import tempfile
 from importlib import import_module
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+from .workspace import (
+    ensure_workspace,
+    file_sha256,
+    native_download_path,
+    npm_download_path,
+    store_native_download,
+    store_npm_download,
+    workspace_root,
+)
 
 GCS_BUCKET_NAME = "claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819"
 GCS_RELEASE_PREFIX = "claude-code-releases"
@@ -230,7 +241,8 @@ def verify_checksum(file_path, expected_checksum):
     return sha256.hexdigest() == expected_checksum
 
 
-def download_binary(version="latest", out_dir="downloads"):
+def download_binary(version="latest", out_dir=None):
+    use_workspace = out_dir is None
     if version == "latest":
         version = fetch_latest_binary_version()
 
@@ -246,28 +258,79 @@ def download_binary(version="latest", out_dir="downloads"):
     binary_name = "claude.exe" if platform.system() == "Windows" else "claude"
     binary_url = f"{GCS_BUCKET}/{version}/{platform_key}/{binary_name}"
 
-    out_path = os.path.join(out_dir, version, binary_name)
+    if use_workspace:
+        ensure_workspace()
+        out_path = native_download_path(version, platform_key, checksum, filename=binary_name)
+    else:
+        out_path = os.path.join(out_dir, version, binary_name)
+
     if os.path.exists(out_path):
         if verify_checksum(out_path, checksum):
+            if use_workspace:
+                store_native_download(
+                    out_path,
+                    version,
+                    platform_key,
+                    checksum,
+                    source_url=binary_url,
+                    filename=binary_name,
+                )
             print(f"[*] Already have valid binary at {out_path}")
-            return out_path
+            return str(out_path)
 
     print(f"[*] Downloading {binary_url}...")
-    download_file(binary_url, out_path)
+    if use_workspace:
+        tmp_dir = workspace_root() / "tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        handle, staged_path = tempfile.mkstemp(
+            prefix=f"claude-{version}-{platform_key}-",
+            suffix=".download",
+            dir=str(tmp_dir),
+        )
+        os.close(handle)
+        try:
+            download_file(binary_url, staged_path)
+            if not verify_checksum(staged_path, checksum):
+                os.remove(staged_path)
+                raise ValueError("Checksum verification failed")
+            if platform.system() != "Windows":
+                os.chmod(staged_path, 0o755)
+            out_path = store_native_download(
+                staged_path,
+                version,
+                platform_key,
+                checksum,
+                source_url=binary_url,
+                filename=binary_name,
+            )
+        except Exception:
+            if os.path.exists(staged_path):
+                os.remove(staged_path)
+            raise
+    else:
+        download_file(binary_url, out_path)
 
-    if not verify_checksum(out_path, checksum):
-        os.remove(out_path)
-        raise ValueError("Checksum verification failed")
+        if not verify_checksum(out_path, checksum):
+            os.remove(out_path)
+            raise ValueError("Checksum verification failed")
 
-    if platform.system() != "Windows":
-        os.chmod(out_path, 0o755)
+        if platform.system() != "Windows":
+            os.chmod(out_path, 0o755)
 
     print(f"[+] Downloaded to {out_path}")
-    return out_path
+    return str(out_path)
 
 
-def download_npm(version="latest", out_dir="downloads"):
+def download_npm(version="latest", out_dir=None):
+    use_workspace = out_dir is None
+    if version == "latest":
+        version = fetch_latest_npm_version()
+
+    if use_workspace:
+        ensure_workspace()
+        out_dir = str(workspace_root() / "tmp")
     os.makedirs(out_dir, exist_ok=True)
+
     target = f"{PACKAGE_NAME}@{version}"
     cmd = ["npm", "pack", target]
     print(f"[*] Running {' '.join(cmd)}...")
@@ -283,6 +346,14 @@ def download_npm(version="latest", out_dir="downloads"):
     if not tarball:
         raise RuntimeError("npm pack did not report an output tarball")
     tar_path = os.path.join(out_dir, tarball)
+    if use_workspace:
+        sha256 = file_sha256(tar_path)
+        existing_path = npm_download_path(version, sha256, tarball)
+        if existing_path.exists():
+            os.remove(tar_path)
+            tar_path = str(existing_path)
+        else:
+            tar_path = str(store_npm_download(tar_path, version, sha256))
     print(f"[+] Downloaded NPM tarball to {tar_path}")
     return tar_path
 

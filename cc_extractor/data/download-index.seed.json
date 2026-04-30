@@ -1,0 +1,90 @@
+{
+  "binary": {
+    "latest": "2.1.122",
+    "versions": [
+      {
+        "downloadPrefix": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.122",
+        "manifestUrl": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.122/manifest.json",
+        "version": "2.1.122"
+      },
+      {
+        "downloadPrefix": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.121",
+        "manifestUrl": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.121/manifest.json",
+        "version": "2.1.121"
+      },
+      {
+        "downloadPrefix": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.120",
+        "manifestUrl": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.120/manifest.json",
+        "version": "2.1.120"
+      },
+      {
+        "downloadPrefix": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.119",
+        "manifestUrl": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.119/manifest.json",
+        "version": "2.1.119"
+      },
+      {
+        "downloadPrefix": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.118",
+        "manifestUrl": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.118/manifest.json",
+        "version": "2.1.118"
+      },
+      {
+        "downloadPrefix": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.117",
+        "manifestUrl": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.117/manifest.json",
+        "version": "2.1.117"
+      },
+      {
+        "downloadPrefix": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.116",
+        "manifestUrl": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.116/manifest.json",
+        "version": "2.1.116"
+      },
+      {
+        "downloadPrefix": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.114",
+        "manifestUrl": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.114/manifest.json",
+        "version": "2.1.114"
+      },
+      {
+        "downloadPrefix": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.113",
+        "manifestUrl": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.113/manifest.json",
+        "version": "2.1.113"
+      },
+      {
+        "downloadPrefix": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.112",
+        "manifestUrl": "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/2.1.112/manifest.json",
+        "version": "2.1.112"
+      }
+    ]
+  },
+  "npm": {
+    "latest": "2.1.122",
+    "versions": [
+      {
+        "packageSpec": "@anthropic-ai/claude-code@2.1.122",
+        "registryUrl": "https://registry.npmjs.org/@anthropic-ai/claude-code",
+        "version": "2.1.122"
+      },
+      {
+        "packageSpec": "@anthropic-ai/claude-code@2.1.121",
+        "registryUrl": "https://registry.npmjs.org/@anthropic-ai/claude-code",
+        "version": "2.1.121"
+      },
+      {
+        "packageSpec": "@anthropic-ai/claude-code@2.1.120",
+        "registryUrl": "https://registry.npmjs.org/@anthropic-ai/claude-code",
+        "version": "2.1.120"
+      },
+      {
+        "packageSpec": "@anthropic-ai/claude-code@2.1.119",
+        "registryUrl": "https://registry.npmjs.org/@anthropic-ai/claude-code",
+        "version": "2.1.119"
+      },
+      {
+        "packageSpec": "@anthropic-ai/claude-code@2.1.118",
+        "registryUrl": "https://registry.npmjs.org/@anthropic-ai/claude-code",
+        "version": "2.1.118"
+      }
+    ]
+  },
+  "platform": null,
+  "schemaVersion": 1,
+  "source": "seed"
+}

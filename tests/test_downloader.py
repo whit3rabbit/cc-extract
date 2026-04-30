@@ -1,10 +1,12 @@
 import hashlib
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from cc_extractor.downloader import (
     download_file,
+    download_binary,
     download_npm,
     fetch_text,
     get_platform_key,
@@ -144,6 +146,67 @@ class TestDownloadFile:
         assert progress_bar.updates == [5]
 
 
+class TestDownloadBinary:
+    def test_download_binary_default_uses_central_workspace(self, tmp_path, monkeypatch):
+        payload = b"native-binary"
+        checksum = hashlib.sha256(payload).hexdigest()
+        manifest = {
+            "platforms": {
+                "darwin-arm64": {
+                    "checksum": checksum,
+                }
+            }
+        }
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("cc_extractor.downloader.fetch_latest_binary_version", lambda: "1.2.3")
+        monkeypatch.setattr("cc_extractor.downloader.fetch_json", lambda url: manifest)
+        monkeypatch.setattr("cc_extractor.downloader.get_platform_key", lambda: "darwin-arm64")
+        monkeypatch.setattr("cc_extractor.downloader.platform.system", lambda: "Darwin")
+
+        def fake_download_file(url, out_path):
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            with open(out_path, "wb") as handle:
+                handle.write(payload)
+
+        monkeypatch.setattr("cc_extractor.downloader.download_file", fake_download_file)
+
+        result = download_binary("latest")
+
+        expected = tmp_path / ".cc-extractor" / "downloads" / "native" / "1.2.3" / "darwin-arm64" / checksum / "claude"
+        assert result == str(expected)
+        assert expected.read_bytes() == payload
+        assert os.access(expected, os.X_OK)
+
+    def test_download_binary_explicit_outdir_keeps_legacy_layout(self, tmp_path, monkeypatch):
+        payload = b"native-binary"
+        checksum = hashlib.sha256(payload).hexdigest()
+        manifest = {
+            "platforms": {
+                "darwin-arm64": {
+                    "checksum": checksum,
+                }
+            }
+        }
+
+        monkeypatch.setattr("cc_extractor.downloader.fetch_json", lambda url: manifest)
+        monkeypatch.setattr("cc_extractor.downloader.get_platform_key", lambda: "darwin-arm64")
+        monkeypatch.setattr("cc_extractor.downloader.platform.system", lambda: "Darwin")
+
+        def fake_download_file(url, out_path):
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            with open(out_path, "wb") as handle:
+                handle.write(payload)
+
+        monkeypatch.setattr("cc_extractor.downloader.download_file", fake_download_file)
+
+        result = download_binary("1.2.3", out_dir=str(tmp_path / "downloads"))
+
+        expected = tmp_path / "downloads" / "1.2.3" / "claude"
+        assert result == str(expected)
+        assert expected.read_bytes() == payload
+
+
 class TestListAvailableBinaryVersions:
     def test_list_available_binary_versions_paginates_and_sorts(self):
         pages = [
@@ -218,6 +281,25 @@ class TestResolveRequestedVersion:
 
 
 class TestDownloadNpm:
+    @patch("cc_extractor.downloader.subprocess.run")
+    def test_download_npm_default_uses_central_workspace(self, mock_run, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("cc_extractor.downloader.fetch_latest_npm_version", lambda: "1.2.3")
+
+        def run(cmd, cwd, capture_output, text, check):
+            tarball = "@anthropic-ai-claude-code-1.2.3.tgz"
+            (tmp_path / ".cc-extractor" / "tmp" / tarball).write_bytes(b"npm-tarball")
+            return MagicMock(returncode=0, stdout=f"\n{tarball}")
+
+        mock_run.side_effect = run
+
+        result = download_npm("latest")
+        checksum = hashlib.sha256(b"npm-tarball").hexdigest()
+        expected = tmp_path / ".cc-extractor" / "downloads" / "npm" / "1.2.3" / checksum / "@anthropic-ai-claude-code-1.2.3.tgz"
+
+        assert result == str(expected)
+        assert expected.read_bytes() == b"npm-tarball"
+
     @patch("cc_extractor.downloader.subprocess.run")
     @patch("cc_extractor.downloader.os.makedirs")
     def test_download_npm_success(self, mock_makedirs, mock_run):

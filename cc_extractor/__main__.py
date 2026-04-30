@@ -57,12 +57,12 @@ def main():
     dl_parser.add_argument("version", nargs="?", help="Version to download")
     dl_parser.add_argument("--latest", action="store_true", help="Download the latest version without prompting")
     dl_parser.add_argument("--npm", action="store_true", help="Download NPM bundle instead of binary")
-    dl_parser.add_argument("--outdir", default="downloads", help="Output directory")
+    dl_parser.add_argument("--outdir", help="Output directory")
 
     # Extract
     ex_parser = subparsers.add_parser("extract", help="Extract Bun bundle from binary")
     ex_parser.add_argument("binary", help="Path to Bun standalone binary")
-    ex_parser.add_argument("outdir", help="Output directory")
+    ex_parser.add_argument("outdir", nargs="?", help="Output directory")
     ex_parser.add_argument("--source-version", help="Source Claude Code version for patch targeting")
     ex_parser.add_argument("--include-sourcemaps", action="store_true", help="Write sourcemap files")
     ex_parser.add_argument("--no-manifest", dest="manifest", action="store_false", help="Skip bundle manifest output")
@@ -113,6 +113,19 @@ def main():
     patch_apply_parser.add_argument("--check", action="store_true", help="Validate the patch without writing files")
     patch_apply_parser.add_argument("--binary", help="Path to source binary to derive checksum override")
     patch_apply_parser.add_argument("--source-version", help="Source version override for target validation")
+
+    if len(sys.argv) == 1:
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            from .tui import run_tui
+
+            try:
+                run_tui()
+            except Exception as e:
+                print(f"[!] Error: {e}")
+                sys.exit(1)
+            return
+        parser.print_help()
+        return
 
     args = parser.parse_args()
 

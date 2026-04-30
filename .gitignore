@@ -37,6 +37,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+.cc-extractor/
 downloads/
 eggs/
 .eggs/
@@ -182,6 +183,11 @@ cython_debug/
 
 # Extracted files
 extracted_files/
+
+# Prompt extractor scratch outputs
+/prompts.json
+/test_prompts*.json
+/*_prompts.txt
 
 # Syn
 .syntext/

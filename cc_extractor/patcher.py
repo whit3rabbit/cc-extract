@@ -2,6 +2,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from .workspace import validate_patch_package_manifest
+
 PATCH_MANIFEST = "patch.json"
 SOURCE_METADATA = ".bundle_source.json"
 
@@ -56,6 +58,10 @@ def load_patch_manifest(patch_dir):
         raise ValueError(f"No {PATCH_MANIFEST} found in {patch_dir}")
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schemaVersion") == 1:
+        validate_patch_package_manifest(manifest)
+        manifest = normalize_patch_package_manifest(manifest)
+
     for field in ("id", "description", "targets", "operations"):
         if field not in manifest:
             raise ValueError(f"{PATCH_MANIFEST} is missing required field {field!r}")
@@ -66,6 +72,23 @@ def load_patch_manifest(patch_dir):
         raise ValueError("patch operations must be a list")
 
     return manifest
+
+
+def normalize_patch_package_manifest(manifest):
+    targets = manifest.get("targets", {})
+    return {
+        "schemaVersion": manifest["schemaVersion"],
+        "id": manifest["id"],
+        "version": manifest["version"],
+        "name": manifest["name"],
+        "description": manifest.get("description") or manifest["name"],
+        "targets": {
+            "versions": targets.get("claudeVersions", []),
+            "binary_sha256": targets.get("sourceSha256", []),
+            "platforms": targets.get("platforms", []),
+        },
+        "operations": manifest.get("operations", []),
+    }
 
 
 def init_patch(patch_dir):
@@ -129,7 +152,14 @@ def init_patch(patch_dir):
     return patch_manifest_path
 
 
-def apply_patch(patch_dir, extract_dir, check=False, binary_path=None, source_version=None):
+def apply_patch(
+    patch_dir,
+    extract_dir,
+    check=False,
+    binary_path=None,
+    source_version=None,
+    source_platform=None,
+):
     patch_root = Path(patch_dir)
     extract_root = Path(extract_dir)
     manifest = load_patch_manifest(patch_root)
@@ -146,6 +176,7 @@ def apply_patch(patch_dir, extract_dir, check=False, binary_path=None, source_ve
         manifest["targets"],
         effective_version=effective_version,
         effective_checksum=effective_checksum,
+        effective_platform=source_platform,
     )
 
     pending_changes = {}
@@ -179,14 +210,22 @@ def apply_patch(patch_dir, extract_dir, check=False, binary_path=None, source_ve
     return applied_operations
 
 
-def validate_patch_targets(targets, effective_version=None, effective_checksum=None):
+def validate_patch_targets(
+    targets,
+    effective_version=None,
+    effective_checksum=None,
+    effective_platform=None,
+):
     versions = targets.get("versions", [])
     checksums = targets.get("binary_sha256", [])
+    platforms = targets.get("platforms", [])
 
     if not isinstance(versions, list) or any(not isinstance(item, str) or not item for item in versions):
         raise ValueError("patch targets.versions must be a list of non-empty strings")
     if not isinstance(checksums, list) or any(not isinstance(item, str) or not item for item in checksums):
         raise ValueError("patch targets.binary_sha256 must be a list of non-empty strings")
+    if not isinstance(platforms, list) or any(not isinstance(item, str) or not item for item in platforms):
+        raise ValueError("patch targets.platforms must be a list of non-empty strings")
 
     if versions:
         if not effective_version:
@@ -205,6 +244,14 @@ def validate_patch_targets(targets, effective_version=None, effective_checksum=N
             )
         if effective_checksum not in checksums:
             raise ValueError("Patch does not target the provided binary checksum.")
+
+    if platforms:
+        if not effective_platform:
+            raise ValueError("Patch requires source platform metadata.")
+        if effective_platform not in platforms:
+            raise ValueError(
+                f"Patch targets platforms {platforms}, but source platform is {effective_platform!r}."
+            )
 
 
 def apply_patch_operation(patch_root, extract_root, operation, pending_changes, index):
