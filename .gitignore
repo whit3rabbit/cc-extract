@@ -193,3 +193,6 @@ artifacts/
 # Syn
 .syntext/
 .synrepo/
+
+# Worktrees
+.worktrees/
