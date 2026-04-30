@@ -1,7 +1,14 @@
 from pathlib import Path
 
 from cc_extractor import tui
-from cc_extractor.workspace import NativeArtifact, PatchPackage, PatchProfile, load_patch_profile
+from cc_extractor.workspace import (
+    NativeArtifact,
+    PatchPackage,
+    PatchProfile,
+    load_patch_profile,
+    load_tui_settings,
+    save_tui_settings,
+)
 
 
 def _package(patch_id="replace-before", version="0.1.0", name="Replace Before"):
@@ -51,6 +58,74 @@ def test_screen_text_contains_dashboard_first_tab():
     assert "Inspect" in screen
     assert "Extract" in screen
     assert "Patch" in screen
+
+
+def test_default_theme_is_hacker_bbs():
+    state = tui.TuiState()
+
+    assert state.theme_id == "hacker-bbs"
+    assert tui._theme_name(state.theme_id) == "Hacker BBS"
+    assert tui._active_theme(state).theme_id == "hacker-bbs"
+
+
+def test_cycle_theme_saves_workspace_setting(tmp_path, monkeypatch):
+    root = tmp_path / ".cc-extractor"
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    state = tui.TuiState()
+
+    seen = []
+    for _ in range(4):
+        tui._cycle_theme(state)
+        seen.append(state.theme_id)
+
+    assert seen == ["unicorn", "dark", "light", "hacker-bbs"]
+    assert load_tui_settings(root)["themeId"] == "hacker-bbs"
+    assert state.message == "Theme saved: Hacker BBS"
+
+
+def test_load_saved_theme_id_uses_workspace_setting(tmp_path, monkeypatch):
+    root = tmp_path / ".cc-extractor"
+    save_tui_settings({"themeId": "dark"}, root=root)
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+
+    assert tui._load_saved_theme_id() == "dark"
+
+
+def test_load_saved_theme_id_falls_back_for_unknown_theme(tmp_path, monkeypatch):
+    root = tmp_path / ".cc-extractor"
+    save_tui_settings({"themeId": "unknown-theme"}, root=root)
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+
+    assert tui._load_saved_theme_id() == "hacker-bbs"
+
+
+def test_screen_text_includes_theme_and_progress():
+    state = tui.TuiState(
+        counts="Native: 0  NPM: 0  Extractions: 0  Patch packages: 2  Profiles: 0",
+        dashboard_step=1,
+        patch_packages=[_package(), _package("second-patch", "0.2.0", "Second Patch")],
+        selected_patch_indexes=[0],
+    )
+
+    screen = tui._screen_text(state)
+
+    assert "Theme: Hacker BBS" in screen
+    assert "Wizard: [" in screen
+    assert "2/4 Patches" in screen
+    assert "Patches: [" in screen
+    assert "1/2 selected" in screen
+    assert "T theme" in screen
+
+
+def test_gauge_widget_renders_with_headless_ratatui():
+    from ratatui_py import Color, DrawCmd, Gauge, Style, headless_render_frame
+
+    theme = tui._active_theme(tui.TuiState(theme_id="unicorn"))
+    gauge = tui._gauge_widget("Wizard", 0.5, "2/4 Patches", Gauge, Style, Color, theme)
+    screen = headless_render_frame(40, 3, [DrawCmd.gauge(gauge, (0, 0, 40, 3))])
+
+    assert "Wizard" in screen
+    assert "2/4 Patches" in screen
 
 
 def test_dashboard_selects_specific_version_without_downloading():

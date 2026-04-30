@@ -13,6 +13,7 @@ WORKSPACE_DIR_NAME = ".cc-extractor"
 ARTIFACT_METADATA = "artifact.json"
 EXTRACTION_METADATA = "extraction.json"
 PATCHED_METADATA = "patched.json"
+TUI_SETTINGS = "tui-settings.json"
 
 PATCH_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
@@ -122,6 +123,32 @@ def write_json(path: os.PathLike, payload: Dict) -> None:
 
 def read_json(path: os.PathLike) -> Dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def tui_settings_path(root: Optional[os.PathLike] = None) -> Path:
+    return workspace_root(root) / TUI_SETTINGS
+
+
+def load_tui_settings(root: Optional[os.PathLike] = None) -> Dict:
+    settings = _safe_read_json(tui_settings_path(root))
+    if settings.get("schemaVersion") != 1:
+        return {}
+    theme_id = settings.get("themeId")
+    if theme_id is not None and not isinstance(theme_id, str):
+        return {}
+    return settings
+
+
+def save_tui_settings(settings: Dict, root: Optional[os.PathLike] = None) -> Dict:
+    payload = {"schemaVersion": 1}
+    theme_id = settings.get("themeId")
+    if theme_id is not None:
+        if not isinstance(theme_id, str) or not theme_id:
+            raise ValueError("TUI settings themeId must be a non-empty string")
+        payload["themeId"] = theme_id
+    ensure_workspace(root)
+    write_json(tui_settings_path(root), payload)
+    return payload
 
 
 def native_binary_filename(platform_key: str) -> str:

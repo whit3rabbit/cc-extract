@@ -8,7 +8,9 @@ from cc_extractor.patch_workflow import apply_patch_packages_to_native
 from cc_extractor.workspace import (
     ARTIFACT_METADATA,
     EXTRACTION_METADATA,
+    TUI_SETTINGS,
     delete_patch_profile,
+    load_tui_settings,
     load_patch_package,
     load_patch_profile,
     rename_patch_profile,
@@ -16,6 +18,7 @@ from cc_extractor.workspace import (
     scan_npm_downloads,
     scan_patch_profiles,
     save_patch_profile,
+    save_tui_settings,
     store_native_download,
     store_npm_download,
     validate_patch_profile_manifest,
@@ -54,6 +57,29 @@ def test_workspace_root_defaults_to_repo_local_directory(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     assert workspace_root() == tmp_path / ".cc-extractor"
+
+
+def test_tui_settings_roundtrip_uses_workspace_json(tmp_path):
+    root = tmp_path / ".cc-extractor"
+
+    saved = save_tui_settings({"themeId": "unicorn"}, root=root)
+
+    assert saved == {"schemaVersion": 1, "themeId": "unicorn"}
+    assert load_tui_settings(root)["themeId"] == "unicorn"
+    settings_path = root / TUI_SETTINGS
+    assert json.loads(settings_path.read_text(encoding="utf-8")) == saved
+
+
+def test_tui_settings_invalid_schema_falls_back_to_empty(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    root.mkdir()
+    settings_path = root / TUI_SETTINGS
+
+    settings_path.write_text(json.dumps({"schemaVersion": 2, "themeId": "dark"}), encoding="utf-8")
+    assert load_tui_settings(root) == {}
+
+    settings_path.write_text(json.dumps({"schemaVersion": 1, "themeId": 42}), encoding="utf-8")
+    assert load_tui_settings(root) == {}
 
 
 def test_store_and_scan_native_download(tmp_path):
