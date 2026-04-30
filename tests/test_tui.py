@@ -99,6 +99,30 @@ def test_load_saved_theme_id_falls_back_for_unknown_theme(tmp_path, monkeypatch)
     assert tui._load_saved_theme_id() == "hacker-bbs"
 
 
+def test_dashboard_theme_key_does_not_probe_variant_helpers(tmp_path, monkeypatch):
+    root = tmp_path / ".cc-extractor"
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+
+    def fail_variant_text_check(state):
+        raise AssertionError("dashboard key handling should not check variant name text")
+
+    monkeypatch.setattr(tui, "_variant_accepts_name_text", fail_variant_text_check)
+    state = tui.TuiState(mode="dashboard")
+
+    assert tui._handle_char_key(state, "t") is True
+    assert state.theme_id == "unicorn"
+
+
+def test_variant_name_text_accepts_lowercase_t(tmp_path, monkeypatch):
+    root = tmp_path / ".cc-extractor"
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    state = tui.TuiState(mode="variants", variant_step=1, selected_index=0)
+
+    assert tui._handle_char_key(state, "t") is True
+    assert state.variant_name == "t"
+    assert state.theme_id == "hacker-bbs"
+
+
 def test_screen_text_includes_theme_and_progress():
     state = tui.TuiState(
         counts="Native: 0  NPM: 0  Extractions: 0  Patch packages: 2  Profiles: 0",
@@ -115,6 +139,60 @@ def test_screen_text_includes_theme_and_progress():
     assert "Patches: [" in screen
     assert "1/2 selected" in screen
     assert "T theme" in screen
+
+
+def test_footer_keys_match_dashboard_step():
+    state = tui.TuiState(mode="dashboard", dashboard_step=0)
+    footer = tui._footer_text(state)
+    assert "R refresh" in footer
+    assert "Space toggle" not in footer
+
+    state.dashboard_step = 1
+    footer = tui._footer_text(state)
+    assert "Space toggle" in footer
+    assert "R refresh" not in footer
+
+    state.dashboard_step = 2
+    footer = tui._footer_text(state)
+    assert "Profile names:" in footer
+
+
+def test_footer_keys_match_variant_step():
+    state = tui.TuiState(mode="variants", variant_step=1)
+    footer = tui._footer_text(state)
+    assert "Variant names:" in footer
+    assert "Space toggle tweak" not in footer
+
+    state.variant_step = 2
+    footer = tui._footer_text(state)
+    assert "Credential env:" in footer
+    assert "Raw API keys are not accepted" in footer
+
+    state.variant_step = 3
+    footer = tui._footer_text(state)
+    assert "Model aliases:" in footer
+
+    state.variant_step = 4
+    footer = tui._footer_text(state)
+    assert "Space toggle tweak" in footer
+    assert "Variant names:" not in footer
+
+
+def test_activate_reports_action_and_refresh_failures(monkeypatch):
+    state = tui.TuiState(mode="dashboard")
+
+    def fail_action(app_state):
+        raise RuntimeError("boom")
+
+    def fail_refresh(app_state):
+        raise RuntimeError("scan broke")
+
+    monkeypatch.setattr(tui, "_activate_dashboard", fail_action)
+    monkeypatch.setattr(tui.TuiState, "refresh", fail_refresh)
+
+    assert tui._activate(state) is True
+    assert "Action failed: boom" in state.message
+    assert "Refresh failed: scan broke" in state.message
 
 
 def test_gauge_widget_renders_with_headless_ratatui():
@@ -277,9 +355,183 @@ def test_dashboard_run_applies_selected_packages_to_artifact(monkeypatch, tmp_pa
     assert state.message == f"Dashboard build complete: {tmp_path / 'claude-patched'}"
 
 
+def test_patch_package_apply_handles_stale_selection(monkeypatch, tmp_path):
+    artifact = NativeArtifact(
+        version="1.2.3",
+        platform="darwin-arm64",
+        sha256="a" * 64,
+        path=tmp_path / "claude",
+        metadata={},
+    )
+    calls = []
+
+    def fake_apply(source_artifact, packages):
+        calls.append((source_artifact, packages))
+
+    monkeypatch.setattr(tui, "apply_patch_packages_to_native", fake_apply)
+    state = tui.TuiState(
+        mode="patch-package",
+        native_artifacts=[artifact],
+        selected_source_index=0,
+        patch_packages=[],
+        selected_patch_indexes=[3],
+    )
+
+    tui._activate_patch_packages(state)
+
+    assert calls == []
+    assert state.message == "Selected patch packages are unavailable."
+
+
 def test_move_tab_cycles_from_dashboard_to_inspect():
     state = tui.TuiState(mode="dashboard")
 
     tui._move_tab(state, 1)
 
     assert state.mode == "inspect"
+
+
+def test_variants_tab_lists_providers_and_progress():
+    state = tui.TuiState(
+        mode="variants",
+        variant_providers=[
+            {
+                "key": "mirror",
+                "label": "Mirror Claude",
+                "description": "Pure Claude",
+                "defaultVariantName": "mirror",
+            }
+        ],
+    )
+
+    screen = tui._screen_text(state)
+
+    assert "[Variants]" in screen
+    assert "Variant steps: [Provider]" in screen
+    assert "mirror  Mirror Claude" in screen
+
+
+def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch, tmp_path):
+    calls = []
+
+    class Result:
+        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "mirror"
+
+    def fake_create_variant(**kwargs):
+        calls.append(kwargs)
+        return Result()
+
+    monkeypatch.setattr(tui, "create_variant", fake_create_variant)
+    state = tui.TuiState(
+        mode="variants",
+        variant_providers=[
+            {
+                "key": "mirror",
+                "label": "Mirror Claude",
+                "description": "Pure Claude",
+                "authMode": "none",
+                "credentialEnv": "",
+                "models": {},
+                "defaultVariantName": "mirror",
+            }
+        ],
+    )
+
+    state.selected_index = 1
+    tui._activate_variants(state)
+    assert state.variant_step == 1
+    assert state.variant_name == "mirror"
+
+    state.selected_index = 1
+    tui._activate_variants(state)
+    assert state.variant_step == 2
+
+    state.selected_index = 1
+    tui._activate_variants(state)
+    assert state.variant_step == 3
+
+    state.selected_index = len(tui.VARIANT_MODEL_FIELDS)
+    tui._activate_variants(state)
+    assert state.variant_step == 4
+
+    state.selected_index = 0
+    first_tweak = state.selected_variant_tweaks[0]
+    tui._toggle_selected(state)
+    assert first_tweak not in state.selected_variant_tweaks
+
+    state.selected_index = len(tui.CURATED_TWEAK_IDS)
+    tui._activate_variants(state)
+    assert state.variant_step == 5
+
+    tui._activate_variants(state)
+    assert calls[0]["provider_key"] == "mirror"
+    assert calls[0]["name"] == "mirror"
+    assert calls[0]["credential_env"] is None
+    assert calls[0]["model_overrides"] == {}
+    assert first_tweak not in calls[0]["tweaks"]
+
+
+def test_variants_wizard_blocks_required_model_mapping():
+    state = tui.TuiState(
+        mode="variants",
+        variant_step=3,
+        selected_index=len(tui.VARIANT_MODEL_FIELDS),
+        variant_provider_index=0,
+        variant_providers=[
+            {
+                "key": "openrouter",
+                "label": "OpenRouter",
+                "description": "Gateway",
+                "authMode": "authToken",
+                "credentialEnv": "OPENROUTER_API_KEY",
+                "requiresModelMapping": True,
+                "models": {},
+                "defaultVariantName": "openrouter",
+            }
+        ],
+    )
+
+    tui._activate_variants(state)
+
+    assert state.variant_step == 3
+    assert state.message == "Set model aliases for: Opus, Sonnet, Haiku"
+
+    state.variant_model_overrides = {
+        "opus": "anthropic/claude-opus-4",
+        "sonnet": "anthropic/claude-sonnet-4",
+        "haiku": "anthropic/claude-haiku-4",
+    }
+    tui._activate_variants(state)
+
+    assert state.variant_step == 4
+
+
+def test_variants_text_inputs_cover_credentials_and_models():
+    state = tui.TuiState(mode="variants", variant_step=2, selected_index=0, variant_credential_env="Z_AI_API_KE")
+
+    assert tui._handle_char_key(state, "Y") is True
+    assert state.variant_credential_env == "Z_AI_API_KEY"
+    assert tui._variant_backspace(state) is True
+    assert state.variant_credential_env == "Z_AI_API_KE"
+
+    state.variant_step = 3
+    state.selected_index = 0
+    assert tui._handle_char_key(state, "g") is True
+    assert tui._handle_char_key(state, "l") is True
+    assert state.variant_model_overrides["opus"] == "gl"
+
+
+def test_variant_status_reports_doctor_failure(monkeypatch):
+    class Variant:
+        variant_id = "mirror"
+        manifest = {"paths": {"wrapper": "/tmp/mirror"}}
+
+    def fail_doctor(name):
+        raise RuntimeError("doctor broke")
+
+    monkeypatch.setattr(tui, "doctor_variant", fail_doctor)
+    state = tui.TuiState(mode="variants", variants=[Variant()], selected_index=1)
+
+    tui._activate_variants(state)
+
+    assert state.message == "Variant status failed: doctor broke"

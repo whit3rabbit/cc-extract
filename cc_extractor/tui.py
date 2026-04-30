@@ -2,13 +2,16 @@ import contextlib
 import io
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from .bun_extract import parse_bun_binary
 from .download_index import download_versions, load_download_index, refresh_download_index
 from .downloader import download_binary
 from .extractor import extract_all
 from .patch_workflow import apply_patch_packages_to_native
+from .providers import provider_default_variant_name
+from .variant_tweaks import CURATED_TWEAK_IDS, DEFAULT_TWEAK_IDS
+from .variants import create_variant, doctor_variant, list_variant_providers, scan_variants
 from .workspace import (
     NativeArtifact,
     PatchPackage,
@@ -30,9 +33,18 @@ from .workspace import (
 )
 
 
-TABS = ["Dashboard", "Inspect", "Extract", "Patch"]
-TAB_MODES = ["dashboard", "inspect", "extract", "patch-source"]
+TABS = ["Dashboard", "Inspect", "Extract", "Patch", "Variants"]
+TAB_MODES = ["dashboard", "inspect", "extract", "patch-source", "variants"]
 DASHBOARD_STEPS = ["Source", "Patches", "Profiles", "Review"]
+VARIANT_STEPS = ["Provider", "Name", "Credentials", "Models", "Tweaks", "Review"]
+VARIANT_MODEL_FIELDS = [
+    ("opus", "Opus"),
+    ("sonnet", "Sonnet"),
+    ("haiku", "Haiku"),
+    ("default", "Default"),
+    ("small_fast", "Small-fast"),
+    ("subagent", "Subagent"),
+]
 SOURCE_LATEST = "latest"
 SOURCE_VERSION = "version"
 SOURCE_ARTIFACT = "artifact"
@@ -187,6 +199,8 @@ class TuiState:
     native_artifacts: List[NativeArtifact] = field(default_factory=list)
     patch_packages: List[PatchPackage] = field(default_factory=list)
     patch_profiles: List[PatchProfile] = field(default_factory=list)
+    variants: List[object] = field(default_factory=list)
+    variant_providers: List[dict] = field(default_factory=list)
     download_index: dict = field(default_factory=dict)
     download_versions: List[str] = field(default_factory=list)
     selected_source_index: int = 0
@@ -199,6 +213,12 @@ class TuiState:
     dashboard_profile_name: str = ""
     dashboard_loaded_profile_id: str = ""
     dashboard_delete_confirm_id: str = ""
+    variant_step: int = 0
+    variant_provider_index: int = 0
+    variant_name: str = ""
+    variant_credential_env: str = ""
+    variant_model_overrides: Dict[str, str] = field(default_factory=dict)
+    selected_variant_tweaks: List[str] = field(default_factory=lambda: list(DEFAULT_TWEAK_IDS))
 
     def refresh(self):
         self.theme_id = _normalize_theme_id(self.theme_id)
@@ -207,6 +227,8 @@ class TuiState:
         extraction_count = len(scan_extractions())
         self.patch_packages = scan_patch_packages()
         self.patch_profiles = scan_patch_profiles()
+        self.variants = scan_variants()
+        self.variant_providers = list_variant_providers()
         self.download_index = load_download_index()
         self.download_versions = download_versions(self.download_index, "binary")
         self.counts = (
@@ -214,7 +236,8 @@ class TuiState:
             f"NPM: {npm_count}  "
             f"Extractions: {extraction_count}  "
             f"Patch packages: {len(self.patch_packages)}  "
-            f"Profiles: {len(self.patch_profiles)}"
+            f"Profiles: {len(self.patch_profiles)}  "
+            f"Variants: {len(self.variants)}"
         )
         self.selected_patch_indexes = [
             index for index in self.selected_patch_indexes
@@ -226,6 +249,10 @@ class TuiState:
             self.dashboard_source_artifact_index,
             len(self.native_artifacts),
         )
+        self.variant_provider_index = self._clamp(
+            self.variant_provider_index,
+            len(self.variant_providers),
+        )
 
     def item_count(self):
         if self.mode == "dashboard":
@@ -234,6 +261,8 @@ class TuiState:
             return len(self.native_artifacts)
         if self.mode == "patch-package":
             return len(self.patch_packages)
+        if self.mode == "variants":
+            return len(_variant_options(self))
         return 1
 
     def move(self, offset):
@@ -266,7 +295,7 @@ def run_tui():
         raise RuntimeError(f"ratatui is unavailable: {exc}") from exc
 
     state = TuiState(theme_id=_load_saved_theme_id())
-    state.refresh()
+    _refresh_state(state)
 
     def render(term, app_state):
         width, height = term.size()
@@ -312,32 +341,14 @@ def run_tui():
         elif code == int(KeyCode.End):
             app_state.selected_index = max(0, app_state.item_count() - 1)
         elif code == int(KeyCode.Backspace):
-            if not _dashboard_backspace(app_state):
+            if not _handle_backspace_key(app_state):
                 _go_back(app_state)
         elif code == int(KeyCode.Esc):
             _go_back(app_state)
         elif code == int(KeyCode.Enter):
             return _activate(app_state)
         elif code == int(KeyCode.Char) and char_code:
-            char = chr(char_code)
-            if char == "T":
-                _cycle_theme(app_state)
-                return True
-            if _dashboard_accepts_profile_text(app_state):
-                if char.isprintable() and char not in "\r\n\t":
-                    app_state.dashboard_profile_name += char
-                    app_state.dashboard_delete_confirm_id = ""
-                return True
-
-            lowered = char.lower()
-            if lowered == "q":
-                return False
-            if lowered == "b":
-                _go_back(app_state)
-            elif char == " ":
-                _toggle_selected(app_state)
-            elif lowered == "r" and app_state.mode == "dashboard" and app_state.dashboard_step == 0:
-                _refresh_dashboard_index(app_state)
+            return _handle_char_key(app_state, chr(char_code))
 
         return True
 
@@ -362,6 +373,55 @@ def run_tui():
     app.run(state)
 
 
+def _handle_backspace_key(state):
+    if state.mode == "dashboard":
+        return _dashboard_backspace(state)
+    if state.mode == "variants":
+        return _variant_backspace(state)
+    return False
+
+
+def _handle_char_key(state, char):
+    if state.mode == "dashboard" and _dashboard_accepts_profile_text(state):
+        if char.isprintable() and char not in "\r\n\t":
+            state.dashboard_profile_name += char
+            state.dashboard_delete_confirm_id = ""
+        return True
+
+    if state.mode == "variants" and _variant_accepts_text(state):
+        if char.isprintable() and char not in "\r\n\t":
+            _variant_append_text(state, char)
+        return True
+
+    if char == "T":
+        _cycle_theme(state)
+        return True
+
+    lowered = char.lower()
+    if lowered == "q":
+        return False
+    if lowered == "b":
+        _go_back(state)
+    elif lowered == "t":
+        _cycle_theme(state)
+    elif char == " ":
+        _toggle_selected(state)
+    elif lowered == "r" and state.mode == "dashboard" and state.dashboard_step == 0:
+        _refresh_dashboard_index(state)
+
+    return True
+
+
+def _refresh_state(state):
+    try:
+        state.refresh()
+        return True
+    except Exception as exc:
+        prefix = f"{state.message} " if state.message else ""
+        state.message = f"{prefix}Refresh failed: {exc}"
+        return False
+
+
 def _screen_text(state, height=24):
     lines = [
         f"Workspace: {workspace_root()}",
@@ -375,6 +435,11 @@ def _screen_text(state, height=24):
         lines.extend([
             _dashboard_steps(state),
             _dashboard_summary(state),
+        ])
+    if state.mode == "variants":
+        lines.extend([
+            _variant_steps(state),
+            _variant_summary(state),
         ])
     for title, ratio, label in _progress_specs(state):
         lines.append(_ascii_progress(title, ratio, label))
@@ -422,6 +487,11 @@ def _render_frame(
         header_lines.extend([
             _dashboard_steps(state),
             _dashboard_summary(state),
+        ])
+    if state.mode == "variants":
+        header_lines.extend([
+            _variant_steps(state),
+            _variant_summary(state),
         ])
 
     header_height = min(max(4, len(header_lines) + 2), height)
@@ -571,6 +641,8 @@ def _current_labels(state):
             marker = "[x]" if index in state.selected_patch_indexes else "[ ]"
             labels.append(f"{marker} {package.patch_id}@{package.version}  {package.name}")
         return "Patch packages", labels
+    if state.mode == "variants":
+        return _variant_title(state), [option.label for option in _variant_options(state)]
     return "Status", []
 
 
@@ -581,6 +653,8 @@ def _empty_text(state):
         return "No patch packages found."
     if state.mode == "dashboard" and state.dashboard_step == 1:
         return "No patch packages found."
+    if state.mode == "variants":
+        return "No variants or providers found."
     return "Ready."
 
 
@@ -623,23 +697,62 @@ def _visible_items(labels, selected_index, max_items):
 def _footer_lines(state):
     theme_line = f"Theme: {_theme_name(state.theme_id)} ({_normalize_theme_id(state.theme_id)})."
     if state.mode == "dashboard":
-        return [
+        lines = [
             state.message,
             theme_line,
-            "Keys: Up/Down select, Enter choose, Space toggle, B/Esc back, Tab tabs, T theme, Q quit.",
-            "Profile names: select the Name row, then type or Backspace.",
+            _dashboard_key_line(state),
         ]
+        if state.dashboard_step == 2:
+            lines.append("Profile names: select the Name row, then type or Backspace.")
+        return lines
     if state.mode == "patch-package":
         return [
             state.message,
             theme_line,
-            "Keys: Left/Right tabs, Up/Down select, Space toggle, Enter apply, B/Esc back, T theme, Q quit.",
+            "Keys: Left/Right/Tab tabs, Up/Down select, Space toggle, Enter apply, B/Esc back, T theme, Q quit.",
         ]
+    if state.mode == "variants":
+        lines = [
+            state.message,
+            theme_line,
+            _variant_key_line(state),
+        ]
+        if state.variant_step == 1:
+            lines.append("Variant names: select the Name row, then type or Backspace.")
+        if state.variant_step == 2:
+            lines.append("Credential env: select the row, then type or Backspace. Raw API keys are not accepted here.")
+        if state.variant_step == 3:
+            lines.append("Model aliases: select a row, then type or Backspace. Empty rows use provider defaults.")
+        return lines
     return [
         state.message,
         theme_line,
-        "Keys: Left/Right tabs, Up/Down select, Enter run, T theme, Q quit.",
+        "Keys: Left/Right/Tab tabs, Up/Down select, Enter run, T theme, Q quit.",
     ]
+
+
+def _dashboard_key_line(state):
+    if state.dashboard_step == 0:
+        action = "Enter choose, R refresh"
+    elif state.dashboard_step == 1:
+        action = "Space toggle, Enter choose"
+    elif state.dashboard_step == 3:
+        action = "Enter run"
+    else:
+        action = "Enter choose"
+    return f"Keys: Left/Right/Tab tabs, Up/Down select, {action}, B/Esc back, T theme, Q quit."
+
+
+def _variant_key_line(state):
+    if state.variant_step == 4:
+        action = "Space toggle tweak, Enter choose"
+    elif state.variant_step == 5:
+        action = "Enter choose"
+    elif state.variant_step in {1, 2, 3}:
+        action = "Type text, Enter choose"
+    else:
+        action = "Enter choose"
+    return f"Keys: Left/Right/Tab tabs, Up/Down select, {action}, B/Esc back, T theme, Q quit."
 
 
 def _footer_text(state):
@@ -687,6 +800,12 @@ def _progress_specs(state):
             specs.append(("Patches", _patch_selection_ratio(state), _patch_selection_label(state)))
     elif state.mode == "patch-package":
         specs.append(("Patches", _patch_selection_ratio(state), _patch_selection_label(state)))
+    elif state.mode == "variants":
+        specs.append((
+            "Variant",
+            (state.variant_step + 1) / len(VARIANT_STEPS),
+            f"{state.variant_step + 1}/{len(VARIANT_STEPS)} {VARIANT_STEPS[state.variant_step]}",
+        ))
     return specs
 
 
@@ -745,6 +864,113 @@ def _dashboard_options(state):
     if state.dashboard_step == 2:
         return _dashboard_profile_options(state)
     return _dashboard_review_options(state)
+
+
+def _variant_title(state):
+    return f"Variants: {VARIANT_STEPS[state.variant_step]}"
+
+
+def _variant_steps(state):
+    labels = []
+    for index, step in enumerate(VARIANT_STEPS):
+        if index == state.variant_step:
+            labels.append(f"[{step}]")
+        elif index < state.variant_step:
+            labels.append(f"{step}*")
+        else:
+            labels.append(step)
+    return "Variant steps: " + " > ".join(labels)
+
+
+def _variant_summary(state):
+    provider = _selected_variant_provider(state)
+    name = state.variant_name or (provider.get("defaultVariantName") if provider else "")
+    credential = state.variant_credential_env or "none"
+    model_count = len([value for value in state.variant_model_overrides.values() if value.strip()])
+    return (
+        f"Provider: {provider.get('key') if provider else 'none'}  "
+        f"Name: {name or 'none'}  "
+        f"Credential env: {credential}  "
+        f"Model overrides: {model_count}  "
+        f"Tweaks: {len(state.selected_variant_tweaks)}"
+    )
+
+
+def _variant_options(state):
+    if state.variant_step == 0:
+        options = []
+        if state.variants:
+            options.append(MenuOption("section", "Existing variants"))
+            for variant in state.variants:
+                paths = variant.manifest.get("paths", {})
+                options.append(MenuOption("variant-status", f"{variant.variant_id}: {paths.get('wrapper', '(no wrapper)')}", variant.variant_id))
+        if state.variant_providers:
+            options.append(MenuOption("section", "Create provider"))
+        for index, provider in enumerate(state.variant_providers):
+            marker = "*" if index == state.variant_provider_index else " "
+            options.append(MenuOption("variant-provider", f"{marker} {provider['key']}  {provider['label']} - {provider.get('description', '')} {_provider_markers(provider)}", index))
+        return options
+    if state.variant_step == 1:
+        name = state.variant_name or "(type a variant name)"
+        return [
+            MenuOption("variant-name", f"Name: {name}"),
+            MenuOption("variant-name-continue", "Continue to credentials"),
+        ]
+    if state.variant_step == 2:
+        provider = _selected_variant_provider(state)
+        credential = state.variant_credential_env or "(none)"
+        if provider and provider.get("authMode") == "none":
+            credential = "(not required)"
+        return [
+            MenuOption("variant-credential-env", f"Credential env: {credential}"),
+            MenuOption("variant-credentials-continue", "Continue to models"),
+        ]
+    if state.variant_step == 3:
+        provider = _selected_variant_provider(state)
+        options = []
+        for key, label in VARIANT_MODEL_FIELDS:
+            value = _variant_model_display_value(state, provider, key)
+            source = "override" if state.variant_model_overrides.get(key, "").strip() else "default"
+            options.append(MenuOption("variant-model", f"{label}: {value or '(not set)'} ({source})", key))
+        options.append(MenuOption("variant-models-continue", "Continue to tweaks"))
+        return options
+    if state.variant_step == 4:
+        options = []
+        for tweak_id in CURATED_TWEAK_IDS:
+            marker = "[x]" if tweak_id in state.selected_variant_tweaks else "[ ]"
+            options.append(MenuOption("variant-tweak", f"{marker} {tweak_id}", tweak_id))
+        options.append(MenuOption("variant-tweaks-continue", "Continue to review"))
+        return options
+    return [
+        MenuOption("variant-create", "Create variant"),
+        MenuOption("variant-review-back", "Back to tweaks"),
+        MenuOption("variant-reset", "Reset variant wizard"),
+    ]
+
+
+def _provider_markers(provider):
+    markers = []
+    auth_mode = provider.get("authMode") or "apiKey"
+    markers.append(f"auth:{auth_mode}")
+    if provider.get("credentialOptional"):
+        markers.append("credential:optional")
+    if provider.get("requiresModelMapping"):
+        markers.append("model-map:required")
+    if provider.get("baseUrl", "").startswith(("http://127.0.0.1", "http://localhost")):
+        markers.append("local")
+    markers.append("prompt-pack:off" if provider.get("noPromptPack") else "prompt-pack:on")
+    if provider.get("mcpServers"):
+        markers.append("mcp")
+    return "[" + ", ".join(markers) + "]"
+
+
+def _variant_model_display_value(state, provider, key):
+    override = state.variant_model_overrides.get(key, "").strip()
+    if override:
+        return override
+    if not provider:
+        return ""
+    return str(provider.get("models", {}).get(key) or "")
 
 
 def _dashboard_source_options(state):
@@ -831,18 +1057,23 @@ def _delete_label(state, profile):
 
 def _activate(state):
     state.message = ""
-    if state.mode == "dashboard":
-        _activate_dashboard(state)
-    elif state.mode == "inspect":
-        _activate_inspect(state)
-    elif state.mode == "extract":
-        _activate_extract(state)
-    elif state.mode == "patch-source":
-        _activate_patch_source(state)
-    elif state.mode == "patch-package":
-        _activate_patch_packages(state)
+    try:
+        if state.mode == "dashboard":
+            _activate_dashboard(state)
+        elif state.mode == "inspect":
+            _activate_inspect(state)
+        elif state.mode == "extract":
+            _activate_extract(state)
+        elif state.mode == "patch-source":
+            _activate_patch_source(state)
+        elif state.mode == "patch-package":
+            _activate_patch_packages(state)
+        elif state.mode == "variants":
+            _activate_variants(state)
+    except Exception as exc:
+        state.message = f"Action failed: {exc}"
 
-    state.refresh()
+    _refresh_state(state)
     return True
 
 
@@ -899,6 +1130,53 @@ def _activate_dashboard(state):
         _reset_dashboard(state)
 
 
+def _activate_variants(state):
+    option = _selected_variant_option(state)
+    if option is None:
+        return
+    if option.kind == "section":
+        return
+    if option.kind == "variant-status":
+        try:
+            report = doctor_variant(str(option.value))
+            ok = report[0]["ok"] if report else False
+            state.message = f"Variant {option.value}: {'ok' if ok else 'failed'}"
+        except Exception as exc:
+            state.message = f"Variant status failed: {exc}"
+    elif option.kind == "variant-provider":
+        state.variant_provider_index = int(option.value)
+        provider = _selected_variant_provider(state)
+        _set_variant_provider_defaults(state, provider)
+        _advance_variant(state)
+    elif option.kind == "variant-name":
+        state.message = "Type a variant name here, then continue."
+    elif option.kind == "variant-name-continue":
+        if not state.variant_name.strip():
+            state.message = "Type a variant name first."
+            return
+        _advance_variant(state)
+    elif option.kind == "variant-credential-env":
+        state.message = "Type a credential environment variable name. Raw API keys are not accepted here."
+    elif option.kind == "variant-credentials-continue":
+        _advance_variant(state)
+    elif option.kind == "variant-model":
+        state.message = f"Type the {option.value} model alias, or clear it to use the provider default."
+    elif option.kind == "variant-models-continue":
+        if _require_variant_model_mapping(state):
+            _advance_variant(state)
+    elif option.kind == "variant-tweak":
+        _toggle_variant_tweak(state, str(option.value))
+    elif option.kind == "variant-tweaks-continue":
+        _advance_variant(state)
+    elif option.kind == "variant-create":
+        _run_variant_create(state)
+    elif option.kind == "variant-review-back":
+        state.variant_step = 4
+        state.selected_index = 0
+    elif option.kind == "variant-reset":
+        _reset_variant(state)
+
+
 def _refresh_dashboard_index(state):
     try:
         index, output = _run_quiet(refresh_download_index)
@@ -907,6 +1185,151 @@ def _refresh_dashboard_index(state):
         state.message = f"Saved {len(state.download_versions)} native versions to {workspace_root() / 'download-index.json'}"
     except Exception as exc:
         state.message = f"Refresh failed: {exc}"
+
+
+def _selected_variant_option(state):
+    options = _variant_options(state)
+    if not options:
+        return None
+    index = max(0, min(state.selected_index, len(options) - 1))
+    return options[index]
+
+
+def _selected_variant_provider(state):
+    if not state.variant_providers:
+        return None
+    index = max(0, min(state.variant_provider_index, len(state.variant_providers) - 1))
+    return state.variant_providers[index]
+
+
+def _advance_variant(state):
+    state.variant_step = min(state.variant_step + 1, len(VARIANT_STEPS) - 1)
+    state.selected_index = 0
+
+
+def _reset_variant(state):
+    state.variant_step = 0
+    state.selected_index = 0
+    state.variant_name = ""
+    state.variant_credential_env = ""
+    state.variant_model_overrides = {}
+    state.selected_variant_tweaks = list(DEFAULT_TWEAK_IDS)
+
+
+def _set_variant_provider_defaults(state, provider):
+    state.variant_name = provider_default_variant_name(provider["key"]) if provider else ""
+    state.variant_credential_env = str(provider.get("credentialEnv") or "") if provider else ""
+    state.variant_model_overrides = {}
+
+
+def _variant_accepts_name_text(state):
+    if state.mode != "variants" or state.variant_step != 1:
+        return False
+    option = _selected_variant_option(state)
+    return option is not None and option.kind == "variant-name"
+
+
+def _variant_accepts_text(state):
+    if state.mode != "variants":
+        return False
+    option = _selected_variant_option(state)
+    return option is not None and option.kind in {
+        "variant-name",
+        "variant-credential-env",
+        "variant-model",
+    }
+
+
+def _variant_append_text(state, char):
+    option = _selected_variant_option(state)
+    if option is None:
+        return
+    if option.kind == "variant-name":
+        state.variant_name += char
+    elif option.kind == "variant-credential-env":
+        state.variant_credential_env += char
+    elif option.kind == "variant-model":
+        key = str(option.value)
+        state.variant_model_overrides[key] = state.variant_model_overrides.get(key, "") + char
+
+
+def _variant_backspace(state):
+    if not _variant_accepts_text(state):
+        return False
+    option = _selected_variant_option(state)
+    if option.kind == "variant-name":
+        state.variant_name = state.variant_name[:-1]
+    elif option.kind == "variant-credential-env":
+        state.variant_credential_env = state.variant_credential_env[:-1]
+    elif option.kind == "variant-model":
+        key = str(option.value)
+        state.variant_model_overrides[key] = state.variant_model_overrides.get(key, "")[:-1]
+    return True
+
+
+def _toggle_variant_tweak(state, tweak_id):
+    if tweak_id in state.selected_variant_tweaks:
+        state.selected_variant_tweaks.remove(tweak_id)
+    else:
+        state.selected_variant_tweaks.append(tweak_id)
+        state.selected_variant_tweaks.sort(key=lambda item: CURATED_TWEAK_IDS.index(item))
+
+
+def _require_variant_model_mapping(state):
+    provider = _selected_variant_provider(state)
+    if not provider or not provider.get("requiresModelMapping"):
+        return True
+    missing = [
+        label
+        for key, label in VARIANT_MODEL_FIELDS[:3]
+        if not _variant_model_display_value(state, provider, key)
+    ]
+    if missing:
+        state.message = f"Set model aliases for: {', '.join(missing)}"
+        return False
+    return True
+
+
+def _variant_credential_env_for_create(state, provider):
+    value = state.variant_credential_env.strip()
+    if not value:
+        return None
+    if provider.get("credentialOptional") and value == provider.get("credentialEnv") and provider.get("authTokenFallback"):
+        return None
+    if provider.get("authMode") == "none":
+        return None
+    return value
+
+
+def _variant_model_overrides_for_create(state):
+    return {
+        key: value.strip()
+        for key, value in state.variant_model_overrides.items()
+        if value.strip()
+    }
+
+
+def _run_variant_create(state):
+    provider = _selected_variant_provider(state)
+    if provider is None:
+        state.message = "Select a provider first."
+        return
+    name = state.variant_name.strip() or provider_default_variant_name(provider["key"])
+    try:
+        result, output = _run_quiet(
+            create_variant,
+            name=name,
+            provider_key=provider["key"],
+            claude_version="latest",
+            tweaks=state.selected_variant_tweaks,
+            credential_env=_variant_credential_env_for_create(state, provider),
+            model_overrides=_variant_model_overrides_for_create(state),
+            force=False,
+        )
+        state.message = f"Variant created: {result.wrapper_path}"
+        _reset_variant(state)
+    except Exception as exc:
+        state.message = f"Variant create failed: {exc}"
 
 
 def _advance_dashboard(state):
@@ -942,6 +1365,10 @@ def _toggle_selected(state):
             _toggle_dashboard_patch(state, int(option.value))
     elif state.mode == "patch-package":
         _toggle_patch(state)
+    elif state.mode == "variants":
+        option = _selected_variant_option(state)
+        if option and option.kind == "variant-tweak":
+            _toggle_variant_tweak(state, str(option.value))
 
 
 def _toggle_dashboard_patch(state, index):
@@ -1230,7 +1657,14 @@ def _activate_patch_packages(state):
         state.message = "Select at least one patch package with Space."
         return
 
-    packages = [state.patch_packages[index] for index in state.selected_patch_indexes]
+    packages = [
+        state.patch_packages[index]
+        for index in state.selected_patch_indexes
+        if 0 <= index < len(state.patch_packages)
+    ]
+    if not packages:
+        state.message = "Selected patch packages are unavailable."
+        return
     try:
         result, output = _run_quiet(apply_patch_packages_to_native, artifact, packages)
         state.message = f"Patched binary: {result.output_path}"
@@ -1261,6 +1695,10 @@ def _go_back(state):
             state.selected_index = 0
     elif state.mode == "patch-package":
         _set_mode(state, "patch-source")
+    elif state.mode == "variants":
+        if state.variant_step > 0:
+            state.variant_step -= 1
+            state.selected_index = 0
 
 
 def _set_mode(state, mode):

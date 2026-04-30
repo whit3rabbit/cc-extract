@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "key": "deepseek",
+  "label": "DeepSeek",
+  "description": "DeepSeek-V4 via DeepSeek Anthropic API",
+  "displayOrder": 40,
+  "baseUrl": "https://api.deepseek.com/anthropic",
+  "auth": {
+    "mode": "apiKey",
+    "apiKeyLabel": "DeepSeek API key",
+    "credentialEnv": "DEEPSEEK_API_KEY"
+  },
+  "models": {
+    "default": "deepseek-v4-pro",
+    "smallFast": "deepseek-v4-flash",
+    "opus": "deepseek-v4-pro",
+    "sonnet": "deepseek-v4-flash",
+    "haiku": "deepseek-v4-flash",
+    "subagent": "",
+    "requiresModelMapping": false
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+  "variant": {
+    "splashStyle": "deepseek",
+    "noPromptPack": true,
+    "theme": {
+      "id": "deepseek-variant",
+      "name": "DeepSeek",
+      "colors": {
+        "bashBorder": "rgb(14,165,233)",
+        "claude": "rgb(56,189,248)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "DeepSeek V4",
+    "features": [
+      "deepseek-v4-pro for Opus and default",
+      "deepseek-v4-flash for Sonnet, Haiku, and small-fast",
+      "Official Anthropic-compatible API"
+    ],
+    "setupLinks": {
+      "subscribe": "https://platform.deepseek.com",
+      "apiKey": "https://platform.deepseek.com/api_keys",
+      "docs": "https://api-docs.deepseek.com/guides/anthropic_api"
+    },
+    "setupNote": "Create a DeepSeek account, top up credits, and provide DEEPSEEK_API_KEY."
+  }
+}

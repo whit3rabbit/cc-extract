@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "key": "mirror",
+  "label": "Mirror Claude",
+  "description": "Pure Claude with isolated config and clean defaults",
+  "displayOrder": 130,
+  "baseUrl": "",
+  "auth": {
+    "mode": "none",
+    "apiKeyLabel": "",
+    "credentialEnv": "",
+    "credentialOptional": true
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "",
+    "sonnet": "",
+    "haiku": "",
+    "subagent": "",
+    "requiresModelMapping": false
+  },
+  "env": {},
+  "variant": {
+    "splashStyle": "mirror",
+    "noPromptPack": true,
+    "theme": {
+      "id": "mirror-variant",
+      "name": "Mirror Claude",
+      "colors": {
+        "bashBorder": "rgb(136,136,136)",
+        "claude": "rgb(215,119,87)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "Mirror Claude",
+    "features": [
+      "Pure Claude Code behavior",
+      "Isolated config",
+      "No provider credential required"
+    ],
+    "setupLinks": {
+      "subscribe": "https://console.anthropic.com/settings/plans",
+      "apiKey": "https://console.anthropic.com/settings/keys",
+      "docs": "https://github.com/numman-ali/cc-mirror/blob/main/docs/features/mirror-claude.md"
+    },
+    "setupNote": "Uses normal Claude authentication through the isolated config directory."
+  }
+}

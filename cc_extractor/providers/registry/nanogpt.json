@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "key": "nanogpt",
+  "label": "NanoGPT",
+  "description": "400+ models via NanoGPT gateway",
+  "displayOrder": 100,
+  "baseUrl": "https://nano-gpt.com/api",
+  "auth": {
+    "mode": "authToken",
+    "apiKeyLabel": "NanoGPT API key",
+    "credentialEnv": "NANOGPT_API_KEY"
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "moonshotai/kimi-k2.5",
+    "sonnet": "moonshotai/kimi-k2.5",
+    "haiku": "moonshotai/kimi-k2.5",
+    "subagent": "",
+    "requiresModelMapping": true
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "splashStyle": "nanogpt",
+    "noPromptPack": true,
+    "theme": {
+      "id": "nanogpt-variant",
+      "name": "NanoGPT",
+      "colors": {
+        "bashBorder": "rgb(16,185,129)",
+        "claude": "rgb(45,212,191)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "NanoGPT",
+    "features": [
+      "Gateway to hundreds of models",
+      "Kimi K2.5 defaults",
+      "Model aliases remain editable"
+    ],
+    "setupLinks": {
+      "subscribe": "https://nano-gpt.com",
+      "apiKey": "https://nano-gpt.com/api",
+      "docs": "https://docs.nano-gpt.com/integrations/claude-code"
+    },
+    "setupNote": "Create an API key and override model aliases if desired."
+  }
+}

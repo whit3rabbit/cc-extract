@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "key": "gatewayz",
+  "label": "GatewayZ",
+  "description": "GatewayZ AI Gateway",
+  "displayOrder": 140,
+  "baseUrl": "https://api.gatewayz.ai",
+  "auth": {
+    "mode": "authToken",
+    "apiKeyLabel": "GatewayZ API key",
+    "credentialEnv": "GATEWAYZ_API_KEY"
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "",
+    "sonnet": "",
+    "haiku": "",
+    "subagent": "",
+    "requiresModelMapping": true
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "splashStyle": "gatewayz",
+    "noPromptPack": true,
+    "theme": {
+      "id": "gatewayz-variant",
+      "name": "GatewayZ",
+      "colors": {
+        "bashBorder": "rgb(167,139,250)",
+        "claude": "rgb(196,181,253)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "GatewayZ",
+    "features": [
+      "Single gateway for multiple providers",
+      "Requires Opus, Sonnet, and Haiku model aliases",
+      "Auth token mode"
+    ],
+    "setupLinks": {
+      "subscribe": "https://gatewayz.ai",
+      "apiKey": "https://gatewayz.ai",
+      "docs": "https://docs.gatewayz.ai/docs/anthropic-compatibility"
+    },
+    "setupNote": "Provide a GatewayZ API key and configure model aliases."
+  }
+}

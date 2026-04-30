@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "key": "custom",
+  "label": "Custom",
+  "description": "Bring your own Anthropic-compatible endpoint",
+  "displayOrder": 150,
+  "baseUrl": "",
+  "auth": {
+    "mode": "apiKey",
+    "apiKeyLabel": "API key",
+    "credentialEnv": "ANTHROPIC_API_KEY"
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "",
+    "sonnet": "",
+    "haiku": "",
+    "subagent": "",
+    "requiresModelMapping": true
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "splashStyle": "custom",
+    "noPromptPack": true,
+    "theme": {
+      "id": "custom-variant",
+      "name": "Custom",
+      "colors": {
+        "bashBorder": "rgb(177,185,249)",
+        "claude": "rgb(177,185,249)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "Custom Endpoint",
+    "features": [
+      "Bring your own Anthropic-compatible endpoint",
+      "Requires model aliases",
+      "Useful for experimental gateways"
+    ],
+    "setupLinks": {},
+    "setupNote": "Set ANTHROPIC_BASE_URL through extra env or edit settings after creation."
+  }
+}

@@ -183,6 +183,7 @@ cython_debug/
 
 # Extracted files
 extracted_files/
+artifacts/
 
 # Prompt extractor scratch outputs
 /prompts.json
@@ -191,3 +192,4 @@ extracted_files/
 
 # Syn
 .syntext/
+.synrepo/

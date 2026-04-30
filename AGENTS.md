@@ -26,6 +26,17 @@ A standalone Python toolkit for extracting, patching, and repacking Bun standalo
 .venv/bin/python -m cc_extractor  # opens the TUI when attached to a TTY
 .venv/bin/python -m pytest -q
 
+# Variants (isolated, named patched Claude Code installs)
+.venv/bin/python main.py variant providers
+.venv/bin/python main.py variant create <name> [--provider <key>] [--tweak <id> ...] [--claude-version <v>]
+.venv/bin/python main.py variant list
+.venv/bin/python main.py variant show <name>
+.venv/bin/python main.py variant apply <name> [--claude-version <v>]
+.venv/bin/python main.py variant update [<name> | --all] [--claude-version <v>]
+.venv/bin/python main.py variant remove <name> [--yes]
+.venv/bin/python main.py variant doctor [<name> | --all]
+.venv/bin/python main.py variant run <name> -- [args...]
+
 # Prompt extraction
 .venv/bin/python tools/prompt_extractor.py <entry-js> --output prompts/<version>.json --version-hint <version>
 .venv/bin/python tools/extract_prompt_versions.py --local
@@ -55,6 +66,9 @@ binary_patcher/codesign.py   -> Soft macOS ad-hoc signing helper
 binary_patcher/js_patch.py   -> Patch extracted entry JS
 binary_patcher/unpack_and_patch.py -> Unpacked Node fallback path
 patch_workflow.py            -> Extract, apply patch packages, repack, and write patched metadata
+variants.py                  -> Variant lifecycle (create, apply, update, remove, doctor, run) over patched binaries
+variant_tweaks.py            -> Curated tweak IDs, env-vs-binary tweak split, custom model registry
+providers.py                 -> Provider templates (Kimi, MiniMax, Z.AI, OpenRouter, Vercel, Ollama, NanoGPT) and env builders
 extractor.py                 -> Compatibility wrapper over bun_extract
 bundler.py                   -> Compatibility wrapper over binary_patcher.repack_binary
 patcher.py                   -> Legacy extracted-text patch manifests
@@ -84,6 +98,10 @@ prompts/*.json               -> Generated prompt catalogs keyed by Claude Code v
 - Theme anchor misses are fatal structured failures.
 - Mach-O signing is explicit and soft-failing through `codesign.py`.
 - Unpacked fallback helpers support Python `.bundle_manifest.json` and TS-style `manifest.json`.
+- Variants live under the workspace and are addressable by name or id; `variant_id_from_name` derives the slug.
+- `variant_tweaks.DEFAULT_TWEAK_IDS` is the baseline applied on create. `ENV_TWEAK_IDS` are runtime env vars; the rest patch the binary.
+- Provider templates in `providers.py` distinguish `auth_mode`, `requires_model_mapping`, and `no_prompt_pack`. Use `build_provider_env` rather than constructing env dicts ad hoc.
+- `validate_variant_manifest` is the single source of truth for variant manifest shape; do not bypass it.
 
 ## Development Notes
 

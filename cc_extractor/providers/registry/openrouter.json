@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "key": "openrouter",
+  "label": "OpenRouter",
+  "description": "100+ models via OpenRouter gateway",
+  "displayOrder": 70,
+  "baseUrl": "https://openrouter.ai/api",
+  "auth": {
+    "mode": "authToken",
+    "apiKeyLabel": "OpenRouter API key",
+    "credentialEnv": "OPENROUTER_API_KEY"
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "",
+    "sonnet": "",
+    "haiku": "",
+    "subagent": "",
+    "requiresModelMapping": true
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "splashStyle": "openrouter",
+    "noPromptPack": true,
+    "theme": {
+      "id": "openrouter-variant",
+      "name": "OpenRouter",
+      "colors": {
+        "bashBorder": "rgb(96,165,250)",
+        "claude": "rgb(192,192,192)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "OpenRouter",
+    "features": [
+      "Gateway for many model providers",
+      "Requires Opus, Sonnet, and Haiku model aliases",
+      "Auth token mode"
+    ],
+    "setupLinks": {
+      "subscribe": "https://openrouter.ai/account",
+      "apiKey": "https://openrouter.ai/keys",
+      "docs": "https://openrouter.ai/docs"
+    },
+    "setupNote": "Create an API key and map each Claude Code tier to an OpenRouter model id."
+  }
+}

@@ -42,4 +42,4 @@ where = ["."]
 include = ["cc_extractor*"]
 
 [tool.setuptools.package-data]
-cc_extractor = ["data/*.json"]
+cc_extractor = ["data/*.json", "providers/registry/*.json"]

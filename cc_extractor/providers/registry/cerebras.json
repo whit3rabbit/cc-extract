@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "key": "cerebras",
+  "label": "Cerebras (via CCRouter)",
+  "description": "GLM-4.7 and gpt-oss-120b through local Claude Code Router",
+  "displayOrder": 120,
+  "baseUrl": "http://127.0.0.1:3456",
+  "auth": {
+    "mode": "authToken",
+    "apiKeyLabel": "Cerebras key, optional when CCRouter handles auth",
+    "credentialEnv": "CEREBRAS_API_KEY",
+    "credentialOptional": true,
+    "authTokenFallback": "cerebras-proxy"
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "zai-glm-4.7",
+    "sonnet": "gpt-oss-120b",
+    "haiku": "gpt-oss-120b",
+    "subagent": "",
+    "requiresModelMapping": false
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "splashStyle": "cerebras",
+    "noPromptPack": true,
+    "theme": {
+      "id": "cerebras-variant",
+      "name": "Cerebras",
+      "colors": {
+        "bashBorder": "rgb(251,146,60)",
+        "claude": "rgb(252,211,77)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "Cerebras via CCRouter",
+    "features": [
+      "Requires Claude Code Router locally",
+      "zai-glm-4.7 for Opus",
+      "gpt-oss-120b for Sonnet and Haiku"
+    ],
+    "setupLinks": {
+      "subscribe": "https://cloud.cerebras.ai",
+      "apiKey": "https://cloud.cerebras.ai",
+      "docs": "https://inference-docs.cerebras.ai/models/overview"
+    },
+    "setupNote": "Configure Cerebras inside CCRouter, then use this variant against 127.0.0.1:3456."
+  }
+}

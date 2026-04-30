@@ -94,6 +94,8 @@ def ensure_workspace(root: Optional[os.PathLike] = None) -> Path:
         "patches/packages",
         "patches/profiles",
         "patched/native",
+        "variants",
+        "bin",
         "tmp",
     ):
         (root_path / rel_path).mkdir(parents=True, exist_ok=True)

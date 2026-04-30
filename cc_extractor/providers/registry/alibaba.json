@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "key": "alibaba",
+  "label": "Alibaba Cloud",
+  "description": "Alibaba Cloud Coding Plan via DashScope Anthropic-compatible API",
+  "displayOrder": 50,
+  "baseUrl": "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic",
+  "auth": {
+    "mode": "apiKey",
+    "apiKeyLabel": "Alibaba Cloud Coding Plan API key",
+    "credentialEnv": "ALIBABA_CLOUD_API_KEY"
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "qwen3-coder-plus",
+    "sonnet": "qwen3.5-plus",
+    "haiku": "qwen3-coder-next",
+    "subagent": "",
+    "requiresModelMapping": false
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "splashStyle": "alibaba",
+    "noPromptPack": true,
+    "theme": {
+      "id": "alibaba-variant",
+      "name": "Alibaba Cloud",
+      "colors": {
+        "bashBorder": "rgb(34,211,238)",
+        "claude": "rgb(168,85,247)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "Alibaba Coding Plan",
+    "features": [
+      "Coding Plan endpoint for Singapore region",
+      "qwen3-coder-plus Opus, qwen3.5-plus Sonnet",
+      "qwen3-coder-next Haiku"
+    ],
+    "setupLinks": {
+      "subscribe": "https://www.alibabacloud.com/help/en/model-studio/coding-plan",
+      "apiKey": "https://www.alibabacloud.com/help/en/model-studio/claude-code-coding-plan",
+      "docs": "https://www.alibabacloud.com/help/en/model-studio/claude-code"
+    },
+    "setupNote": "Use a Coding Plan API key, usually starting with sk-sp, not a pay-as-you-go key."
+  }
+}

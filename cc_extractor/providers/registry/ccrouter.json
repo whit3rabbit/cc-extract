@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "key": "ccrouter",
+  "label": "CC Router",
+  "description": "Generic local model gateway via Claude Code Router",
+  "displayOrder": 110,
+  "baseUrl": "http://127.0.0.1:3456",
+  "auth": {
+    "mode": "authToken",
+    "apiKeyLabel": "Router token",
+    "credentialEnv": "CCROUTER_AUTH_TOKEN",
+    "credentialOptional": true,
+    "authTokenFallback": "ccrouter-proxy"
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "",
+    "sonnet": "",
+    "haiku": "",
+    "subagent": "",
+    "requiresModelMapping": false
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "splashStyle": "ccrouter",
+    "noPromptPack": true,
+    "theme": {
+      "id": "ccrouter-variant",
+      "name": "CC Router",
+      "colors": {
+        "bashBorder": "rgb(56,189,248)",
+        "claude": "rgb(125,211,252)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "CC Router",
+    "features": [
+      "Generic local gateway at 127.0.0.1:3456",
+      "Models are configured in Claude Code Router",
+      "Optional router token with safe fallback"
+    ],
+    "setupLinks": {
+      "subscribe": "https://github.com/musistudio/claude-code-router#installation",
+      "apiKey": "https://github.com/musistudio/claude-code-router#2-configuration",
+      "docs": "https://musistudio.github.io/claude-code-router/docs/cli/config/basic/"
+    },
+    "setupNote": "Install claude-code-router, configure ~/.claude-code-router/config.json, then start ccr."
+  }
+}

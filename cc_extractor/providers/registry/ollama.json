@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "key": "ollama",
+  "label": "Ollama",
+  "description": "Local and cloud models via Ollama",
+  "displayOrder": 90,
+  "baseUrl": "http://localhost:11434",
+  "auth": {
+    "mode": "authToken",
+    "apiKeyLabel": "Ollama API key, use \"ollama\" for local",
+    "credentialEnv": "OLLAMA_API_KEY",
+    "credentialOptional": true,
+    "authTokenAlsoSetsApiKey": true
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "qwen3-coder",
+    "sonnet": "qwen3-coder",
+    "haiku": "qwen3-coder",
+    "subagent": "",
+    "requiresModelMapping": true
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000",
+    "ANTHROPIC_AUTH_TOKEN": "ollama",
+    "ANTHROPIC_API_KEY": "ollama"
+  },
+  "variant": {
+    "defaultVariantName": "ccollama",
+    "splashStyle": "ollama",
+    "noPromptPack": true,
+    "theme": {
+      "id": "ollama-variant",
+      "name": "Ollama",
+      "colors": {
+        "bashBorder": "rgb(184,137,74)",
+        "claude": "rgb(217,180,119)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "Ollama",
+    "features": [
+      "Local or cloud Ollama endpoint",
+      "qwen3-coder defaults",
+      "Optional credential for local setups"
+    ],
+    "setupLinks": {
+      "subscribe": "https://ollama.com",
+      "apiKey": "https://ollama.com",
+      "docs": "https://docs.ollama.com/integrations/claude-code"
+    },
+    "setupNote": "For local Ollama, the built-in token value is usually enough."
+  }
+}

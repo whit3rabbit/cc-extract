@@ -1,0 +1,3 @@
+[submodule "vendor/tweakcc"]
+	path = vendor/tweakcc
+	url = https://github.com/Piebald-AI/tweakcc

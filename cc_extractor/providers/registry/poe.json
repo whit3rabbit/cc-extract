@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "key": "poe",
+  "label": "Poe",
+  "description": "Claude via Poe Anthropic-compatible API",
+  "displayOrder": 60,
+  "baseUrl": "https://api.poe.com",
+  "auth": {
+    "mode": "authToken",
+    "apiKeyLabel": "Poe API key",
+    "credentialEnv": "POE_API_KEY"
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "",
+    "sonnet": "",
+    "haiku": "",
+    "subagent": "",
+    "requiresModelMapping": false
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "splashStyle": "poe",
+    "noPromptPack": true,
+    "theme": {
+      "id": "poe-variant",
+      "name": "Poe",
+      "colors": {
+        "bashBorder": "rgb(168,85,247)",
+        "claude": "rgb(192,132,252)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "Poe Anthropic API",
+    "features": [
+      "Official Anthropic-compatible endpoint",
+      "Bearer-token compatibility",
+      "Uses official Anthropic Claude bots"
+    ],
+    "setupLinks": {
+      "subscribe": "https://poe.com/subscribe",
+      "apiKey": "https://poe.com/api_key",
+      "docs": "https://creator.poe.com/docs/external-applications/anthropic-compatible-api"
+    },
+    "setupNote": "Generate a Poe API key and expose it through POE_API_KEY."
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "key": "zai",
+  "label": "Zai Cloud",
+  "description": "GLM-5.1 / 5-turbo / 4.5-Air via Z.ai Coding Plan",
+  "displayOrder": 30,
+  "baseUrl": "https://api.z.ai/api/anthropic",
+  "auth": {
+    "mode": "apiKey",
+    "apiKeyLabel": "Zai API key",
+    "credentialEnv": "Z_AI_API_KEY"
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "glm-5.1",
+    "sonnet": "glm-5-turbo",
+    "haiku": "glm-4.5-air",
+    "subagent": "",
+    "requiresModelMapping": false
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "splashStyle": "zai",
+    "noPromptPack": false,
+    "theme": {
+      "id": "zai-variant",
+      "name": "Zai Cloud",
+      "colors": {
+        "bashBorder": "rgb(218,170,80)",
+        "claude": "rgb(218,170,80)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [
+      "mcp__4_5v_mcp__analyze_image",
+      "mcp__milk_tea_server__claim_milk_tea_coupon",
+      "mcp__web_reader__webReader"
+    ],
+    "mcpServers": {
+      "web-search-prime": {
+        "type": "http",
+        "url": "https://api.z.ai/api/mcp/web_search_prime/mcp",
+        "headers": {
+          "Authorization": "Bearer ${credential}"
+        }
+      },
+      "web-reader": {
+        "type": "http",
+        "url": "https://api.z.ai/api/mcp/web_reader/mcp",
+        "headers": {
+          "Authorization": "Bearer ${credential}"
+        }
+      },
+      "zread": {
+        "type": "http",
+        "url": "https://api.z.ai/api/mcp/zread/mcp",
+        "headers": {
+          "Authorization": "Bearer ${credential}"
+        }
+      },
+      "zai-mcp-server": {
+        "type": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@z_ai/mcp-server"
+        ],
+        "env": {
+          "Z_AI_API_KEY": "${credential}",
+          "Z_AI_MODE": "ZAI"
+        }
+      }
+    }
+  },
+  "tui": {
+    "headline": "Z.ai Coding Plan",
+    "features": [
+      "GLM-5.1 Opus, GLM-5-turbo Sonnet, GLM-4.5-Air Haiku",
+      "Official Z.ai MCP servers registered",
+      "Server-injected MCP tools denied in settings.json"
+    ],
+    "setupLinks": {
+      "subscribe": "https://z.ai/subscribe",
+      "apiKey": "https://z.ai/manage-apikey/apikey-list",
+      "docs": "https://z.ai/docs"
+    },
+    "setupNote": "Subscribe to the Z.ai Coding Plan and provide Z_AI_API_KEY."
+  }
+}
