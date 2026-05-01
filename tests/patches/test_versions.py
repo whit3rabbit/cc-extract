@@ -3,6 +3,7 @@ import pytest
 from cc_extractor.patches._versions import (
     SemverRangeError,
     parse_version,
+    resolve_range_to_version,
     version_in_range,
 )
 
@@ -56,9 +57,6 @@ def test_version_in_range_rejects_bad_comparator():
 def test_version_in_range_rejects_bad_version_in_range():
     with pytest.raises(SemverRangeError):
         version_in_range("2.0.40", ">=foo")
-
-
-from cc_extractor.patches._versions import resolve_range_to_version
 
 
 def test_resolve_picks_highest_in_range():

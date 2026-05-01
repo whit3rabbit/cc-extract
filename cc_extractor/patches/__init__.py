@@ -1,6 +1,12 @@
-from typing import List
-import re
 import hashlib
+import logging
+import re
+import warnings
+from dataclasses import dataclass, field
+from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
+
+from ._versions import SemverRangeError, version_in_range
+
 
 class PatchResult:
     def __init__(self, id: str, name: str, group: str, applied: bool, failed: bool = False, skipped: bool = False, details: str = ""):
@@ -36,10 +42,6 @@ def build_regex_from_pieces(pieces: List[str]) -> str:
         if i < len(pieces) - 1:
             pattern += r'([\s\S]*?)'
     return pattern
-
-
-from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -101,13 +103,6 @@ class PatchBlacklistedError(ValueError):
         super().__init__(f"{patch_id}: version {version} is blacklisted")
 
 
-import logging
-import warnings
-from typing import List, Mapping as _Mapping, Optional as _Optional, Sequence
-
-from ._versions import SemverRangeError, version_in_range
-
-
 _log = logging.getLogger(__name__)
 
 
@@ -116,7 +111,7 @@ def apply_patches(
     ids: Sequence[str],
     ctx: "PatchContext",
     *,
-    registry: _Optional[_Mapping[str, "Patch"]] = None,
+    registry: Optional[Mapping[str, "Patch"]] = None,
 ) -> "AggregateResult":
     if registry is None:
         from ._registry import REGISTRY as _REGISTRY  # late import: avoids cycle

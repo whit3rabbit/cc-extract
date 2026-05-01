@@ -11,7 +11,6 @@ import os
 
 import pytest
 
-from tests.patches_behavioral.conftest import assert_snapshot
 
 
 pytestmark = pytest.mark.skipif(

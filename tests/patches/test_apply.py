@@ -2,7 +2,6 @@ import warnings
 import pytest
 
 from cc_extractor.patches import (
-    AggregateResult,
     Patch,
     PatchAnchorMissError,
     PatchBlacklistedError,

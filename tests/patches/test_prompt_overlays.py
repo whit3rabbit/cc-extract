@@ -1,4 +1,3 @@
-import pytest
 
 from cc_extractor.patches import PatchContext
 from cc_extractor.patches.prompt_overlays import PATCH
