@@ -70,13 +70,19 @@ binary_patcher/repack.py     -> Repack dispatcher for ELF, Mach-O, and PE
 binary_patcher/*_resize.py   -> Platform-specific resize logic
 binary_patcher/theme.py      -> Theme anchor patching + `themes_from_config` helper (canonical, was duplicated 3x before)
 binary_patcher/prompts.py    -> Prompt overlay patching
-binary_patcher/index.py      -> Structured apply_patches API
+binary_patcher/index.py      -> Structured apply_patches API (workspace patch packages; distinct from cc_extractor.patches.apply_patches which is the regex-tweak layer)
 binary_patcher/codesign.py   -> Soft macOS ad-hoc signing helper
 binary_patcher/js_patch.py   -> Patch extracted entry JS
 binary_patcher/unpack_and_patch.py -> Unpacked Node fallback path
+patches/__init__.py          -> Patch dataclass, PatchContext, PatchOutcome, AggregateResult, apply_patches (regex-tweak layer)
+patches/_registry.py         -> Explicit REGISTRY: dict[str, Patch] keyed by patch id
+patches/_versions.py         -> SemVer range parser, version_in_range, resolve_range_to_version
+patches/_pinned_default.py   -> DEFAULT_VERSION_RANGES used by per-patch versions_tested
+patches/<patch-id>.py        -> Per-file patch modules (themes, prompt_overlays, hide_startup_banner, etc.); each exposes PATCH = Patch(...)
 patch_workflow.py            -> Extract, apply patch packages, repack, and write patched metadata
 variants/__init__.py         -> Action layer: lifecycle (create/apply/update/remove/doctor/run) + `_build_variant_from_manifest`, `_copy_patch_or_unpack_variant_binary`, `_unpack_node_runtime_variant`, `_download_source_artifact` (monkey-patched targets stay alongside callers)
 variants/model.py, builder.py, tweaks.py, wrapper.py
+variants/tweaks.py           -> Thin shim: delegates to cc_extractor.patches.apply_patches; preserves TweakResult, TweakPatchError, apply_variant_tweaks public API
 variant_tweaks.py            -> Backwards-compat shim re-exporting `cc_extractor.variants.tweaks`
 providers.py                 -> Provider templates (Kimi, MiniMax, Z.AI, OpenRouter, Vercel, Ollama, NanoGPT) and env builders
 extractor.py                 -> Compatibility wrapper over bun_extract
@@ -114,6 +120,12 @@ prompts/*.json               -> Generated prompt catalogs keyed by Claude Code v
 - `variant_tweaks.DEFAULT_TWEAK_IDS` is the baseline applied on create. `ENV_TWEAK_IDS` are runtime env vars; the rest patch the binary.
 - Provider templates in `providers.py` distinguish `auth_mode`, `requires_model_mapping`, and `no_prompt_pack`. Use `build_provider_env` rather than constructing env dicts ad hoc.
 - `validate_variant_manifest` is the single source of truth for variant manifest shape; do not bypass it.
+- Bun module bytes live at `data[info.data_start + module.cont_off : info.data_start + module.cont_off + module.cont_len]`. Field names are `cont_off`/`cont_len`, not `data_offset`/`data_size`.
+- Bun entry module name varies by version: 2.0.x uses `claude`, 2.1.x uses `cli.js`. Use `info.entry_point_id` to find the entry; do not match by name suffix.
+- `cc_extractor.downloader.download_binary(version, out_dir=None)` returns the local path string. There is no `download_native_binary`.
+- Bun-bundled cli.js does not parse standalone under `node --check` (uses `bun:` imports). L2 parse tests must pre-check the unpatched JS and skip if it does not parse.
+- `cc_extractor.patches.apply_patches` (regex tweaks) is separate from `cc_extractor.binary_patcher.index.apply_patches` (workspace patch packages). Do not confuse them.
+- `range_contains_range` checks endpoint versions, so an inner range `<3` against an outer `<3` fails because `3.0.0` does not satisfy `<3`. Patches default to `<2.2` in versions_tested as a workaround.
 
 ## Development Notes
 
@@ -128,3 +140,5 @@ prompts/*.json               -> Generated prompt catalogs keyed by Claude Code v
 - For TUI changes, add widget-independent state tests and smoke test with the TUI MCP using a temporary `CC_EXTRACTOR_WORKSPACE`.
 - In TUI MCP smoke tests, prefer `Tab`, `Enter`, `Space`, text input, and `q`; verify arrow-key names before relying on them.
 - Do not stage or commit submodule changes, including `vendor/tweakcc`, unless explicitly requested.
+- Patch test tiers: L1 (anchor) + L2 (`node --check`) run by default under `pytest -q tests/patches/`. L3 (boot smoke) gated by `CC_EXTRACTOR_REAL_BINARY=1`. L4 (TUI MCP behavioral) gated by `CC_EXTRACTOR_TUI_MCP=1`. See `docs/patches.md`.
+- Worktree convention: `.worktrees/<branch-name>` (gitignored).
