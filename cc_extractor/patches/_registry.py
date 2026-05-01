@@ -3,10 +3,11 @@
 from typing import Dict
 
 from . import Patch
-from . import hide_startup_banner
+from . import hide_startup_banner, show_more_items
 
 REGISTRY: Dict[str, Patch] = {
     hide_startup_banner.PATCH.id: hide_startup_banner.PATCH,
+    show_more_items.PATCH.id: show_more_items.PATCH,
 }
 
 
