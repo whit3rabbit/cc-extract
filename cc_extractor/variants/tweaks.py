@@ -318,7 +318,6 @@ def _patches_applied_indication(js: str, provider_label: str = "cc-extractor", *
 
 
 _PATCHERS = {
-    "suppress-line-numbers": _suppress_line_numbers,
     "auto-accept-plan-mode": _auto_accept_plan_mode,
     "allow-custom-agent-models": _allow_custom_agent_models,
     "patches-applied-indication": _patches_applied_indication,
