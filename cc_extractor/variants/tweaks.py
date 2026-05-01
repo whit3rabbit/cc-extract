@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional
 
 from ..binary_patcher.prompts import apply_prompts
-from ..binary_patcher.theme import apply_theme, themes_from_config as _themes_from_config
 from ..patches import PatchContext as _PatchCtx, apply_patches as _apply_patches, PatchAnchorMissError
 from ..patches._registry import REGISTRY as _PATCH_REGISTRY
 
@@ -108,14 +107,7 @@ def apply_variant_tweaks(
             skipped.append(tweak_id)
             continue
         old_js = js
-        if tweak_id == "themes":
-            themed = apply_theme(js, _themes_from_config(config))
-            js = themed.js
-            if themed.replaced:
-                applied.append(tweak_id)
-            else:
-                skipped.append(tweak_id)
-        elif tweak_id == "prompt-overlays":
+        if tweak_id == "prompt-overlays":
             prompt_result = apply_prompts(js, overlays)
             js = prompt_result.js
             missing.extend(prompt_result.missing)

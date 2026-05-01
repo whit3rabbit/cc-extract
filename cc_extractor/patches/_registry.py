@@ -13,6 +13,7 @@ from . import (
     patches_applied_indication,
     show_more_items,
     suppress_line_numbers,
+    themes,
 )
 
 REGISTRY: Dict[str, Patch] = {
@@ -25,6 +26,7 @@ REGISTRY: Dict[str, Patch] = {
     patches_applied_indication.PATCH.id: patches_applied_indication.PATCH,
     show_more_items.PATCH.id: show_more_items.PATCH,
     suppress_line_numbers.PATCH.id: suppress_line_numbers.PATCH,
+    themes.PATCH.id: themes.PATCH,
 }
 
 
