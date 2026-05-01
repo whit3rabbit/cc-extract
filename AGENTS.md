@@ -56,7 +56,7 @@ cli/parsers.py               -> Argparse parser tree (build_parser)
 cli/handlers.py              -> Per-subcommand handlers (download/extract/inspect/replace-entry/apply-binary/pack/patch) + inspect_binary
 cli/payloads.py              -> JSON payload helpers + variant arg adders
 _utils.py                    -> Shared low-level helpers (safe_read_json, version_sort_key, utc_now, make_kebab_id); stdlib-only, no internal deps
-tui/__init__.py              -> Action layer: run_tui, dispatchers, monkey-patchable hooks (apply_patch_packages_to_native, create_variant, doctor_variant, _variant_accepts_name_text)
+tui/__init__.py              -> Action layer: run_tui, dispatchers, monkey-patchable hooks (apply_patch_packages_to_native, create_variant, doctor_variant, _variant_accepts_name_text). Tabs: Dashboard, Inspect, Extract, Patch (workspace patch packages), Variants, Tweaks (regex-tweak registry, two-pane editor scoped to a variant)
 tui/state.py, themes.py, options.py, rendering.py, dashboard.py, variant_actions.py, keys.py, nav.py, _runtime.py, _const.py
 workspace/__init__.py        -> Re-exports everything; submodules paths.py, models.py, artifacts.py, patches.py, settings.py
 downloader.py                -> Fetches binaries from Google Cloud Storage or NPM tarballs
@@ -126,6 +126,9 @@ prompts/*.json               -> Generated prompt catalogs keyed by Claude Code v
 - Bun-bundled cli.js does not parse standalone under `node --check` (uses `bun:` imports). L2 parse tests must pre-check the unpatched JS and skip if it does not parse.
 - `cc_extractor.patches.apply_patches` (regex tweaks) is separate from `cc_extractor.binary_patcher.index.apply_patches` (workspace patch packages). Do not confuse them.
 - `range_contains_range` checks endpoint versions, so an inner range `<3` against an outer `<3` fails because `3.0.0` does not satisfy `<3`. Patches default to `<2.2` in versions_tested as a workaround.
+- Two distinct "patch" tabs in the TUI: "Patch" manages workspace patch packages (binary-operation manifests under `.cc-extractor/patches/packages/`); "Tweaks" manages the regex-tweak registry (`cc_extractor.patches.REGISTRY`) with a stage-and-apply flow per variant.
+- Tweaks tab flow: pick variant -> two-pane editor (patches grouped by category on left, details on right). Space toggles, `a` applies via `variants.apply_variant` (full rebuild), `b`/Esc discards staged changes or returns to picker.
+- First two-pane TUI screen uses `ratatui_py.layout.split_v(rect, 0.45, 0.55, gap=1)`. See `cc_extractor/tui/rendering.py::render_frame` for the integration point.
 
 ## Development Notes
 
@@ -134,11 +137,12 @@ prompts/*.json               -> Generated prompt catalogs keyed by Claude Code v
 - Tests use `pytest`.
 - Prompt extractor tests live under `tests/`.
 - Prompt extraction dev dependencies include `tree-sitter` and `tree-sitter-javascript`.
-- Runtime dependencies: `ratatui`, `tqdm`.
+- Runtime dependencies: `ratatui`, `tqdm`. The `ratatui` dep is the holo-q ctypes-based shim (https://github.com/holo-q/ratatui-py); imports use `from ratatui_py import ...` and rely on `headless_render_frame` for tests. Do NOT swap to `pyratatui` (https://github.com/pyratatui/pyratatui), which is a separate, newer PyO3-based project with a different API, no `headless_render_frame`, and a Python 3.10+ floor (this project targets 3.8+).
 - Python 3.8+.
 - No extra runtime dependency is required for P5. The unpacked fallback shells out to `npm` only when that helper is used.
 - For TUI changes, add widget-independent state tests and smoke test with the TUI MCP using a temporary `CC_EXTRACTOR_WORKSPACE`.
-- In TUI MCP smoke tests, prefer `Tab`, `Enter`, `Space`, text input, and `q`; verify arrow-key names before relying on them.
+- In TUI MCP smoke tests use `Down`/`Up` (not `ArrowDown`/`ArrowUp` - those silently no-op). Each `send_keys` call sends ONE named key; chaining like `"Tab Tab"` interprets the spaces and letters as char keys (`t` cycles theme). Prefer `Tab`, `Enter`, `Space`, text input, and `q`.
+- Variant manifest stubs for TUI tests need only: schemaVersion=1, id (kebab-case), name, provider.key, source.version, paths (dict), createdAt, updatedAt. No real binary required - list/edit flows only validate the manifest.
 - Do not stage or commit submodule changes, including `vendor/tweakcc`, unless explicitly requested.
 - Patch test tiers: L1 (anchor) + L2 (`node --check`) run by default under `pytest -q tests/patches/`. L3 (boot smoke) gated by `CC_EXTRACTOR_REAL_BINARY=1`. L4 (TUI MCP behavioral) gated by `CC_EXTRACTOR_TUI_MCP=1`. See `docs/patches.md`.
 - Worktree convention: `.worktrees/<branch-name>` (gitignored).
