@@ -1,7 +1,4 @@
-import json
-import hashlib
 import struct
-import pytest
 from cc_extractor.extractor import extract_all, read_u32, read_u64
 
 def create_mock_macho(bun_offset, bun_size):
