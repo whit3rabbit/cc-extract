@@ -7,6 +7,8 @@ from typing import Dict, Iterable, List, Optional
 
 from ..binary_patcher.prompts import apply_prompts
 from ..binary_patcher.theme import apply_theme, themes_from_config as _themes_from_config
+from ..patches import PatchContext as _PatchCtx, apply_patches as _apply_patches
+from ..patches._registry import REGISTRY as _PATCH_REGISTRY
 
 
 DEFAULT_TWEAK_IDS = ["themes", "prompt-overlays", "patches-applied-indication"]
@@ -118,6 +120,23 @@ def apply_variant_tweaks(
             js = prompt_result.js
             missing.extend(prompt_result.missing)
             if prompt_result.replaced_targets:
+                applied.append(tweak_id)
+            else:
+                skipped.append(tweak_id)
+        elif tweak_id in _PATCH_REGISTRY:
+            sub = _apply_patches(
+                js,
+                [tweak_id],
+                _PatchCtx(
+                    claude_version=None,
+                    provider_label=provider_label,
+                    config=config,
+                    overlays=overlays,
+                ),
+                registry=_PATCH_REGISTRY,
+            )
+            js = sub.js
+            if sub.applied:
                 applied.append(tweak_id)
             else:
                 skipped.append(tweak_id)
@@ -298,7 +317,6 @@ def _patches_applied_indication(js: str, provider_label: str = "cc-extractor", *
 _PATCHERS = {
     "show-more-items-in-select-menus": _show_more_items,
     "model-customizations": _model_customizations,
-    "hide-startup-banner": _hide_startup_banner,
     "hide-startup-clawd": _hide_startup_clawd,
     "hide-ctrl-g-to-edit": _hide_ctrl_g_to_edit,
     "suppress-line-numbers": _suppress_line_numbers,
