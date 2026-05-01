@@ -46,4 +46,5 @@ PATCH = Patch(
     versions_supported=">=2.0.0,<3",
     versions_tested=DEFAULT_VERSION_RANGES,
     apply=_apply,
+    description="Hide the welcome banner shown before the first message.",
 )

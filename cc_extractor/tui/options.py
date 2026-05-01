@@ -5,6 +5,7 @@ MenuOption, label strings, lookup helpers). They do not mutate state and do not
 call any externally-monkey-patched function.
 """
 
+from ..patches._registry import REGISTRY as PATCH_REGISTRY, patches_grouped
 from ..variant_tweaks import CURATED_TWEAK_IDS
 from ..workspace import short_sha
 from ._const import (
@@ -346,6 +347,72 @@ def variant_summary(state):
         f"Tweaks: {len(state.selected_variant_tweaks)}"
     )
 
+
+# -- Tweaks options -----------------------------------------------------------
+
+def tweaks_source_options(state):
+    options = []
+    if not state.variants:
+        options.append(MenuOption("section", "No variants found - create one in the Variants tab first"))
+        return options
+    for variant in state.variants:
+        manifest = variant.manifest or {}
+        tweak_count = len(manifest.get("tweaks", []) or [])
+        provider = (manifest.get("provider") or {}).get("key") or "?"
+        version = (manifest.get("source") or {}).get("version") or "?"
+        label = f"{variant.variant_id}  ({provider}, claude {version}, {tweak_count} tweaks)"
+        options.append(MenuOption("tweaks-pick-variant", label, variant.variant_id))
+    return options
+
+
+def tweaks_edit_options(state):
+    """Patches grouped by category. Each item is a togglable patch row.
+
+    `selected_index` walks only the togglable rows; group headers are returned
+    via `tweaks_edit_groups()` for rendering, not as MenuOption entries.
+    """
+    options = []
+    for group, patches in patches_grouped().items():
+        for patch in patches:
+            marker = "[x]" if patch.id in state.tweaks_pending else "[ ]"
+            label = f"{marker} {patch.name}  ({patch.id})"
+            options.append(MenuOption("tweak-toggle", label, patch.id))
+    return options
+
+
+def tweaks_edit_groups(state):
+    """Return a list of (group_label, [patch_id, ...]) preserving display order.
+
+    The renderer walks options in order and inserts a group header before the
+    first patch belonging to each new group.
+    """
+    return [(group, [patch.id for patch in patches]) for group, patches in patches_grouped().items()]
+
+
+def selected_tweaks_edit_option(state):
+    options = tweaks_edit_options(state)
+    if not options:
+        return None
+    index = max(0, min(state.selected_index, len(options) - 1))
+    return options[index]
+
+
+def selected_tweaks_edit_patch(state):
+    """Return the Patch object currently selected in tweaks-edit mode, or None."""
+    option = selected_tweaks_edit_option(state)
+    if option is None:
+        return None
+    return PATCH_REGISTRY.get(option.value)
+
+
+def selected_tweaks_source_variant_id(state):
+    if not state.variants:
+        return None
+    index = max(0, min(state.selected_index, len(state.variants) - 1))
+    return state.variants[index].variant_id
+
+
+# -- Native artifact formatting -----------------------------------------------
 
 def format_native_artifact(artifact):
     return f"{artifact.version}  {artifact.platform}  {short_sha(artifact.sha256)}  {_format_size(artifact)}  {artifact.path}"

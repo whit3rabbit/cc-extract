@@ -1,7 +1,7 @@
 """TuiState dataclass and refresh logic."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..download_index import download_versions, load_download_index
 from ..variant_tweaks import DEFAULT_TWEAK_IDS
@@ -50,6 +50,9 @@ class TuiState:
     variant_credential_env: str = ""
     variant_model_overrides: Dict[str, str] = field(default_factory=dict)
     selected_variant_tweaks: List[str] = field(default_factory=lambda: list(DEFAULT_TWEAK_IDS))
+    tweaks_variant_id: Optional[str] = None
+    tweaks_baseline: Tuple[str, ...] = ()
+    tweaks_pending: List[str] = field(default_factory=list)
 
     def refresh(self):
         self.theme_id = normalize_theme_id(self.theme_id)
@@ -87,7 +90,7 @@ class TuiState:
 
     def item_count(self):
         # Local import avoids a circular module-load on package init.
-        from .options import dashboard_options, variant_options
+        from .options import dashboard_options, tweaks_edit_options, variant_options
 
         if self.mode == "dashboard":
             return len(dashboard_options(self))
@@ -97,6 +100,10 @@ class TuiState:
             return len(self.patch_packages)
         if self.mode == "variants":
             return len(variant_options(self))
+        if self.mode == "tweaks-source":
+            return len(self.variants)
+        if self.mode == "tweaks-edit":
+            return len(tweaks_edit_options(self))
         return 1
 
     def move(self, offset):

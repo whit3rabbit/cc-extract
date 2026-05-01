@@ -16,6 +16,10 @@ from .options import (
     dashboard_title,
     format_native_artifact,
     selected_dashboard_packages,
+    selected_tweaks_edit_patch,
+    tweaks_edit_groups,
+    tweaks_edit_options,
+    tweaks_source_options,
     variant_options,
     variant_steps,
     variant_summary,
@@ -29,6 +33,8 @@ from .themes import active_theme, normalize_theme_id, theme_name
 def active_tab(state):
     if state.mode == "patch-package":
         return "Patch"
+    if state.mode == "tweaks-edit":
+        return "Tweaks"
     for tab, mode in zip(TABS, TAB_MODES):
         if state.mode == mode:
             return tab
@@ -69,7 +75,59 @@ def current_labels(state):
         return "Patch packages", labels
     if state.mode == "variants":
         return variant_title(state), [option.label for option in variant_options(state)]
+    if state.mode == "tweaks-source":
+        return "Tweaks: pick variant", [option.label for option in tweaks_source_options(state)]
+    if state.mode == "tweaks-edit":
+        labels = _tweaks_edit_labels(state)
+        title = f"Patches  ({state.tweaks_variant_id or 'no variant'})"
+        return title, labels
     return "Status", []
+
+
+def _tweaks_edit_labels(state):
+    """Build the left-pane label list for tweaks-edit mode.
+
+    Walks `tweaks_edit_options(state)` (one entry per togglable patch) and
+    inserts a non-selectable group header (rendered with leading "-- ") above
+    the first patch in each group. Group headers are visual-only and do not
+    affect `selected_index`.
+    """
+    options = tweaks_edit_options(state)
+    by_id = {opt.value: opt.label for opt in options}
+    labels = []
+    for group, patch_ids in tweaks_edit_groups(state):
+        labels.append(f"-- {group} --")
+        for patch_id in patch_ids:
+            label = by_id.get(patch_id)
+            if label is not None:
+                labels.append(label)
+    return labels
+
+
+def tweaks_detail_text(state) -> str:
+    """Right-pane content describing the currently selected patch."""
+    patch = selected_tweaks_edit_patch(state)
+    if patch is None:
+        return "No patch selected."
+    applied = "yes" if patch.id in (state.tweaks_baseline or ()) else "no"
+    pending = "yes" if patch.id in (state.tweaks_pending or ()) else "no"
+    blacklist = ", ".join(patch.versions_blacklisted) if patch.versions_blacklisted else "(none)"
+    tested = ", ".join(patch.versions_tested) if patch.versions_tested else "(none)"
+    description = patch.description or "(no description)"
+    return "\n".join([
+        patch.name,
+        f"Group: {patch.group}",
+        "",
+        description,
+        "",
+        f"Versions supported: {patch.versions_supported}",
+        f"Tested ranges: {tested}",
+        f"Blacklisted: {blacklist}",
+        f"On miss: {patch.on_miss}",
+        "",
+        f"Applied to {state.tweaks_variant_id or '(no variant)'}: {applied}",
+        f"Pending: {pending}",
+    ])
 
 
 def empty_text(state):
@@ -81,7 +139,31 @@ def empty_text(state):
         return "No patch packages found."
     if state.mode == "variants":
         return "No variants or providers found."
+    if state.mode == "tweaks-source":
+        return "No variants found - create one in the Variants tab first."
+    if state.mode == "tweaks-edit":
+        return "No patches registered."
     return "Ready."
+
+
+def selected_label_index(state):
+    """Map state.selected_index (which walks selectable options) to the row
+    index in `current_labels()`. Modes with non-selectable header rows (like
+    tweaks-edit's group headers) need this offset.
+    """
+    if state.mode == "tweaks-edit":
+        target = state.selected_index
+        label_index = 0
+        seen = 0
+        for _, patch_ids in tweaks_edit_groups(state):
+            label_index += 1  # group header
+            for _ in patch_ids:
+                if seen == target:
+                    return label_index
+                label_index += 1
+                seen += 1
+        return max(0, label_index - 1)
+    return state.selected_index
 
 
 def visible_items(labels, selected_index, max_items):
@@ -158,6 +240,18 @@ def footer_lines(state):
         if state.variant_step == 3:
             lines.append("Model aliases: select a row, then type or Backspace. Empty rows use provider defaults.")
         return lines
+    if state.mode == "tweaks-source":
+        return [
+            state.message,
+            line,
+            "Keys: Left/Right/Tab tabs, Up/Down select, Enter pick variant, B/Esc back, T theme, Q quit.",
+        ]
+    if state.mode == "tweaks-edit":
+        return [
+            state.message,
+            line,
+            "Keys: Up/Down select, Space toggle, A apply, B/Esc discard or back, T theme, Q quit.",
+        ]
     return [
         state.message,
         line,
@@ -214,15 +308,22 @@ def screen_text(state, height=24):
 
     title, labels = current_labels(state)
     lines.append(title)
-    visible = visible_items(labels, state.selected_index, max(3, height - 16))
+    cursor = selected_label_index(state)
+    visible = visible_items(labels, cursor, max(3, height - 16))
     if visible:
         start_index, visible_labels = visible
         for offset, label in enumerate(visible_labels):
             index = start_index + offset
-            prefix = "> " if index == state.selected_index else "  "
+            prefix = "> " if index == cursor else "  "
             lines.append(prefix + label)
     else:
         lines.append("  " + empty_text(state))
+
+    if state.mode == "tweaks-edit":
+        lines.append("")
+        lines.append("Patch details")
+        for line in tweaks_detail_text(state).splitlines():
+            lines.append("  " + line)
 
     lines.extend(["", state.message, ""])
     lines.extend(footer_lines(state))
@@ -232,12 +333,13 @@ def screen_text(state, height=24):
 def body_text(state, height):
     title, labels = current_labels(state)
     lines = [title]
-    visible = visible_items(labels, state.selected_index, max(1, height - 3))
+    cursor = selected_label_index(state)
+    visible = visible_items(labels, cursor, max(1, height - 3))
     if visible:
         start_index, visible_labels = visible
         for offset, label in enumerate(visible_labels):
             index = start_index + offset
-            prefix = "> " if index == state.selected_index else "  "
+            prefix = "> " if index == cursor else "  "
             lines.append(prefix + label)
     else:
         lines.append("  " + empty_text(state))
@@ -293,12 +395,23 @@ def list_widget(state, height, TuiList, Style, Color, theme):
         item_style = style(Style, Color, theme.body_fg, theme.body_bg)
         for label in labels:
             body.append_item(label, item_style)
-        body.set_selected(state.selected_index)
-        body.set_scroll_offset(max(0, state.selected_index - max(0, height // 2)))
+        cursor = selected_label_index(state)
+        body.set_selected(cursor)
+        body.set_scroll_offset(max(0, cursor - max(0, height // 2)))
     else:
         body.append_item(empty_text(state), style(Style, Color, theme.body_fg, theme.body_bg))
         body.set_selected(None)
     return body
+
+
+def tweaks_detail_widget(state, Paragraph, Style, Color, theme):
+    """Right-pane Paragraph for tweaks-edit mode."""
+    text = tweaks_detail_text(state)
+    paragraph = Paragraph.from_text(text)
+    paragraph.set_block_title("Patch details", True)
+    paragraph.set_style(style(Style, Color, theme.body_fg, theme.body_bg))
+    paragraph.set_wrap(True)
+    return paragraph
 
 
 def gauge_widget(title, ratio, label, Gauge, Style, Color, theme):
@@ -315,6 +428,7 @@ def gauge_widget(title, ratio, label, Gauge, Style, Color, theme):
 
 
 def render_frame(term, state, width, height, Paragraph, Style, Color, DrawCmd, Tabs, TuiList, Gauge):
+    from ratatui_py.layout import split_v as _split_v
     width = max(1, width - 1)
     height = max(1, height - 1)
     theme = active_theme(state)
@@ -369,7 +483,13 @@ def render_frame(term, state, width, height, Paragraph, Style, Color, DrawCmd, T
         if (index + 1) * 3 >= progress_height:
             break
 
-    commands.append(DrawCmd.list(body, (0, top, width, body_height)))
+    if state.mode == "tweaks-edit" and width > 60:
+        left_rect, right_rect = _split_v((0, top, width, body_height), 0.45, 0.55, gap=1)
+        detail = tweaks_detail_widget(state, Paragraph, Style, Color, theme)
+        commands.append(DrawCmd.list(body, left_rect))
+        commands.append(DrawCmd.paragraph(detail, right_rect))
+    else:
+        commands.append(DrawCmd.list(body, (0, top, width, body_height)))
     footer_top = top + body_height
     commands.append(
         DrawCmd.paragraph(footer, (0, footer_top, width, max(1, height - footer_top)))

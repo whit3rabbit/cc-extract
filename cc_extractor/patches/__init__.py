@@ -79,6 +79,7 @@ class Patch:
     apply: Callable[[str, "PatchContext"], "PatchOutcome"] = field(repr=False)
     versions_blacklisted: Tuple[str, ...] = ()
     on_miss: str = "fatal"  # "fatal" | "skip" | "warn"
+    description: str = ""
 
 
 class PatchAnchorMissError(ValueError):

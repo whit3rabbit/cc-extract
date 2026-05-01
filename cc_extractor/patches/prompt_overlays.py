@@ -27,4 +27,5 @@ PATCH = Patch(
     versions_tested=DEFAULT_VERSION_RANGES,
     on_miss="warn",
     apply=_apply,
+    description="Inject provider-specific overlay text after known prompt anchors.",
 )

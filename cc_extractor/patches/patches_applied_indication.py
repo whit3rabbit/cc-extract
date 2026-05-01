@@ -21,4 +21,5 @@ PATCH = Patch(
     versions_supported=">=2.0.0,<3",
     versions_tested=DEFAULT_VERSION_RANGES,
     apply=_apply,
+    description="Append the provider label after '(Claude Code)' in the version banner.",
 )

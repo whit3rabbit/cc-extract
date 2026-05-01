@@ -65,4 +65,5 @@ PATCH = Patch(
     versions_supported=">=2.0.0,<3",
     versions_tested=DEFAULT_VERSION_RANGES,
     apply=_apply,
+    description="Strip per-line line-number prefixes from file-read output.",
 )

@@ -43,4 +43,5 @@ PATCH = Patch(
     versions_supported=">=2.0.0,<3",
     versions_tested=DEFAULT_VERSION_RANGES,
     apply=_apply,
+    description="Increase visibleOptionCount to 25 so more options fit on screen at once.",
 )

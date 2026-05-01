@@ -24,4 +24,5 @@ PATCH = Patch(
     versions_supported=">=2.0.0,<3",
     versions_tested=DEFAULT_VERSION_RANGES,
     apply=_apply,
+    description="Hide the 'press Ctrl+G to edit' hint shown in the input footer.",
 )

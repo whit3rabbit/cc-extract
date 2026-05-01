@@ -56,4 +56,5 @@ PATCH = Patch(
     versions_supported=">=2.0.0,<3",
     versions_tested=DEFAULT_VERSION_RANGES,
     apply=_apply,
+    description="Add extended Claude model entries (Opus 4.6, Sonnet 4.6, Haiku 4.5, etc.) to the model picker.",
 )

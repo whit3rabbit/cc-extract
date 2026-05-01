@@ -40,7 +40,10 @@ __all__ = [
     "_dashboard_accepts_profile_text", "_dashboard_backspace",
     "_variant_accepts_text", "_variant_append_text", "_variant_backspace",
     "_activate_extract", "_activate_inspect", "_activate_patch_source",
-    "_go_back", "_move_tab", "_set_mode", "_source_artifact", "_toggle_patch",
+    "_apply_tweaks", "_discard_tweaks", "_enter_tweaks_for_variant",
+    "_go_back", "_move_tab", "_selected_tweaks_source_variant_id",
+    "_set_mode", "_source_artifact", "_toggle_patch", "_toggle_tweak",
+    "_tweaks_edit_options", "_tweaks_source_options",
     "_selected_dashboard_option", "_selected_dashboard_packages",
     "_selected_variant_option", "_selected_variant_provider",
     "_active_theme", "_cycle_theme", "_load_saved_theme_id",
@@ -121,12 +124,16 @@ from .nav import (
     activate_extract as _activate_extract,
     activate_inspect as _activate_inspect,
     activate_patch_source as _activate_patch_source,
+    apply_tweaks as _apply_tweaks,
+    discard_tweaks as _discard_tweaks,
+    enter_tweaks_for_variant as _enter_tweaks_for_variant,
     go_back as _go_back,
     move_tab as _move_tab,
     selected_artifact as _selected_artifact,
     set_mode as _set_mode,
     source_artifact as _source_artifact,
     toggle_patch as _toggle_patch,
+    toggle_tweak as _toggle_tweak,
 )
 from .options import (
     dashboard_options as _dashboard_options,
@@ -138,8 +145,11 @@ from .options import (
     selected_dashboard_option as _selected_dashboard_option,
     selected_dashboard_packages as _selected_dashboard_packages,
     selected_patch_refs as _selected_patch_refs,
+    selected_tweaks_source_variant_id as _selected_tweaks_source_variant_id,
     selected_variant_option as _selected_variant_option,
     selected_variant_provider as _selected_variant_provider,
+    tweaks_edit_options as _tweaks_edit_options,
+    tweaks_source_options as _tweaks_source_options,
     variant_model_display_value as _variant_model_display_value,
     variant_options as _variant_options,
 )
@@ -303,6 +313,9 @@ def _handle_char_key(state, char):
         _go_back(state)
     elif lowered == "t":
         _cycle_theme(state)
+    elif lowered == "a" and state.mode == "tweaks-edit":
+        _apply_tweaks(state)
+        _refresh_state(state)
     elif char == " ":
         _toggle_selected(state)
     elif lowered == "r" and state.mode == "dashboard" and state.dashboard_step == 0:
@@ -329,6 +342,8 @@ def _toggle_selected(state):
         option = _selected_variant_option(state)
         if option and option.kind == "variant-tweak":
             _toggle_variant_tweak(state, str(option.value))
+    elif state.mode == "tweaks-edit":
+        _toggle_tweak(state)
 
 
 # -- Activate dispatchers ----------------------------------------------------
@@ -348,11 +363,29 @@ def _activate(state):
             _activate_patch_packages(state)
         elif state.mode == "variants":
             _activate_variants(state)
+        elif state.mode == "tweaks-source":
+            _activate_tweaks_source(state)
+        elif state.mode == "tweaks-edit":
+            _activate_tweaks_edit(state)
     except Exception as exc:
         state.message = f"Action failed: {exc}"
 
     _refresh_state(state)
     return True
+
+
+def _activate_tweaks_source(state):
+    """Enter tweaks-edit scoped to the selected variant."""
+    variant_id = _selected_tweaks_source_variant_id(state)
+    if variant_id is None:
+        state.message = "No variant available - create one first."
+        return
+    _enter_tweaks_for_variant(state, variant_id)
+
+
+def _activate_tweaks_edit(state):
+    """Enter on a patch row toggles it (mirrors Space)."""
+    _toggle_tweak(state)
 
 
 def _activate_dashboard(state):

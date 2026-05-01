@@ -1,6 +1,6 @@
 """Explicit registry of `cc_extractor.patches` Patch objects."""
 
-from typing import Dict
+from typing import Dict, List, Tuple
 
 from . import Patch
 from . import (
@@ -40,3 +40,25 @@ def get_patch(patch_id: str) -> Patch:
 
 def registered_ids() -> tuple:
     return tuple(REGISTRY.keys())
+
+
+GROUP_ORDER: Tuple[str, ...] = ("ui", "thinking", "prompts", "tools", "system")
+
+
+def patches_grouped() -> Dict[str, List[Patch]]:
+    """Return registered patches grouped by `Patch.group`.
+
+    Group keys appear in `GROUP_ORDER` first, then any unknown group keys
+    in lexicographic order. Within each group, patches keep registry insertion
+    order (the order they appear in REGISTRY).
+    """
+    grouped: Dict[str, List[Patch]] = {}
+    for patch in REGISTRY.values():
+        grouped.setdefault(patch.group, []).append(patch)
+    ordered: Dict[str, List[Patch]] = {}
+    for group in GROUP_ORDER:
+        if group in grouped:
+            ordered[group] = grouped.pop(group)
+    for group in sorted(grouped):
+        ordered[group] = grouped[group]
+    return ordered

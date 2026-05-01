@@ -535,3 +535,163 @@ def test_variant_status_reports_doctor_failure(monkeypatch):
     tui._activate_variants(state)
 
     assert state.message == "Variant status failed: doctor broke"
+
+
+# -- Tweaks tab tests ----------------------------------------------------------
+
+def _variant(variant_id="my-variant", name="My Variant", tweaks=None, version="2.1.123"):
+    from cc_extractor.variants.model import Variant
+    tweaks = list(tweaks or [])
+    return Variant(
+        variant_id=variant_id,
+        name=name,
+        path=Path(f"/tmp/{variant_id}"),
+        manifest={
+            "schemaVersion": 1,
+            "id": variant_id,
+            "name": name,
+            "provider": {"key": "kimi", "label": "Kimi"},
+            "source": {"version": version, "platform": "darwin-arm64", "sha256": "x", "path": "/tmp/x"},
+            "tweaks": tweaks,
+            "runtime": "native",
+        },
+    )
+
+
+def test_tweaks_tab_initial_state():
+    state = tui.TuiState(mode="tweaks-source", variants=[_variant()])
+    title, labels = tui.rendering.current_labels(state)
+    assert title.startswith("Tweaks: pick variant")
+    assert any("my-variant" in label for label in labels)
+
+
+def test_tweaks_select_variant_enters_edit_mode():
+    variant = _variant(tweaks=["themes", "hide-startup-banner"])
+    state = tui.TuiState(mode="tweaks-source", variants=[variant])
+
+    tui._activate(state)
+
+    assert state.mode == "tweaks-edit"
+    assert state.tweaks_variant_id == variant.variant_id
+    assert state.tweaks_baseline == ("themes", "hide-startup-banner")
+    assert state.tweaks_pending == ["themes", "hide-startup-banner"]
+
+
+def test_tweaks_toggle_updates_pending():
+    variant = _variant(tweaks=["themes"])
+    state = tui.TuiState(mode="tweaks-source", variants=[variant])
+    tui._activate(state)  # enter edit mode
+    state.selected_index = 0  # first option (allow-custom-agent-models, alphabetical first in ui group)
+
+    tui._toggle_tweak(state)
+
+    assert "allow-custom-agent-models" in state.tweaks_pending
+    assert "1 pending change" in state.message
+
+
+def test_tweaks_discard_reverts():
+    variant = _variant(tweaks=["themes"])
+    state = tui.TuiState(mode="tweaks-source", variants=[variant])
+    tui._activate(state)
+    state.selected_index = 0
+    tui._toggle_tweak(state)
+    assert state.tweaks_pending != list(state.tweaks_baseline)
+
+    tui._discard_tweaks(state)
+
+    assert state.tweaks_pending == list(state.tweaks_baseline)
+    assert "Discarded" in state.message
+
+
+def test_tweaks_apply_calls_apply_variant(monkeypatch, tmp_path):
+    variant = _variant(tweaks=["themes"])
+    variant.path = tmp_path / variant.variant_id
+    variant.path.mkdir()
+    state = tui.TuiState(mode="tweaks-source", variants=[variant])
+    tui._activate(state)
+    state.selected_index = 0
+    tui._toggle_tweak(state)
+    pending_before_apply = list(state.tweaks_pending)
+
+    written = {}
+
+    class FakeBuildResult:
+        wrapper_path = tmp_path / "wrapper"
+
+    def fake_apply_variant(variant_id, *, claude_version=None, root=None):
+        written["called_with"] = (variant_id, claude_version)
+        return FakeBuildResult()
+
+    def fake_load_variant(variant_id, root=None):
+        return variant
+
+    def fake_validate(manifest):
+        written["validated"] = manifest
+
+    def fake_write_json(path, manifest):
+        written["written_path"] = path
+        written["manifest"] = manifest
+
+    # Refresh after apply re-scans variants; return the same variant with updated tweaks.
+    def fake_refresh(state_arg):
+        # Simulate the rebuild updating the variant on disk; pending becomes baseline.
+        new_tweaks = sorted(set(pending_before_apply))
+        variant.manifest["tweaks"] = new_tweaks
+        state_arg.variants = [variant]
+        return True
+
+    monkeypatch.setattr("cc_extractor.variants.apply_variant", fake_apply_variant)
+    monkeypatch.setattr("cc_extractor.variants.load_variant", fake_load_variant)
+    monkeypatch.setattr("cc_extractor.variants.model.validate_variant_manifest", fake_validate)
+    monkeypatch.setattr("cc_extractor.workspace.write_json", fake_write_json)
+    monkeypatch.setattr(tui, "_refresh_state", fake_refresh)
+
+    tui._apply_tweaks(state)
+
+    assert written["called_with"] == (variant.variant_id, "2.1.123")
+    assert written["manifest"]["tweaks"] == sorted(set(pending_before_apply))
+    assert "Applied tweaks" in state.message
+
+
+def test_tweaks_screen_text_two_pane():
+    variant = _variant(tweaks=["themes"])
+    state = tui.TuiState(mode="tweaks-source", variants=[variant])
+    tui._activate(state)  # enter edit
+
+    text = tui._screen_text(state, height=40)
+
+    assert "Patches" in text
+    assert "Patch details" in text
+    assert "Group:" in text
+    assert "Versions supported" in text
+
+
+def test_tweaks_two_pane_renders_at_typical_widths():
+    from ratatui_py import Color, DrawCmd, Gauge, List as TuiList, Paragraph, Style, Tabs, headless_render_frame
+
+    variant = _variant(tweaks=["themes"])
+    state = tui.TuiState(mode="tweaks-source", variants=[variant], theme_id="hacker-bbs")
+    tui._activate(state)  # enter tweaks-edit
+
+    class FakeTerm:
+        def __init__(self, w, h):
+            self._w, self._h = w, h
+            self.commands = None
+        def size(self):
+            return self._w, self._h
+        def draw_frame(self, commands):
+            self.commands = commands
+
+    for width, height in ((100, 30), (80, 24)):
+        term = FakeTerm(width, height)
+        tui._render_frame(
+            term, state, width, height,
+            Paragraph, Style, Color, DrawCmd, Tabs, TuiList, Gauge,
+        )
+        assert term.commands, f"no commands at {width}x{height}"
+
+        screen = headless_render_frame(width, height, term.commands)
+        assert "Patches" in screen
+        assert "Patch details" in screen
+        # ensure the right pane content was actually rendered
+        assert "Group:" in screen
