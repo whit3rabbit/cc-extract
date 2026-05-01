@@ -100,3 +100,18 @@ def test_env_backed_tweaks_emit_env_without_patching_js():
     assert env["CLAUDE_CODE_CONTEXT_LIMIT"] == "1000000"
     assert env["CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS"] == "90000"
     assert env["CLAUDE_CODE_SUBAGENT_MODEL"] == "model-x"
+
+
+def test_apply_variant_tweaks_warns_on_untested_version():
+    import warnings
+
+    js = ",R.createElement(B,{isBeforeFirstMessage:!1}),"
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        apply_variant_tweaks(
+            js,
+            tweak_ids=["hide-startup-banner"],
+            claude_version="1.0.0",  # not in any tested range
+            force=True,  # bypass unsupported-version error so we can observe the warning
+        )
+    assert any("1.0.0" in str(w.message) for w in caught)

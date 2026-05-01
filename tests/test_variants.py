@@ -29,7 +29,7 @@ ENTRY_JS = "\n".join(
 )
 
 
-def write_source_artifact(tmp_path, version="1.2.3"):
+def write_source_artifact(tmp_path, version="2.1.0"):
     fixture = build_bun_fixture(
         platform="elf",
         module_struct_size=52,
@@ -48,7 +48,7 @@ def write_source_artifact(tmp_path, version="1.2.3"):
     )
 
 
-def write_macho_source_artifact(tmp_path, version="1.2.3"):
+def write_macho_source_artifact(tmp_path, version="2.1.0"):
     fixture = build_bun_fixture(
         platform="macho",
         module_struct_size=52,

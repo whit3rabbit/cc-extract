@@ -1,0 +1,24 @@
+"""Append the provider label to the (Claude Code) version banner."""
+
+from . import Patch, PatchContext, PatchOutcome
+from ._pinned_default import DEFAULT_VERSION_RANGES
+
+
+def _apply(js: str, ctx: PatchContext) -> PatchOutcome:
+    marker = " (Claude Code)"
+    idx = js.find(marker)
+    if idx == -1:
+        return PatchOutcome(js=js, status="missed")
+    replacement = f" (Claude Code, {ctx.provider_label} variant)"
+    new_js = js[:idx] + replacement + js[idx + len(marker):]
+    return PatchOutcome(js=new_js, status="applied")
+
+
+PATCH = Patch(
+    id="patches-applied-indication",
+    name="Patches-applied indication",
+    group="ui",
+    versions_supported=">=2.0.0,<3",
+    versions_tested=DEFAULT_VERSION_RANGES,
+    apply=_apply,
+)
