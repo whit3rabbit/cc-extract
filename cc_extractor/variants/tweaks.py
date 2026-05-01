@@ -7,7 +7,7 @@ from typing import Dict, Iterable, List, Optional
 
 from ..binary_patcher.prompts import apply_prompts
 from ..binary_patcher.theme import apply_theme, themes_from_config as _themes_from_config
-from ..patches import PatchContext as _PatchCtx, apply_patches as _apply_patches
+from ..patches import PatchContext as _PatchCtx, apply_patches as _apply_patches, PatchAnchorMissError
 from ..patches._registry import REGISTRY as _PATCH_REGISTRY
 
 
@@ -124,17 +124,20 @@ def apply_variant_tweaks(
             else:
                 skipped.append(tweak_id)
         elif tweak_id in _PATCH_REGISTRY:
-            sub = _apply_patches(
-                js,
-                [tweak_id],
-                _PatchCtx(
-                    claude_version=None,
-                    provider_label=provider_label,
-                    config=config,
-                    overlays=overlays,
-                ),
-                registry=_PATCH_REGISTRY,
-            )
+            try:
+                sub = _apply_patches(
+                    js,
+                    [tweak_id],
+                    _PatchCtx(
+                        claude_version=None,
+                        provider_label=provider_label,
+                        config=config,
+                        overlays=overlays,
+                    ),
+                    registry=_PATCH_REGISTRY,
+                )
+            except PatchAnchorMissError as e:
+                raise TweakPatchError(tweak_id, "failed to find anchor") from e
             js = sub.js
             if sub.applied:
                 applied.append(tweak_id)
@@ -315,7 +318,6 @@ def _patches_applied_indication(js: str, provider_label: str = "cc-extractor", *
 
 
 _PATCHERS = {
-    "hide-ctrl-g-to-edit": _hide_ctrl_g_to_edit,
     "suppress-line-numbers": _suppress_line_numbers,
     "auto-accept-plan-mode": _auto_accept_plan_mode,
     "allow-custom-agent-models": _allow_custom_agent_models,

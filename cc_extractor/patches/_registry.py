@@ -3,9 +3,10 @@
 from typing import Dict
 
 from . import Patch
-from . import hide_startup_banner, hide_startup_clawd, model_customizations, show_more_items
+from . import hide_ctrl_g, hide_startup_banner, hide_startup_clawd, model_customizations, show_more_items
 
 REGISTRY: Dict[str, Patch] = {
+    hide_ctrl_g.PATCH.id: hide_ctrl_g.PATCH,
     hide_startup_banner.PATCH.id: hide_startup_banner.PATCH,
     hide_startup_clawd.PATCH.id: hide_startup_clawd.PATCH,
     model_customizations.PATCH.id: model_customizations.PATCH,
