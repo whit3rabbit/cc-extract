@@ -318,5 +318,4 @@ def _patches_applied_indication(js: str, provider_label: str = "cc-extractor", *
 
 
 _PATCHERS = {
-    "patches-applied-indication": _patches_applied_indication,
 }
