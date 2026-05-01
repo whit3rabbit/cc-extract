@@ -84,3 +84,14 @@ def parse_js() -> Callable[[str], None]:
         finally:
             Path(tmp_path).unlink(missing_ok=True)
     return runner
+
+
+@pytest.fixture
+def cli_js_synthetic():
+    from tests.patches.fixtures.synthetic import SYNTHETIC
+
+    def loader(patch_id: str) -> str:
+        if patch_id not in SYNTHETIC:
+            raise KeyError(f"no synthetic snippet for patch {patch_id!r}")
+        return SYNTHETIC[patch_id]
+    return loader
