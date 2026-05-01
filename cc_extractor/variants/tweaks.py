@@ -315,7 +315,6 @@ def _patches_applied_indication(js: str, provider_label: str = "cc-extractor", *
 
 
 _PATCHERS = {
-    "model-customizations": _model_customizations,
     "hide-startup-clawd": _hide_startup_clawd,
     "hide-ctrl-g-to-edit": _hide_ctrl_g_to_edit,
     "suppress-line-numbers": _suppress_line_numbers,
