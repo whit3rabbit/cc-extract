@@ -99,3 +99,97 @@ class PatchBlacklistedError(ValueError):
         self.patch_id = patch_id
         self.version = version
         super().__init__(f"{patch_id}: version {version} is blacklisted")
+
+
+import logging
+import warnings
+from typing import List, Mapping as _Mapping, Optional as _Optional, Sequence
+
+from ._versions import SemverRangeError, version_in_range
+
+
+_log = logging.getLogger(__name__)
+
+
+def apply_patches(
+    js: str,
+    ids: Sequence[str],
+    ctx: "PatchContext",
+    *,
+    registry: _Optional[_Mapping[str, "Patch"]] = None,
+) -> "AggregateResult":
+    if registry is None:
+        from ._registry import REGISTRY as _REGISTRY  # late import: avoids cycle
+        registry = _REGISTRY
+
+    applied: List[str] = []
+    skipped: List[str] = []
+    missed: List[str] = []
+    notes: List[str] = []
+
+    for patch_id in ids:
+        if patch_id not in registry:
+            raise KeyError(f"unknown patch: {patch_id!r}")
+        patch = registry[patch_id]
+        _preflight(patch, ctx)
+        outcome = patch.apply(js, ctx)
+        if outcome.status == "applied":
+            applied.append(patch_id)
+            js = outcome.js
+        elif outcome.status == "skipped":
+            skipped.append(patch_id)
+        elif outcome.status == "missed":
+            if patch.on_miss == "fatal":
+                raise PatchAnchorMissError(patch_id)
+            if patch.on_miss == "warn":
+                warnings.warn(
+                    f"patch {patch_id!r}: anchor not found",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            missed.append(patch_id)
+        else:
+            raise ValueError(f"patch {patch_id!r} returned unknown status {outcome.status!r}")
+        notes.extend(outcome.notes)
+
+    return AggregateResult(
+        js=js,
+        applied=tuple(applied),
+        skipped=tuple(skipped),
+        missed=tuple(missed),
+        notes=tuple(notes),
+    )
+
+
+def _preflight(patch: "Patch", ctx: "PatchContext") -> None:
+    version = ctx.claude_version
+    if version is None:
+        _log.debug("apply_patches: no claude_version provided, skipping pre-flight for %s", patch.id)
+        return
+
+    if version in patch.versions_blacklisted and not ctx.force:
+        raise PatchBlacklistedError(patch.id, version)
+
+    try:
+        in_supported = version_in_range(version, patch.versions_supported)
+    except SemverRangeError as exc:
+        raise PatchUnsupportedVersionError(patch.id, version, patch.versions_supported) from exc
+
+    if not in_supported and not ctx.force:
+        raise PatchUnsupportedVersionError(patch.id, version, patch.versions_supported)
+
+    in_tested = False
+    for tested_range in patch.versions_tested:
+        try:
+            if version_in_range(version, tested_range):
+                in_tested = True
+                break
+        except SemverRangeError:
+            continue
+    if not in_tested:
+        warnings.warn(
+            f"patch {patch.id!r} not tested against version {version}; "
+            f"tested ranges: {list(patch.versions_tested)}",
+            UserWarning,
+            stacklevel=2,
+        )
