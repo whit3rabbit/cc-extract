@@ -69,7 +69,7 @@ def apply_patch_refs(
         )
 
 
-def patch_entry_js(extract_dir: Path, manifest_data: Dict, *, provider_key: str, tweak_ids: List[str]):
+def patch_entry_js(extract_dir: Path, manifest_data: Dict, *, provider_key: str, tweak_ids: List[str], claude_version: Optional[str] = None):
     entry = manifest_data.get("entryPoint")
     if not entry:
         manifest_path = extract_dir / ".bundle_manifest.json"
@@ -88,6 +88,7 @@ def patch_entry_js(extract_dir: Path, manifest_data: Dict, *, provider_key: str,
         config=provider_patch_config(provider_key),
         overlays=provider_prompt_overlays(provider_key),
         provider_label=provider.label,
+        claude_version=claude_version,
     )
     entry_path.write_text(result.js, encoding="utf-8")
     return result

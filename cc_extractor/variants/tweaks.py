@@ -80,6 +80,8 @@ def apply_variant_tweaks(
     config: Optional[Dict] = None,
     overlays: Optional[Dict[str, str]] = None,
     provider_label: str = "cc-extractor",
+    claude_version: Optional[str] = None,
+    force: bool = False,
 ) -> TweakResult:
     config = config or {}
     overlays = overlays or {}
@@ -98,10 +100,11 @@ def apply_variant_tweaks(
                 js,
                 [tweak_id],
                 _PatchCtx(
-                    claude_version=None,
+                    claude_version=claude_version,
                     provider_label=provider_label,
                     config=config,
                     overlays=overlays,
+                    force=force,
                 ),
                 registry=_PATCH_REGISTRY,
             )

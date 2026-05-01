@@ -352,6 +352,7 @@ def _build_variant_from_manifest(
                 manifest_data,
                 provider_key=manifest["provider"]["key"],
                 tweak_ids=manifest.get("tweaks", []),
+                claude_version=source_artifact.version,
             )
             pack_bundle(str(extract_dir), str(staged_output), str(source_artifact.path))
             shutil.move(str(staged_output), str(output_binary))
@@ -504,6 +505,7 @@ def _unpack_node_runtime_variant(
             config={},
             overlays={},
             provider_label=provider.label,
+            claude_version=source_artifact.version,
         )
         entry_path.write_text(extra.js, encoding="latin1")
         applied.extend(extra.applied)
