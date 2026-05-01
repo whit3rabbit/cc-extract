@@ -318,6 +318,5 @@ def _patches_applied_indication(js: str, provider_label: str = "cc-extractor", *
 
 
 _PATCHERS = {
-    "allow-custom-agent-models": _allow_custom_agent_models,
     "patches-applied-indication": _patches_applied_indication,
 }

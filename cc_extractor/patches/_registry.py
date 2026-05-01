@@ -4,6 +4,7 @@ from typing import Dict
 
 from . import Patch
 from . import (
+    allow_custom_agent_models,
     auto_accept_plan_mode,
     hide_ctrl_g,
     hide_startup_banner,
@@ -14,6 +15,7 @@ from . import (
 )
 
 REGISTRY: Dict[str, Patch] = {
+    allow_custom_agent_models.PATCH.id: allow_custom_agent_models.PATCH,
     auto_accept_plan_mode.PATCH.id: auto_accept_plan_mode.PATCH,
     hide_ctrl_g.PATCH.id: hide_ctrl_g.PATCH,
     hide_startup_banner.PATCH.id: hide_startup_banner.PATCH,
