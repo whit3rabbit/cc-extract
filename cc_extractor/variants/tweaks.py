@@ -5,7 +5,6 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional
 
-from ..binary_patcher.prompts import apply_prompts
 from ..patches import PatchContext as _PatchCtx, apply_patches as _apply_patches, PatchAnchorMissError
 from ..patches._registry import REGISTRY as _PATCH_REGISTRY
 
@@ -107,15 +106,7 @@ def apply_variant_tweaks(
             skipped.append(tweak_id)
             continue
         old_js = js
-        if tweak_id == "prompt-overlays":
-            prompt_result = apply_prompts(js, overlays)
-            js = prompt_result.js
-            missing.extend(prompt_result.missing)
-            if prompt_result.replaced_targets:
-                applied.append(tweak_id)
-            else:
-                skipped.append(tweak_id)
-        elif tweak_id in _PATCH_REGISTRY:
+        if tweak_id in _PATCH_REGISTRY:
             try:
                 sub = _apply_patches(
                     js,
@@ -135,6 +126,10 @@ def apply_variant_tweaks(
                 applied.append(tweak_id)
             else:
                 skipped.append(tweak_id)
+            # Forward prompt-overlay miss notes to the legacy `missing` list
+            for note in sub.notes:
+                if note.startswith("prompt overlay miss: "):
+                    missing.append(note[len("prompt overlay miss: "):])
         else:
             patcher = _PATCHERS[tweak_id]
             patched = patcher(js, provider_label=provider_label)
