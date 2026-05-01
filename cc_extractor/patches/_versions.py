@@ -1,7 +1,7 @@
 """SemVer range parser scoped to Claude Code's MAJOR.MINOR.PATCH scheme."""
 
 import re
-from typing import List, Tuple
+from typing import List, Mapping, Optional, Tuple
 
 Version = Tuple[int, int, int]
 
@@ -98,3 +98,34 @@ def range_contains_range(outer: str, inner: str) -> bool:
             if not version_in_range(version_str, outer):
                 return False
     return True
+
+
+def resolve_range_to_version(expr: str, *, index: Mapping[str, object]) -> Optional[str]:
+    """Return the highest concrete version in `index` that satisfies `expr`,
+    or None if nothing satisfies. `index` follows the schema in
+    cc_extractor/data/download-index.seed.json (top-level "binary.versions"
+    list of dicts with "version" keys)."""
+    binary = index.get("binary") if isinstance(index, Mapping) else None
+    versions_list = binary.get("versions") if isinstance(binary, Mapping) else None
+    if not isinstance(versions_list, list):
+        return None
+    candidates: List[Version] = []
+    for entry in versions_list:
+        if not isinstance(entry, Mapping):
+            continue
+        text = entry.get("version")
+        if not isinstance(text, str):
+            continue
+        try:
+            parsed = parse_version(text)
+        except SemverRangeError:
+            continue
+        try:
+            if version_in_range(text, expr):
+                candidates.append(parsed)
+        except SemverRangeError:
+            return None
+    if not candidates:
+        return None
+    best = max(candidates)
+    return f"{best[0]}.{best[1]}.{best[2]}"

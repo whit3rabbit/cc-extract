@@ -56,3 +56,23 @@ def test_version_in_range_rejects_bad_comparator():
 def test_version_in_range_rejects_bad_version_in_range():
     with pytest.raises(SemverRangeError):
         version_in_range("2.0.40", ">=foo")
+
+
+from cc_extractor.patches._versions import resolve_range_to_version
+
+
+def test_resolve_picks_highest_in_range():
+    index = {"binary": {"versions": [
+        {"version": "2.0.40"}, {"version": "2.0.45"}, {"version": "2.1.0"}, {"version": "2.1.123"},
+    ]}}
+    assert resolve_range_to_version(">=2.0.20,<2.1", index=index) == "2.0.45"
+
+
+def test_resolve_returns_none_when_nothing_matches():
+    index = {"binary": {"versions": [{"version": "1.5.0"}]}}
+    assert resolve_range_to_version(">=2.0.20,<3", index=index) is None
+
+
+def test_resolve_skips_malformed_entries():
+    index = {"binary": {"versions": [{"version": "2.0.40"}, {"version": "garbage"}, {}]}}
+    assert resolve_range_to_version(">=2.0.20,<3", index=index) == "2.0.40"
