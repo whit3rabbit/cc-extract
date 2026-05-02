@@ -181,6 +181,7 @@ from .options import (
     selected_tweaks_source_variant_id as _selected_tweaks_source_variant_id,
     selected_variant_option as _selected_variant_option,
     selected_variant_provider as _selected_variant_provider,
+    setup_provider_keys as _setup_provider_keys,
     tweak_diff as _tweak_diff,
     unsupported_pending_tweaks as _unsupported_pending_tweaks,
     tweaks_edit_options as _tweaks_edit_options,
@@ -355,6 +356,11 @@ def _copy_text_to_clipboard(text):
 # -- Key handlers ------------------------------------------------------------
 
 def _handle_backspace_key(state):
+    if state.mode == "setup-manager" and state.setup_search_active:
+        state.setup_search_text = state.setup_search_text[:-1]
+        _clamp_setup_manager_selection(state)
+        state.message = f"Search: {state.setup_search_text or 'none'}"
+        return True
     if state.mode == "delete-confirm":
         state.delete_confirm_text = state.delete_confirm_text[:-1]
         return True
@@ -382,6 +388,13 @@ def _handle_char_key(state, char):
             _variant_append_text(state, char)
         return True
 
+    if state.mode == "setup-manager" and state.setup_search_active:
+        if char.isprintable() and char not in "\r\n\t":
+            state.setup_search_text += char
+            _clamp_setup_manager_selection(state)
+            state.message = f"Search: {state.setup_search_text}"
+        return True
+
     lowered = char.lower()
     if lowered == "q":
         return False
@@ -407,7 +420,17 @@ def _handle_char_key(state, char):
             state.message = "Tweak rebuild cancelled."
         return True
     handled_setup_key = False
-    if lowered == "n" and state.mode in {"setup-manager", "setup-detail", "health-result"}:
+    if char == "/" and state.mode == "setup-manager":
+        state.setup_search_active = True
+        state.message = "Search setups."
+        handled_setup_key = True
+    elif lowered == "p" and state.mode == "setup-manager":
+        _cycle_setup_provider_filter(state)
+        handled_setup_key = True
+    elif lowered == "s" and state.mode == "setup-manager":
+        _cycle_setup_sort(state)
+        handled_setup_key = True
+    elif lowered == "n" and state.mode in {"setup-manager", "setup-detail", "health-result"}:
         _start_setup_create(state)
         handled_setup_key = True
     elif lowered == "u" and state.mode in {"setup-manager", "setup-detail"}:
@@ -481,6 +504,10 @@ def _toggle_selected(state):
 
 def _activate(state):
     state.message = ""
+    if state.mode == "setup-manager" and state.setup_search_active:
+        state.setup_search_active = False
+        state.message = f"Search filter kept: {state.setup_search_text or 'none'}"
+        return True
     try:
         if state.mode == "setup-manager":
             _activate_setup_manager(state)
@@ -650,6 +677,124 @@ def _health_status_from_report(report):
     return "healthy" if report and report.get("ok") else "broken"
 
 
+def _yes_no(value):
+    return "yes" if value else "no"
+
+
+def _path_snapshot(path):
+    if not path:
+        return {"path": "", "exists": False, "size": None, "mtime_ns": None}
+    path = Path(path)
+    try:
+        stat = path.stat()
+    except OSError:
+        return {"path": str(path), "exists": False, "size": None, "mtime_ns": None}
+    return {
+        "path": str(path),
+        "exists": True,
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+    }
+
+
+def _path_changed(before, after):
+    return (
+        before.get("exists") != after.get("exists")
+        or before.get("size") != after.get("size")
+        or before.get("mtime_ns") != after.get("mtime_ns")
+    )
+
+
+def _expected_setup_snapshot(setup_id):
+    setup_dir = workspace_root() / "variants" / setup_id
+    wrapper = workspace_root() / "bin" / setup_id
+    config = setup_dir / "variant.json"
+    return {
+        "setup_dir": _path_snapshot(setup_dir),
+        "wrapper": _path_snapshot(wrapper),
+        "config": _path_snapshot(config),
+    }
+
+
+def _variant_setup_snapshot(variant):
+    manifest = variant.manifest or {}
+    paths = manifest.get("paths") or {}
+    wrapper = paths.get("wrapper") or ""
+    binary = paths.get("binary") or ""
+    return {
+        "manifest": dict(manifest),
+        "setup_dir": _path_snapshot(variant.path),
+        "wrapper": _path_snapshot(wrapper),
+        "binary": _path_snapshot(binary),
+        "config": _path_snapshot(variant.path / "variant.json"),
+    }
+
+
+def _create_failure_summary(setup_id, before, exc):
+    after = _expected_setup_snapshot(setup_id)
+    setup_created = not before["setup_dir"]["exists"] and after["setup_dir"]["exists"]
+    command_created = not before["wrapper"]["exists"] and after["wrapper"]["exists"]
+    config_created = not before["config"]["exists"] and after["config"]["exists"]
+    changed = any(_path_changed(before[key], after[key]) for key in ("setup_dir", "wrapper", "config"))
+    cleanup_needed = setup_created or command_created or config_created
+    return [
+        "Create failed.",
+        f"Setup: {setup_id}",
+        f"Setup directory created: {_yes_no(setup_created)}",
+        f"Command created: {_yes_no(command_created)}",
+        f"Setup config created: {_yes_no(config_created)}",
+        f"Previous state changed: {_yes_no(changed)}",
+        f"Cleanup needed: {_yes_no(cleanup_needed)}",
+        f"Failed stage: create setup: {exc}",
+    ]
+
+
+def _target_version_for_summary(state, target):
+    if target == "latest":
+        return str((state.download_index.get("binary") or {}).get("latest") or "")
+    return str(target or "")
+
+
+def _has_cached_native_artifact(state, version):
+    if not version:
+        return False
+    return any(getattr(artifact, "version", None) == version for artifact in state.native_artifacts)
+
+
+def _base_download_status(state, target_version, cached_before):
+    if not target_version:
+        return "unknown"
+    if cached_before:
+        return "already cached"
+    if _has_cached_native_artifact(state, target_version):
+        return "verified"
+    return "not found"
+
+
+def _post_variant_snapshot(setup_id, fallback):
+    try:
+        variant = load_variant(setup_id)
+    except Exception:
+        return None, fallback
+    return variant, _variant_setup_snapshot(variant)
+
+
+def _command_replaced_status(before, after):
+    if not before.get("path") or not after.get("path"):
+        return "unknown"
+    if not after.get("exists"):
+        return "unknown, command missing"
+    return "yes" if _path_changed(before, after) else "no"
+
+
+def _active_setup_status(snapshot):
+    if snapshot is None:
+        return "unknown"
+    wrapper_exists = snapshot["wrapper"]["exists"]
+    binary_exists = snapshot["binary"]["exists"]
+    return "yes" if wrapper_exists and binary_exists else "no"
+
+
 def _run_setup_health(state, setup_id, *, show_result=False):
     try:
         reports, output = _run_quiet(doctor_variant, setup_id)
@@ -696,6 +841,9 @@ def _run_setup_upgrade(state):
         return
     old_version = ((variant.manifest or {}).get("source") or {}).get("version") or "?"
     target = state.setup_upgrade_target or "latest"
+    before = _variant_setup_snapshot(variant)
+    target_version = _target_version_for_summary(state, target)
+    cached_before = _has_cached_native_artifact(state, target_version)
     try:
         results, update_output = _run_quiet(update_variants, setup_id, claude_version=target)
         _refresh_state(state)
@@ -724,19 +872,27 @@ def _run_setup_upgrade(state):
         ]
         state.message = f"Upgrade complete for setup {setup_id}: {status}"
     except Exception as exc:
-        active = "yes"
+        refresh_message = ""
         try:
-            load_variant(setup_id)
-        except Exception:
-            active = "unknown"
+            _refresh_state(state)
+            state.selected_setup_id = setup_id
+        except Exception as refresh_exc:
+            refresh_message = f" Refresh failed after error: {refresh_exc}"
+        post_variant, after = _post_variant_snapshot(setup_id, before)
+        base_status = _base_download_status(state, target_version, cached_before)
+        command_replaced = _command_replaced_status(before["wrapper"], after["wrapper"])
+        active = "unknown" if post_variant is None else _active_setup_status(after)
         state.last_action_log = _stage_log_lines("Upgrade failure", str(exc))
         state.last_action_summary = [
             f"Upgrade failed: {setup_id}",
-            "Base download succeeded: unknown",
-            "Command replaced: unknown",
+            f"Claude Code: {old_version} -> {target}",
+            f"Base download succeeded: {base_status}",
+            f"Command replaced: {command_replaced}",
             f"Previous setup remains active: {active}",
-            f"Failed stage: {exc}",
+            f"Failed stage: update/rebuild: {exc}",
         ]
+        if refresh_message:
+            state.last_action_summary.append(refresh_message.strip())
         state.message = f"Upgrade failed: {exc}"
     message = state.message
     _set_mode(state, "health-result")
@@ -756,6 +912,8 @@ def _run_setup_delete(state):
     setup_dir = variant.path
     wrapper_text = paths.get("wrapper") or ""
     wrapper_path = Path(wrapper_text) if wrapper_text else None
+    delete_failed = False
+    removed = False
     try:
         removed, output = _run_quiet(remove_variant, setup_id, yes=True)
         setup_removed = not setup_dir.exists()
@@ -763,20 +921,29 @@ def _run_setup_delete(state):
         state.last_action_log = _stage_log_lines("Delete", output)
         state.message = f"Deleted setup {setup_id}." if removed else f"Setup {setup_id} was not found."
     except Exception as exc:
+        delete_failed = True
         setup_removed = not setup_dir.exists()
         command_removed = True if wrapper_path is None else not wrapper_path.exists()
         state.last_action_log = _stage_log_lines("Delete failure", str(exc))
         state.message = f"Delete failed: {exc}"
+    title = f"Deleted setup: {setup_id}"
+    if delete_failed:
+        title = f"Delete failed: {setup_id}"
+    elif not removed:
+        title = f"Setup not found: {setup_id}"
     state.last_action_summary = [
-        f"Deleted setup: {setup_id}",
+        title,
         f"Setup directory removed: {'yes' if setup_removed else 'no'}",
         f"Command removed: {'yes' if command_removed else 'no'}",
         "Shared downloads untouched: yes",
-        "Next: refresh setup list or create a new setup.",
+        "Next: fix the reported issue, refresh setup list, or retry delete.",
     ]
     state.delete_confirm_text = ""
-    state.selected_setup_id = None
     _refresh_state(state)
+    if setup_removed:
+        state.selected_setup_id = None
+    else:
+        state.selected_setup_id = setup_id
     message = state.message
     _set_mode(state, "setup-manager")
     state.message = message
@@ -841,6 +1008,30 @@ def _cycle_tweak_filter(state):
     state.tweak_filter = order[(order.index(current) + 1) % len(order)]
     state.selected_index = 0
     state.message = f"Tweak view: {state.tweak_filter}"
+
+
+def _cycle_setup_provider_filter(state):
+    options = ["all", *_setup_provider_keys(state)]
+    current = state.setup_provider_filter if state.setup_provider_filter in options else "all"
+    state.setup_provider_filter = options[(options.index(current) + 1) % len(options)]
+    state.selected_index = 0
+    state.message = f"Provider filter: {state.setup_provider_filter}"
+
+
+def _cycle_setup_sort(state):
+    order = ["name", "provider", "health", "updated", "version"]
+    current = state.setup_sort_key if state.setup_sort_key in order else "name"
+    state.setup_sort_key = order[(order.index(current) + 1) % len(order)]
+    state.selected_index = 0
+    state.message = f"Setup sort: {state.setup_sort_key}"
+
+
+def _clamp_setup_manager_selection(state):
+    count = state.item_count()
+    if count < 1:
+        state.selected_index = 0
+    else:
+        state.selected_index = max(0, min(state.selected_index, count - 1))
 
 
 def _activate_dashboard(state):
@@ -1009,6 +1200,26 @@ def _run_variant_create(state):
         state.message = f"Credential env {credential_env} is not set."
         return
     try:
+        expected_setup_id = variant_id_from_name(name)
+    except Exception as exc:
+        state.last_action_log = _stage_log_lines("Create failure", str(exc))
+        state.last_action_summary = [
+            "Create failed.",
+            f"Setup: {name}",
+            "Setup directory created: no",
+            "Command created: no",
+            "Setup config created: no",
+            "Previous state changed: no",
+            "Cleanup needed: no",
+            f"Failed stage: validate setup id: {exc}",
+        ]
+        state.message = f"Setup create failed: {exc}"
+        message = state.message
+        _set_mode(state, "error")
+        state.message = message
+        return
+    before = _expected_setup_snapshot(expected_setup_id)
+    try:
         result, output = _run_quiet(
             create_variant,
             name=name,
@@ -1052,4 +1263,8 @@ def _run_variant_create(state):
         state.message = message
     except Exception as exc:
         state.last_action_log = _stage_log_lines("Create failure", str(exc))
+        state.last_action_summary = _create_failure_summary(expected_setup_id, before, exc)
         state.message = f"Setup create failed: {exc}"
+        message = state.message
+        _set_mode(state, "error")
+        state.message = message

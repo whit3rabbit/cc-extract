@@ -26,6 +26,8 @@ from .options import (
     variant_model_display_value,
     setup_detail_lines,
     setup_detail_options,
+    setup_manager_control_summary,
+    setup_manager_empty_label,
     setup_manager_options,
     tweak_diff,
     tweak_status,
@@ -93,8 +95,14 @@ def current_labels(state):
     if state.mode == "loading":
         return "Loading setups", ["Refreshing workspace state..."]
     if state.mode == "setup-manager":
-        labels = ["Name                 Provider     Claude Code  Health   Command"]
+        labels = [
+            setup_manager_control_summary(state),
+            "Name                 Provider     Claude Code  Health   Command",
+        ]
         labels.extend(option.label for option in setup_manager_options(state))
+        empty_label = setup_manager_empty_label(state)
+        if empty_label:
+            labels.append(empty_label)
         return "Setup manager", labels
     if state.mode == "setup-detail":
         labels = setup_detail_lines(state) + ["", "Actions"]
@@ -344,7 +352,7 @@ def selected_label_index(state):
                 seen += 1
         return max(0, label_index - 1)
     if state.mode == "setup-manager":
-        return state.selected_index + 1
+        return state.selected_index + 2
     if state.mode == "setup-detail":
         return state.selected_index + len(setup_detail_lines(state)) + 2
     return state.selected_index
@@ -420,7 +428,7 @@ def context_line(state):
     if state.mode == "loading":
         return "Loading | Refreshing setup state"
     if state.mode == "setup-manager":
-        return f"Home | Setups {len(state.variants)}"
+        return f"Home | Setups {len(state.variants)} | {setup_manager_control_summary(state)}"
     if state.mode == "setup-detail":
         return f"Home > {state.selected_setup_id or 'setup'}"
     if state.mode == "upgrade-preview":
@@ -475,6 +483,8 @@ def context_line(state):
 
 def context_hint(state):
     if state.mode == "setup-manager":
+        if getattr(state, "setup_search_active", False):
+            return "Type to search setups. Enter or Esc keeps the current filter."
         return "Pick a setup or use a lifecycle action."
     if state.mode == "delete-confirm":
         return "Type the exact setup id, then press Enter."
@@ -540,7 +550,7 @@ def _variant_key_line(state):
 
 def key_line(state):
     if state.mode == "setup-manager":
-        return "Keys: Up/Down move | Enter manage | N new | U upgrade | T tweaks | H health | D delete | R refresh | Q quit"
+        return "Keys: Up/Down move | Enter manage | / search | P provider | S sort | N new | U upgrade | T tweaks | H health | D delete | R refresh | Q quit"
     if state.mode == "setup-detail":
         return "Keys: Enter select | Esc back | H health | U upgrade | T tweaks | D delete | C copy | L logs | Q quit"
     if state.mode == "delete-confirm":

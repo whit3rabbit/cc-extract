@@ -57,6 +57,10 @@ class TuiState:
     selected_variant_tweaks: List[str] = field(default_factory=lambda: list(DEFAULT_TWEAK_IDS))
     selected_setup_id: Optional[str] = None
     setup_health: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    setup_search_text: str = ""
+    setup_search_active: bool = False
+    setup_provider_filter: str = "all"
+    setup_sort_key: str = "name"
     delete_confirm_text: str = ""
     setup_upgrade_target: str = "latest"
     last_action_summary: List[str] = field(default_factory=list)
@@ -95,6 +99,15 @@ class TuiState:
             for setup_id, summary in self.setup_health.items()
             if setup_id in setup_ids
         }
+        provider_keys = {
+            str((variant.manifest.get("provider") or {}).get("key") or "")
+            for variant in self.variants
+            if variant.manifest
+        }
+        if self.setup_provider_filter != "all" and self.setup_provider_filter not in provider_keys:
+            self.setup_provider_filter = "all"
+        if self.setup_sort_key not in {"name", "provider", "health", "updated", "version"}:
+            self.setup_sort_key = "name"
         if self.selected_setup_id not in setup_ids:
             self.selected_setup_id = self.variants[0].variant_id if self.variants else None
         if self.tweaks_variant_id not in setup_ids and self.mode not in {"tweaks-edit", "tweak-editor"}:

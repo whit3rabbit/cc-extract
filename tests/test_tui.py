@@ -610,6 +610,47 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     assert state.mode == "health-result"
 
 
+def test_create_failure_summary_reports_verified_path_state(monkeypatch, tmp_path):
+    root = tmp_path / ".cc-extractor"
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+
+    def fake_create_variant(**_kwargs):
+        setup_dir = root / "variants" / "mirror"
+        setup_dir.mkdir(parents=True)
+        wrapper = root / "bin" / "mirror"
+        wrapper.parent.mkdir(parents=True)
+        wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
+        raise RuntimeError("create broke")
+
+    monkeypatch.setattr(tui, "create_variant", fake_create_variant)
+    state = tui.TuiState(
+        mode="create-preview",
+        variant_name="mirror",
+        variant_providers=[
+            {
+                "key": "mirror",
+                "label": "Mirror Claude",
+                "description": "Pure Claude",
+                "authMode": "none",
+                "credentialEnv": "",
+                "models": {},
+                "defaultVariantName": "mirror",
+            }
+        ],
+    )
+
+    tui._run_variant_create(state)
+
+    summary = "\n".join(state.last_action_summary)
+    assert state.mode == "error"
+    assert "Create failed." in summary
+    assert "Setup directory created: yes" in summary
+    assert "Command created: yes" in summary
+    assert "Setup config created: no" in summary
+    assert "Previous state changed: yes" in summary
+    assert "Cleanup needed: yes" in summary
+
+
 def test_variants_wizard_blocks_required_model_mapping():
     state = tui.TuiState(
         mode="variants",
@@ -742,6 +783,114 @@ def test_setup_manager_lists_rows_and_opens_detail():
     assert state.selected_setup_id == "deepseek-main"
 
 
+def test_setup_manager_search_filters_rows_and_keeps_create_action():
+    deepseek = _variant("deepseek-main")
+    openrouter = _variant("openrouter-dev")
+    openrouter.manifest["provider"]["key"] = "openrouter"
+    state = tui.TuiState(
+        mode="setup-manager",
+        variants=[deepseek, openrouter],
+        setup_search_text="openrouter",
+    )
+
+    options = tui.options.setup_manager_options(state)
+
+    assert options[0].kind == "setup-action-new"
+    assert [option.value for option in options if option.kind == "setup-row"] == ["openrouter-dev"]
+    screen = tui._screen_text(state)
+    assert "Search: openrouter" in screen
+    assert "deepseek-main" not in screen
+
+    state.setup_search_text = "missing"
+    options = tui.options.setup_manager_options(state)
+    assert [option.kind for option in options] == ["setup-action-new"]
+    assert "No setups match current search/filter." in tui._screen_text(state)
+
+
+def test_setup_manager_search_input_does_not_trigger_global_hotkeys():
+    state = tui.TuiState(mode="setup-manager", variants=[_variant("deepseek-main")])
+
+    assert tui._handle_char_key(state, "/") is True
+    assert state.setup_search_active is True
+    assert tui._handle_char_key(state, "q") is True
+
+    assert state.setup_search_text == "q"
+    assert state.setup_search_active is True
+
+    assert tui._activate(state) is True
+    assert state.setup_search_active is False
+    assert state.mode == "setup-manager"
+
+
+def test_setup_manager_provider_filter_cycles_and_refresh_resets(monkeypatch):
+    from cc_extractor.tui import state as state_module
+
+    deepseek = _variant("deepseek-main")
+    deepseek.manifest["provider"]["key"] = "deepseek"
+    openrouter = _variant("openrouter-dev")
+    openrouter.manifest["provider"]["key"] = "openrouter"
+    state = tui.TuiState(mode="setup-manager", variants=[deepseek, openrouter])
+
+    tui._handle_char_key(state, "p")
+    assert state.setup_provider_filter == "deepseek"
+    tui._handle_char_key(state, "p")
+    assert state.setup_provider_filter == "openrouter"
+
+    monkeypatch.setattr(state_module, "scan_native_downloads", lambda: [])
+    monkeypatch.setattr(state_module, "scan_npm_downloads", lambda: [])
+    monkeypatch.setattr(state_module, "scan_extractions", lambda: [])
+    monkeypatch.setattr(state_module, "scan_patch_packages", lambda: [])
+    monkeypatch.setattr(state_module, "scan_patch_profiles", lambda: [])
+    monkeypatch.setattr(state_module, "scan_dashboard_tweak_profiles", lambda: [])
+    monkeypatch.setattr(state_module, "scan_variants", lambda: [deepseek])
+    monkeypatch.setattr(state_module, "list_variant_providers", lambda: [])
+    monkeypatch.setattr(state_module, "load_download_index", lambda: {})
+    monkeypatch.setattr(state_module, "download_versions", lambda index, kind: [])
+
+    state.refresh()
+
+    assert state.setup_provider_filter == "all"
+
+
+def test_setup_manager_sort_orders_rows():
+    alpha = _variant("alpha", version="2.1.121")
+    alpha.manifest["provider"]["key"] = "zai"
+    alpha.manifest["updatedAt"] = "2026-01-03T00:00:00Z"
+    beta = _variant("beta", version="2.1.123")
+    beta.manifest["provider"]["key"] = "deepseek"
+    beta.manifest["updatedAt"] = "2026-01-01T00:00:00Z"
+    gamma = _variant("gamma", version="2.1.122")
+    gamma.manifest["provider"]["key"] = "openrouter"
+    gamma.manifest["updatedAt"] = "2026-01-02T00:00:00Z"
+    state = tui.TuiState(
+        mode="setup-manager",
+        variants=[gamma, beta, alpha],
+        setup_health={
+            "alpha": {"status": "healthy"},
+            "beta": {"status": "broken"},
+            "gamma": {"status": "never"},
+        },
+    )
+
+    def rows():
+        return [
+            option.value for option in tui.options.setup_manager_options(state)
+            if option.kind == "setup-row"
+        ]
+
+    assert tui.options.setup_manager_options(state)[0].kind == "setup-action-new"
+    state.setup_sort_key = "name"
+    assert rows() == ["alpha", "beta", "gamma"]
+    state.setup_sort_key = "provider"
+    assert rows() == ["beta", "gamma", "alpha"]
+    state.setup_sort_key = "health"
+    assert rows() == ["beta", "gamma", "alpha"]
+    state.setup_sort_key = "updated"
+    assert rows() == ["beta", "gamma", "alpha"]
+    state.setup_sort_key = "version"
+    assert rows() == ["alpha", "gamma", "beta"]
+
+
 def test_setup_detail_copies_command_and_logs(monkeypatch):
     copied = []
     variant = _variant("deepseek-main")
@@ -792,6 +941,57 @@ def test_upgrade_preview_applies_update_and_health(monkeypatch, tmp_path):
     assert "Health: healthy" in "\n".join(state.last_action_summary)
 
 
+def test_upgrade_failure_summary_reports_verified_state(monkeypatch, tmp_path):
+    variant = _variant("deepseek-main", version="2.1.122")
+    variant.path = tmp_path / "deepseek-main"
+    variant.path.mkdir()
+    wrapper = tmp_path / "cc-deepseek"
+    wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary = tmp_path / "claude"
+    binary.write_text("binary\n", encoding="utf-8")
+    (variant.path / "variant.json").write_text("{}", encoding="utf-8")
+    variant.manifest["paths"]["wrapper"] = str(wrapper)
+    variant.manifest["paths"]["binary"] = str(binary)
+    target_artifact = NativeArtifact(
+        version="2.1.123",
+        platform="darwin-arm64",
+        sha256="b" * 64,
+        path=tmp_path / "downloaded-claude",
+        metadata={},
+    )
+
+    def fake_update(name, *, claude_version=None):
+        assert name == "deepseek-main"
+        assert claude_version == "latest"
+        raise RuntimeError("patch stage broke")
+
+    def fake_refresh(state_arg):
+        state_arg.variants = [variant]
+        state_arg.native_artifacts = [target_artifact]
+        return True
+
+    monkeypatch.setattr(tui, "update_variants", fake_update)
+    monkeypatch.setattr(tui, "_refresh_state", fake_refresh)
+    monkeypatch.setattr(tui, "load_variant", lambda name: variant)
+    state = tui.TuiState(
+        mode="upgrade-preview",
+        variants=[variant],
+        selected_setup_id="deepseek-main",
+        download_index={"binary": {"latest": "2.1.123"}},
+    )
+
+    tui._run_setup_upgrade(state)
+
+    summary = "\n".join(state.last_action_summary)
+    assert state.mode == "health-result"
+    assert "Upgrade failed: deepseek-main" in summary
+    assert "Base download succeeded: verified" in summary
+    assert "Command replaced: no" in summary
+    assert "Previous setup remains active: yes" in summary
+    assert "Failed stage: update/rebuild: patch stage broke" in summary
+    assert "rollback" not in summary.lower()
+
+
 def test_delete_requires_typed_setup_id(monkeypatch, tmp_path):
     variant = _variant("deepseek-main")
     variant.path = tmp_path / "deepseek-main"
@@ -829,6 +1029,43 @@ def test_delete_requires_typed_setup_id(monkeypatch, tmp_path):
     assert calls == [("deepseek-main", True)]
     assert state.mode == "setup-manager"
     assert "Shared downloads untouched: yes" in "\n".join(state.last_action_summary)
+
+
+def test_delete_failure_summary_uses_failure_wording(monkeypatch, tmp_path):
+    variant = _variant("deepseek-main")
+    variant.path = tmp_path / "deepseek-main"
+    variant.path.mkdir()
+    wrapper = tmp_path / "cc-deepseek"
+    wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
+    variant.manifest["paths"]["wrapper"] = str(wrapper)
+
+    def fake_remove(name, *, yes=False):
+        assert name == "deepseek-main"
+        assert yes is True
+        raise RuntimeError("permission denied")
+
+    def fake_refresh(state_arg):
+        state_arg.variants = [variant]
+        return True
+
+    monkeypatch.setattr(tui, "remove_variant", fake_remove)
+    monkeypatch.setattr(tui, "_refresh_state", fake_refresh)
+    state = tui.TuiState(
+        mode="delete-confirm",
+        variants=[variant],
+        selected_setup_id="deepseek-main",
+        delete_confirm_text="deepseek-main",
+    )
+
+    tui._run_setup_delete(state)
+
+    summary = "\n".join(state.last_action_summary)
+    assert state.mode == "setup-manager"
+    assert "Delete failed: deepseek-main" in summary
+    assert "Setup directory removed: no" in summary
+    assert "Command removed: no" in summary
+    assert "Shared downloads untouched: yes" in summary
+    assert state.selected_setup_id == "deepseek-main"
 
 
 def test_tweak_apply_uses_preview_then_post_health(monkeypatch):

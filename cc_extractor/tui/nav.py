@@ -32,7 +32,10 @@ def move_tab(state, offset: int) -> None:
 
 
 def go_back(state) -> None:
-    if state.mode == "setup-detail":
+    if state.mode == "setup-manager" and getattr(state, "setup_search_active", False):
+        state.setup_search_active = False
+        state.message = "Search filter kept."
+    elif state.mode == "setup-detail":
         set_mode(state, "setup-manager")
     elif state.mode in {"upgrade-preview", "delete-confirm", "logs", "error"}:
         set_mode(state, "setup-detail" if state.selected_setup_id else "setup-manager")
