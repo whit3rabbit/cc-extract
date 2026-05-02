@@ -10,6 +10,8 @@ Pure helpers live in submodules (``state``, ``themes``, ``options``,
 re-exported below to keep the existing ``tui._foo`` test API stable.
 """
 
+import copy
+import concurrent.futures
 import os
 import subprocess
 from pathlib import Path
@@ -60,6 +62,7 @@ __all__ = [
     "_variant_credential_env_for_create", "_variant_model_overrides_for_create",
     "_run_setup_health", "_run_setup_upgrade", "_run_setup_delete", "_route_startup",
     "_queue_setup_run", "_run_pending_setup",
+    "_start_busy_action", "_poll_busy_action",
     "_load_saved_setup_list_preferences", "_save_setup_list_preferences",
     "_copy_logs", "_copy_setup_config", "_copy_text_to_clipboard", "_open_help", "_open_logs", "_open_variant_create_preview",
     "_screen_text", "_style", "_render_frame",
@@ -224,6 +227,13 @@ from .variant_actions import (
 )
 
 
+_BUSY_TICK_MS = 250
+_BUSY_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1,
+    thread_name_prefix="cc-extractor-tui",
+)
+
+
 # -- Top-level event loop ----------------------------------------------------
 
 def run_tui():
@@ -263,6 +273,8 @@ def run_tui():
             term.draw_paragraph(screen, (0, 0, max(1, width - 1), max(1, height - 1)))
 
     def on_event(term, event, app_state):
+        if app_state.mode == "busy":
+            return True
         if event.get("kind") != "key":
             return True
 
@@ -293,6 +305,9 @@ def run_tui():
 
         return True
 
+    def on_tick(term, app_state):
+        _poll_busy_action(app_state)
+
     def on_start(term, app_state):
         term.enter_alt()
         term.enable_raw()
@@ -306,9 +321,10 @@ def run_tui():
     app = App(
         render=render,
         on_event=on_event,
+        on_tick=on_tick,
         on_start=on_start,
         on_stop=on_stop,
-        tick_ms=3_600_000,
+        tick_ms=_BUSY_TICK_MS,
         clear_each_frame=True,
     )
     app.run(state)
@@ -422,9 +438,83 @@ def _copy_text_to_clipboard(text):
     subprocess.run(["pbcopy"], input=str(text), text=True, check=True)
 
 
+# -- Busy action helpers ------------------------------------------------------
+
+def _clear_busy_state(state):
+    state.busy_title = ""
+    state.busy_detail = ""
+    state.busy_ticks = 0
+    state.busy_future = None
+
+
+def _copy_completed_busy_state(state, completed_state):
+    state.__dict__.clear()
+    state.__dict__.update(copy.deepcopy(completed_state.__dict__))
+    _clear_busy_state(state)
+
+
+def _run_busy_action(worker_state, action):
+    _clear_busy_state(worker_state)
+    action(worker_state)
+    return worker_state
+
+
+def _start_busy_action(state, title, detail, action):
+    if state.busy_future is not None:
+        state.message = "Already working. Input is locked while this runs."
+        return False
+    worker_state = copy.deepcopy(state)
+    future = _BUSY_EXECUTOR.submit(_run_busy_action, worker_state, action)
+    state.busy_title = str(title)
+    state.busy_detail = str(detail)
+    state.busy_ticks = 0
+    state.busy_future = future
+    state.message = f"{title}..."
+    _set_mode(state, "busy")
+    state.message = f"{title}..."
+    return True
+
+
+def _poll_busy_action(state):
+    if state.mode != "busy" or state.busy_future is None:
+        return False
+    state.busy_ticks += 1
+    if not state.busy_future.done():
+        return False
+    future = state.busy_future
+    try:
+        completed_state = future.result()
+    except Exception as exc:
+        _clear_busy_state(state)
+        state.last_action_log = _stage_log_lines("Busy action failure", str(exc))
+        state.last_action_summary = [f"Action failed: {exc}"]
+        state.message = f"Action failed: {exc}"
+        _set_mode(state, "error")
+        state.message = f"Action failed: {exc}"
+        return True
+    _copy_completed_busy_state(state, completed_state)
+    return True
+
+
+def _busy_create_action(worker_state):
+    _run_variant_create(worker_state)
+    _refresh_state(worker_state)
+
+
+def _busy_upgrade_action(worker_state):
+    _run_setup_upgrade(worker_state)
+
+
+def _busy_tweak_apply_action(worker_state):
+    _run_tweak_apply(worker_state)
+    _refresh_state(worker_state)
+
+
 # -- Key handlers ------------------------------------------------------------
 
 def _handle_backspace_key(state):
+    if state.mode == "busy":
+        return True
     if state.mode == "setup-manager" and state.setup_search_active:
         state.setup_search_text = state.setup_search_text[:-1]
         _clamp_setup_manager_selection(state)
@@ -447,6 +537,9 @@ def _handle_backspace_key(state):
 
 
 def _handle_char_key(state, char):
+    if state.mode == "busy":
+        return True
+
     if state.mode == "delete-confirm":
         if char.isprintable() and char not in "\r\n\t":
             state.delete_confirm_text += char
@@ -486,21 +579,35 @@ def _handle_char_key(state, char):
         return True
     if state.mode == "upgrade-preview":
         if lowered == "y":
-            _run_setup_upgrade(state)
+            _start_busy_action(
+                state,
+                "Upgrading setup",
+                f"Rebuilding setup {state.selected_setup_id or 'selected setup'}",
+                _busy_upgrade_action,
+            )
         elif lowered == "n":
             _go_back(state)
         return True
     if state.mode == "create-preview":
         if lowered == "y":
-            _run_variant_create(state)
-            _refresh_state(state)
+            name = state.variant_name.strip() or "new setup"
+            _start_busy_action(
+                state,
+                "Creating setup",
+                f"Building custom Claude setup {name}",
+                _busy_create_action,
+            )
         elif lowered == "n":
             _go_back(state)
         return True
     if state.mode in {"tweaks-edit", "tweak-editor"} and state.tweak_apply_preview:
         if lowered == "y":
-            _run_tweak_apply(state)
-            _refresh_state(state)
+            _start_busy_action(
+                state,
+                "Rebuilding tweaks",
+                f"Applying tweak changes to setup {state.tweaks_variant_id or 'selected setup'}",
+                _busy_tweak_apply_action,
+            )
         elif lowered == "n":
             state.tweak_apply_preview = False
             state.message = "Tweak rebuild cancelled."
@@ -612,6 +719,8 @@ def _activate(state):
     if state.mode in {"tweaks-edit", "tweak-editor"} and state.tweak_search_active:
         state.tweak_search_active = False
         state.message = f"Tweak search kept: {state.tweak_search or 'none'}"
+        return True
+    if state.mode == "busy":
         return True
     try:
         if state.mode == "setup-manager":

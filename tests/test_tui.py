@@ -1,3 +1,6 @@
+import concurrent.futures
+import threading
+import time
 from pathlib import Path
 
 from cc_extractor import tui
@@ -61,6 +64,16 @@ def _tweak_profile(
             "tweakIds": tweak_ids,
         },
     )
+
+
+def _finish_busy(state, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while state.mode == "busy" and time.monotonic() < deadline:
+        tui._poll_busy_action(state)
+        if state.mode != "busy":
+            break
+        time.sleep(0.01)
+    assert state.mode != "busy"
 
 
 def _render_screen(state, width=80, height=24):
@@ -178,6 +191,51 @@ def test_screen_text_includes_theme_and_compact_progress():
     assert "Patches 1" in screen
     assert "Wizard: [" not in screen
     assert "Theme T" in screen
+
+
+def test_busy_screen_text_shows_progress_and_locks_input():
+    state = tui.TuiState(
+        mode="busy",
+        busy_title="Creating setup",
+        busy_detail="Building custom Claude setup mirror",
+        busy_ticks=3,
+    )
+
+    screen = tui._screen_text(state)
+
+    assert "Creating setup" in screen
+    assert "Building custom Claude setup mirror" in screen
+    assert "Progress: [" in screen
+    assert "Input locked while this runs." in screen
+    assert "Keys: input locked while this runs" in screen
+    assert tui._handle_char_key(state, "q") is True
+    assert state.mode == "busy"
+
+
+def test_poll_busy_action_copies_completed_state():
+    completed = tui.TuiState(
+        mode="health-result",
+        selected_setup_id="mirror",
+        message="Setup created: /tmp/mirror",
+        last_action_summary=["Setup created."],
+    )
+    future = concurrent.futures.Future()
+    future.set_result(completed)
+    state = tui.TuiState(
+        mode="busy",
+        busy_title="Creating setup",
+        busy_detail="Building custom Claude setup mirror",
+        busy_future=future,
+    )
+
+    assert tui._poll_busy_action(state) is True
+
+    assert state.mode == "health-result"
+    assert state.selected_setup_id == "mirror"
+    assert state.message == "Setup created: /tmp/mirror"
+    assert state.last_action_summary == ["Setup created."]
+    assert state.busy_future is None
+    assert state.busy_title == ""
 
 
 def test_dashboard_first_run_lists_curated_tweaks_without_dead_end_continue():
@@ -549,12 +607,16 @@ def test_variants_tab_lists_providers_and_progress():
 
 def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch, tmp_path):
     calls = []
+    create_started = threading.Event()
+    release_create = threading.Event()
 
     class Result:
         wrapper_path = tmp_path / ".cc-extractor" / "bin" / "mirror"
 
     def fake_create_variant(**kwargs):
         calls.append(kwargs)
+        create_started.set()
+        release_create.wait(1)
         return Result()
 
     monkeypatch.setattr(tui, "create_variant", fake_create_variant)
@@ -602,7 +664,15 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     assert state.mode == "create-preview"
     assert "Setup create preview" in tui._screen_text(state)
 
+    start = time.monotonic()
     tui._handle_char_key(state, "y")
+    elapsed = time.monotonic() - start
+    assert elapsed < 0.2
+    assert state.mode == "busy"
+    assert "Creating setup" in tui._screen_text(state)
+    assert create_started.wait(1)
+    release_create.set()
+    _finish_busy(state)
     assert calls[0]["provider_key"] == "mirror"
     assert calls[0]["name"] == "mirror"
     assert calls[0]["credential_env"] is None
@@ -1074,6 +1144,38 @@ def test_upgrade_preview_applies_update_and_health(monkeypatch, tmp_path):
     assert "Health: healthy" in "\n".join(state.last_action_summary)
 
 
+def test_upgrade_preview_y_enters_busy_then_finishes(monkeypatch, tmp_path):
+    variant = _variant("deepseek-main", version="2.1.122")
+    calls = []
+
+    class Result:
+        wrapper_path = tmp_path / "cc-deepseek"
+
+    def fake_update(name, *, claude_version=None):
+        calls.append((name, claude_version))
+        return [Result()]
+
+    def fake_refresh(state_arg):
+        variant.manifest["source"]["version"] = "2.1.123"
+        state_arg.variants = [variant]
+        return True
+
+    monkeypatch.setattr(tui, "update_variants", fake_update)
+    monkeypatch.setattr(tui, "_refresh_state", fake_refresh)
+    monkeypatch.setattr(tui, "doctor_variant", lambda name: [{"id": name, "ok": True, "checks": []}])
+    state = tui.TuiState(mode="upgrade-preview", variants=[variant], selected_setup_id="deepseek-main")
+
+    assert tui._handle_char_key(state, "y") is True
+    assert state.mode == "busy"
+    assert "Upgrading setup" in tui._screen_text(state)
+
+    _finish_busy(state)
+
+    assert calls == [("deepseek-main", "latest")]
+    assert state.mode == "health-result"
+    assert "Health: healthy" in "\n".join(state.last_action_summary)
+
+
 def test_upgrade_failure_summary_reports_verified_state(monkeypatch, tmp_path):
     from cc_extractor.variants.model import VariantBuildError, VariantBuildStage
 
@@ -1235,6 +1337,40 @@ def test_tweak_apply_uses_preview_then_post_health(monkeypatch):
     monkeypatch.setattr(tui, "doctor_variant", fake_doctor)
 
     tui._run_tweak_apply(state)
+
+    assert state.mode == "health-result"
+    assert state.last_tweak_result == {
+        "added": ["patches-applied-indication"],
+        "removed": [],
+        "health": "healthy",
+    }
+
+
+def test_tweak_apply_y_enters_busy_then_finishes(monkeypatch):
+    variant = _variant("deepseek-main", tweaks=["themes"])
+    state = tui.TuiState(
+        mode="tweak-editor",
+        variants=[variant],
+        selected_setup_id="deepseek-main",
+        tweaks_variant_id="deepseek-main",
+        tweaks_baseline=("themes",),
+        tweaks_pending=["themes", "patches-applied-indication"],
+    )
+    tui._begin_tweak_apply_preview(state)
+
+    def fake_apply(app_state):
+        app_state.tweaks_baseline = tuple(app_state.tweaks_pending)
+        app_state.message = "Applied tweaks to setup deepseek-main (+1 added, -0 removed)."
+
+    monkeypatch.setattr(tui, "_apply_tweaks", fake_apply)
+    monkeypatch.setattr(tui, "doctor_variant", lambda name: [{"id": name, "ok": True, "checks": []}])
+    monkeypatch.setattr(tui, "_refresh_state", lambda state_arg: True)
+
+    assert tui._handle_char_key(state, "y") is True
+    assert state.mode == "busy"
+    assert "Rebuilding tweaks" in tui._screen_text(state)
+
+    _finish_busy(state)
 
     assert state.mode == "health-result"
     assert state.last_tweak_result == {

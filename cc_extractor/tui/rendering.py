@@ -50,6 +50,7 @@ def active_tab(state):
         return "Patch"
     if state.mode in {
         "loading",
+        "busy",
         "create-preview",
         "first-run-setup",
         "setup-manager",
@@ -97,6 +98,8 @@ def compact_tab_bar(state):
 def current_labels(state):
     if state.mode == "loading":
         return "Loading setups", ["Refreshing workspace state..."]
+    if state.mode == "busy":
+        return state.busy_title or "Working", busy_labels(state)
     if state.mode == "setup-manager":
         labels = [
             setup_manager_control_summary(state),
@@ -285,6 +288,22 @@ def help_labels():
     ]
 
 
+def busy_labels(state):
+    tick = int(getattr(state, "busy_ticks", 0) or 0)
+    spinner = "|/-\\"[tick % 4]
+    width = 18
+    window = 5
+    start = tick % (width - window + 1)
+    bar = "." * start + "#" * window + "." * (width - start - window)
+    detail = state.busy_detail or "Running setup build"
+    return [
+        f"{spinner} {detail}",
+        f"Progress: [{bar}] working",
+        "Input locked while this runs.",
+        "Backend stages will appear when complete.",
+    ]
+
+
 def tweak_preview_labels(state):
     variant = selected_setup_variant(state)
     added, removed = tweak_diff(state)
@@ -468,6 +487,8 @@ def top_chrome_lines(state):
 def context_line(state):
     if state.mode == "loading":
         return "Loading | Refreshing setup state"
+    if state.mode == "busy":
+        return f"Working | {state.busy_title or 'Setup build'}"
     if state.mode == "setup-manager":
         return f"Home | Setups {len(state.variants)} | {setup_manager_control_summary(state)}"
     if state.mode == "setup-detail":
@@ -528,6 +549,8 @@ def context_line(state):
 
 
 def context_hint(state):
+    if state.mode == "busy":
+        return "Input locked while this runs."
     if state.mode == "setup-manager":
         if getattr(state, "setup_search_active", False):
             return "Type to search setups. Enter or Esc keeps the current filter."
@@ -597,6 +620,8 @@ def _variant_key_line(state):
 
 
 def key_line(state):
+    if state.mode == "busy":
+        return "Keys: input locked while this runs"
     if state.mode == "setup-manager":
         return "Keys: Up/Down move | Enter manage | X run | / search | P provider | S sort | ? help | N new | U upgrade | T tweaks | H health | D delete | R refresh | Q quit"
     if state.mode == "setup-detail":

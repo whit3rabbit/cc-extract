@@ -66,6 +66,10 @@ class TuiState:
     setup_upgrade_target: str = "latest"
     pending_run_setup_id: Optional[str] = None
     pending_run_command: List[str] = field(default_factory=list)
+    busy_title: str = ""
+    busy_detail: str = ""
+    busy_ticks: int = 0
+    busy_future: Any = None
     last_action_summary: List[str] = field(default_factory=list)
     last_action_log: List[str] = field(default_factory=list)
     tweaks_variant_id: Optional[str] = None
@@ -154,7 +158,7 @@ class TuiState:
             return len(setup_manager_options(self))
         if self.mode == "setup-detail":
             return len(setup_detail_options(self))
-        if self.mode in {"loading", "create-preview", "upgrade-preview", "delete-confirm", "health-result", "logs", "help", "error"}:
+        if self.mode in {"loading", "busy", "create-preview", "upgrade-preview", "delete-confirm", "health-result", "logs", "help", "error"}:
             return 1
         if self.mode == "dashboard":
             return len(dashboard_options(self))
