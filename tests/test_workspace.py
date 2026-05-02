@@ -4,23 +4,29 @@ import json
 import pytest
 
 from cc_extractor.extractor import extract_all
-from cc_extractor.patch_workflow import apply_patch_packages_to_native
+from cc_extractor.patch_workflow import apply_dashboard_tweaks_to_native, apply_patch_packages_to_native
 from cc_extractor.workspace import (
     ARTIFACT_METADATA,
     EXTRACTION_METADATA,
     TUI_SETTINGS,
+    delete_dashboard_tweak_profile,
     delete_patch_profile,
+    load_dashboard_tweak_profile,
     load_tui_settings,
     load_patch_package,
     load_patch_profile,
+    rename_dashboard_tweak_profile,
     rename_patch_profile,
     scan_native_downloads,
     scan_npm_downloads,
+    scan_dashboard_tweak_profiles,
     scan_patch_profiles,
+    save_dashboard_tweak_profile,
     save_patch_profile,
     save_tui_settings,
     store_native_download,
     store_npm_download,
+    validate_dashboard_tweak_profile_manifest,
     validate_patch_profile_manifest,
     workspace_root,
 )
@@ -175,6 +181,33 @@ def test_patch_workflow_writes_patched_copy_without_mutating_download(tmp_path, 
     assert (roundtrip_dir / "src/index.js").read_text(encoding="utf-8") == "console.log('after');"
 
 
+def test_dashboard_tweak_workflow_rewrites_entry_js_and_writes_metadata(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    fixture = build_bun_fixture(
+        platform="macho",
+        modules=[{"name": "src/index.js", "content": "const version=`${pkg.VERSION} (Claude Code)`;"}],
+    )
+    staged = tmp_path / "claude"
+    staged.write_bytes(fixture["buf"])
+    sha256 = hashlib.sha256(fixture["buf"]).hexdigest()
+    source_path = store_native_download(staged, "2.1.123", "darwin-arm64", sha256)
+    source_artifact = scan_native_downloads()[0]
+
+    result = apply_dashboard_tweaks_to_native(source_artifact, ["patches-applied-indication"])
+
+    assert source_path.read_bytes() == fixture["buf"]
+    assert result.output_path.exists()
+    metadata = json.loads(result.metadata_path.read_text(encoding="utf-8"))
+    assert metadata["kind"] == "native-dashboard-tweaked"
+    assert metadata["tweakIds"] == ["patches-applied-indication"]
+    assert metadata["appliedTweaks"] == ["patches-applied-indication"]
+
+    roundtrip_dir = tmp_path / "roundtrip-dashboard"
+    extract_all(str(result.output_path), str(roundtrip_dir))
+    entry_js = (roundtrip_dir / "src/index.js").read_text(encoding="utf-8")
+    assert "(Claude Code, cc-extractor variant)" in entry_js
+
+
 def test_patch_profile_lifecycle_uses_workspace_json(tmp_path):
     root = tmp_path / ".cc-extractor"
 
@@ -198,6 +231,32 @@ def test_patch_profile_lifecycle_uses_workspace_json(tmp_path):
     assert scan_patch_profiles(root) == []
 
 
+def test_dashboard_tweak_profile_lifecycle_uses_separate_workspace_json(tmp_path):
+    root = tmp_path / ".cc-extractor"
+
+    profile = save_dashboard_tweak_profile(
+        "Focus Build",
+        ["hide-startup-banner", "patches-applied-indication"],
+        root=root,
+    )
+
+    assert profile.profile_id == "focus-build"
+    assert profile.path == root / "patches" / "tweak-profiles" / "focus-build.json"
+    assert load_dashboard_tweak_profile("focus-build", root=root).tweak_ids == [
+        "hide-startup-banner",
+        "patches-applied-indication",
+    ]
+    assert scan_dashboard_tweak_profiles(root)[0].profile_id == "focus-build"
+
+    renamed = rename_dashboard_tweak_profile("focus-build", "Daily Build", root=root)
+
+    assert renamed.profile_id == "daily-build"
+    assert renamed.name == "Daily Build"
+    assert not (root / "patches" / "tweak-profiles" / "focus-build.json").exists()
+    assert delete_dashboard_tweak_profile("daily-build", root=root) is True
+    assert scan_dashboard_tweak_profiles(root) == []
+
+
 def test_patch_profile_validation_rejects_bad_schema():
     with pytest.raises(ValueError, match="schemaVersion"):
         validate_patch_profile_manifest({})
@@ -209,6 +268,23 @@ def test_patch_profile_validation_rejects_bad_schema():
                 "id": "empty-profile",
                 "name": "Empty Profile",
                 "patches": [],
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-01T00:00:00Z",
+            }
+        )
+
+
+def test_dashboard_tweak_profile_validation_rejects_bad_schema():
+    with pytest.raises(ValueError, match="schemaVersion"):
+        validate_dashboard_tweak_profile_manifest({})
+
+    with pytest.raises(ValueError, match="non-empty list"):
+        validate_dashboard_tweak_profile_manifest(
+            {
+                "schemaVersion": 1,
+                "id": "empty-profile",
+                "name": "Empty Profile",
+                "tweakIds": [],
                 "createdAt": "2026-01-01T00:00:00Z",
                 "updatedAt": "2026-01-01T00:00:00Z",
             }

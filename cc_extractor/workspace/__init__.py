@@ -14,6 +14,7 @@ from .paths import (
     TUI_SETTINGS,
     WORKSPACE_DIR_NAME,
     ensure_workspace,
+    dashboard_tweak_profile_path,
     extraction_metadata_path,
     extraction_paths,
     file_sha256,
@@ -29,6 +30,7 @@ from .paths import (
     write_json,
 )
 from .models import (
+    DashboardTweakProfile,
     ExtractionArtifact,
     NativeArtifact,
     NpmArtifact,
@@ -49,14 +51,21 @@ from .artifacts import (
     write_patched_metadata,
 )
 from .patches import (
+    dashboard_tweak_profile_id_from_name,
+    delete_dashboard_tweak_profile,
     delete_patch_profile,
+    load_dashboard_tweak_profile,
     load_patch_package,
     load_patch_profile,
+    rename_dashboard_tweak_profile,
     patch_profile_id_from_name,
     rename_patch_profile,
+    save_dashboard_tweak_profile,
     save_patch_profile,
+    scan_dashboard_tweak_profiles,
     scan_patch_packages,
     scan_patch_profiles,
+    validate_dashboard_tweak_profile_manifest,
     validate_patch_package_manifest,
     validate_patch_profile_manifest,
 )
@@ -74,6 +83,7 @@ __all__ = [
     "WORKSPACE_DIR_NAME",
     # paths / I/O
     "ensure_workspace",
+    "dashboard_tweak_profile_path",
     "extraction_metadata_path",
     "extraction_paths",
     "file_sha256",
@@ -88,6 +98,7 @@ __all__ = [
     "workspace_root",
     "write_json",
     # dataclasses
+    "DashboardTweakProfile",
     "ExtractionArtifact",
     "NativeArtifact",
     "NpmArtifact",
@@ -106,14 +117,21 @@ __all__ = [
     "write_extraction_metadata",
     "write_patched_metadata",
     # patches
+    "dashboard_tweak_profile_id_from_name",
+    "delete_dashboard_tweak_profile",
     "delete_patch_profile",
+    "load_dashboard_tweak_profile",
     "load_patch_package",
     "load_patch_profile",
+    "rename_dashboard_tweak_profile",
     "patch_profile_id_from_name",
     "rename_patch_profile",
+    "save_dashboard_tweak_profile",
     "save_patch_profile",
+    "scan_dashboard_tweak_profiles",
     "scan_patch_packages",
     "scan_patch_profiles",
+    "validate_dashboard_tweak_profile_manifest",
     "validate_patch_package_manifest",
     "validate_patch_profile_manifest",
     # settings

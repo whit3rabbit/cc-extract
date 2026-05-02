@@ -5,15 +5,18 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..download_index import download_versions, load_download_index
 from ..variant_tweaks import DEFAULT_TWEAK_IDS
+from ..variant_tweaks import DASHBOARD_TWEAK_IDS
 from ..variants import list_variant_providers, scan_variants
 from ..variants.model import Variant
 from ..workspace import (
+    DashboardTweakProfile,
     NativeArtifact,
     PatchPackage,
     PatchProfile,
     scan_extractions,
     scan_native_downloads,
     scan_npm_downloads,
+    scan_dashboard_tweak_profiles,
     scan_patch_packages,
     scan_patch_profiles,
 )
@@ -30,12 +33,14 @@ class TuiState:
     native_artifacts: List[NativeArtifact] = field(default_factory=list)
     patch_packages: List[PatchPackage] = field(default_factory=list)
     patch_profiles: List[PatchProfile] = field(default_factory=list)
+    dashboard_tweak_profiles: List[DashboardTweakProfile] = field(default_factory=list)
     variants: List[Variant] = field(default_factory=list)
     variant_providers: List[Dict[str, Any]] = field(default_factory=list)
     download_index: dict = field(default_factory=dict)
     download_versions: List[str] = field(default_factory=list)
     selected_source_index: int = 0
     selected_patch_indexes: List[int] = field(default_factory=list)
+    selected_dashboard_tweak_ids: List[str] = field(default_factory=list)
     counts: str = ""
     dashboard_step: int = 0
     dashboard_source_kind: str = SOURCE_LATEST
@@ -61,6 +66,7 @@ class TuiState:
         extraction_count = len(scan_extractions())
         self.patch_packages = scan_patch_packages()
         self.patch_profiles = scan_patch_profiles()
+        self.dashboard_tweak_profiles = scan_dashboard_tweak_profiles()
         self.variants = scan_variants()
         self.variant_providers = list_variant_providers()
         self.download_index = load_download_index()
@@ -70,12 +76,17 @@ class TuiState:
             f"NPM: {npm_count}  "
             f"Extractions: {extraction_count}  "
             f"Patch packages: {len(self.patch_packages)}  "
-            f"Profiles: {len(self.patch_profiles)}  "
+            f"Profiles: {len(self.dashboard_tweak_profiles)}  "
             f"Variants: {len(self.variants)}"
         )
         self.selected_patch_indexes = [
             index for index in self.selected_patch_indexes
             if 0 <= index < len(self.patch_packages)
+        ]
+        available_dashboard_tweaks = set(DASHBOARD_TWEAK_IDS)
+        self.selected_dashboard_tweak_ids = [
+            tweak_id for tweak_id in self.selected_dashboard_tweak_ids
+            if tweak_id in available_dashboard_tweaks
         ]
         self.selected_index = self._clamp(self.selected_index, self.item_count())
         self.selected_source_index = self._clamp(self.selected_source_index, len(self.native_artifacts))

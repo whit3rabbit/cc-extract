@@ -6,7 +6,7 @@ call any externally-monkey-patched function.
 """
 
 from ..patches._registry import REGISTRY as PATCH_REGISTRY, patches_grouped
-from ..variant_tweaks import CURATED_TWEAK_IDS
+from ..variant_tweaks import CURATED_TWEAK_IDS, DASHBOARD_TWEAK_IDS
 from ..workspace import short_sha
 from ._const import (
     DASHBOARD_STEPS,
@@ -51,21 +51,23 @@ def _dashboard_source_options(state):
 
 def _dashboard_patch_options(state):
     options = []
-    for index, package in enumerate(state.patch_packages):
-        marker = "[x]" if index in state.selected_patch_indexes else "[ ]"
-        options.append(MenuOption("patch-toggle", f"{marker} {package.patch_id}@{package.version}  {package.name}", index))
+    for tweak_id in dashboard_tweak_ids():
+        patch = PATCH_REGISTRY[tweak_id]
+        marker = "[x]" if tweak_id in state.selected_dashboard_tweak_ids else "[ ]"
+        options.append(MenuOption("dashboard-tweak-toggle", f"{marker} {patch.id}  {patch.name}", tweak_id))
 
-    if state.patch_profiles:
+    if state.dashboard_tweak_profiles:
         options.append(MenuOption("section", "Saved profiles"))
-    for profile in state.patch_profiles:
-        missing = profile_missing_refs(state, profile)
+    for profile in state.dashboard_tweak_profiles:
+        missing = dashboard_tweak_profile_missing_ids(state, profile)
         if missing:
             label = f"Load profile: {profile.name} (invalid, missing {', '.join(missing)})"
         else:
-            label = f"Load profile: {profile.name} ({len(profile.patches)} patches)"
+            label = f"Load profile: {profile.name} ({len(profile.tweak_ids)} patches)"
         options.append(MenuOption("profile-load", label, profile.profile_id))
 
-    options.append(MenuOption("patch-continue", "Continue to profile management"))
+    if selected_dashboard_tweaks(state):
+        options.append(MenuOption("patch-continue", "Continue to profile management"))
     return options
 
 
@@ -76,7 +78,7 @@ def _dashboard_profile_options(state):
         MenuOption("profile-create", "Create new profile from selected patches"),
         MenuOption("review-continue", "Continue to review"),
     ]
-    for profile in state.patch_profiles:
+    for profile in state.dashboard_tweak_profiles:
         suffix = " [loaded]" if profile.profile_id == state.dashboard_loaded_profile_id else ""
         options.extend([
             MenuOption("profile-load", f"Load profile: {profile.name}{suffix}", profile.profile_id),
@@ -258,10 +260,39 @@ def profile_by_id(state, profile_id):
     return None
 
 
+def dashboard_tweak_profile_by_id(state, profile_id):
+    for profile in state.dashboard_tweak_profiles:
+        if profile.profile_id == profile_id:
+            return profile
+    return None
+
+
 def loaded_profile(state):
     if not state.dashboard_loaded_profile_id:
         return None
+    profile = dashboard_tweak_profile_by_id(state, state.dashboard_loaded_profile_id)
+    if profile is not None:
+        return profile
     return profile_by_id(state, state.dashboard_loaded_profile_id)
+
+
+def dashboard_tweak_ids():
+    return [tweak_id for tweak_id in DASHBOARD_TWEAK_IDS if tweak_id in PATCH_REGISTRY]
+
+
+def dashboard_tweak_profile_missing_ids(state, profile):
+    if not hasattr(profile, "tweak_ids"):
+        return [f"{profile.profile_id} is not a dashboard tweak profile"]
+    available = set(dashboard_tweak_ids())
+    return [tweak_id for tweak_id in profile.tweak_ids if tweak_id not in available]
+
+
+def selected_dashboard_tweaks(state):
+    available = set(dashboard_tweak_ids())
+    return [
+        tweak_id for tweak_id in state.selected_dashboard_tweak_ids
+        if tweak_id in available
+    ]
 
 
 def selected_dashboard_packages(state):
@@ -302,7 +333,7 @@ def dashboard_summary(state):
     profile_label = profile.name if profile else "none"
     return (
         f"Source: {dashboard_source_label(state)}  "
-        f"Patches: {len(selected_dashboard_packages(state))}  "
+        f"Patches: {len(selected_dashboard_tweaks(state))}  "
         f"Profile: {profile_label}"
     )
 

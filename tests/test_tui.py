@@ -2,11 +2,13 @@ from pathlib import Path
 
 from cc_extractor import tui
 from cc_extractor.workspace import (
+    DashboardTweakProfile,
     NativeArtifact,
     PatchPackage,
     PatchProfile,
-    load_patch_profile,
+    load_dashboard_tweak_profile,
     load_tui_settings,
+    save_dashboard_tweak_profile,
     save_tui_settings,
 )
 
@@ -37,6 +39,26 @@ def _profile(
             "id": profile_id,
             "name": name,
             "patches": patches,
+        },
+    )
+
+
+def _tweak_profile(
+    profile_id="daily-build",
+    name="Daily Build",
+    tweak_ids=None,
+):
+    tweak_ids = tweak_ids or [tui.DASHBOARD_TWEAK_IDS[0]]
+    return DashboardTweakProfile(
+        profile_id=profile_id,
+        name=name,
+        tweak_ids=tweak_ids,
+        path=Path(f"/tmp/{profile_id}.json"),
+        manifest={
+            "schemaVersion": 1,
+            "id": profile_id,
+            "name": name,
+            "tweakIds": tweak_ids,
         },
     )
 
@@ -145,8 +167,7 @@ def test_screen_text_includes_theme_and_compact_progress():
     state = tui.TuiState(
         counts="Native: 0  NPM: 0  Extractions: 0  Patch packages: 2  Profiles: 0",
         dashboard_step=1,
-        patch_packages=[_package(), _package("second-patch", "0.2.0", "Second Patch")],
-        selected_patch_indexes=[0],
+        selected_dashboard_tweak_ids=[tui.DASHBOARD_TWEAK_IDS[0]],
     )
 
     screen = tui._screen_text(state)
@@ -156,6 +177,25 @@ def test_screen_text_includes_theme_and_compact_progress():
     assert "Patches 1" in screen
     assert "Wizard: [" not in screen
     assert "Theme T" in screen
+
+
+def test_dashboard_first_run_lists_curated_tweaks_without_dead_end_continue():
+    state = tui.TuiState(mode="dashboard", dashboard_step=1)
+
+    screen = tui._screen_text(state)
+
+    assert tui.DASHBOARD_TWEAK_IDS[0] in screen
+    assert "Continue to profile management" not in screen
+
+    tui._toggle_selected(state)
+    assert state.selected_dashboard_tweak_ids == [tui.DASHBOARD_TWEAK_IDS[0]]
+
+    screen = tui._screen_text(state)
+    assert "Continue to profile management" in screen
+
+    state.selected_dashboard_tweak_ids = []
+    tui._activate_dashboard(state)
+    assert state.selected_dashboard_tweak_ids == [tui.DASHBOARD_TWEAK_IDS[0]]
 
 
 def test_footer_keys_match_dashboard_step():
@@ -303,70 +343,79 @@ def test_dashboard_selects_specific_version_without_downloading():
 
 
 def test_dashboard_toggles_patch_and_loads_profile():
+    first = tui.DASHBOARD_TWEAK_IDS[0]
+    second = tui.DASHBOARD_TWEAK_IDS[1]
     state = tui.TuiState(
         mode="dashboard",
         dashboard_step=1,
-        patch_packages=[_package(), _package("second-patch", "0.2.0", "Second Patch")],
-        patch_profiles=[
-            _profile(
-                patches=[
-                    {"id": "replace-before", "version": "0.1.0"},
-                    {"id": "second-patch", "version": "0.2.0"},
-                ]
-            )
-        ],
+        dashboard_tweak_profiles=[_tweak_profile(tweak_ids=[first, second])],
     )
 
     state.selected_index = 0
     tui._activate_dashboard(state)
-    assert state.selected_patch_indexes == [0]
+    assert state.selected_dashboard_tweak_ids == [first]
 
-    state.selected_index = 3
+    state.selected_index = next(
+        index for index, option in enumerate(tui._dashboard_options(state))
+        if option.kind == "profile-load"
+    )
     tui._activate_dashboard(state)
-    assert state.selected_patch_indexes == [0, 1]
+    assert state.selected_dashboard_tweak_ids == [first, second]
     assert state.dashboard_loaded_profile_id == "daily-build"
     assert state.dashboard_profile_name == "Daily Build"
 
 
 def test_dashboard_marks_profile_with_missing_patch_invalid():
+    first = tui.DASHBOARD_TWEAK_IDS[0]
     state = tui.TuiState(
         mode="dashboard",
         dashboard_step=1,
-        patch_packages=[_package()],
-        patch_profiles=[
-            _profile(
-                patches=[
-                    {"id": "replace-before", "version": "0.1.0"},
-                    {"id": "missing-patch", "version": "9.9.9"},
-                ]
-            )
-        ],
+        dashboard_tweak_profiles=[_tweak_profile(tweak_ids=[first, "missing-patch"])],
     )
 
     screen = tui._screen_text(state)
-    state.selected_index = 2
+    state.selected_index = next(
+        index for index, option in enumerate(tui._dashboard_options(state))
+        if option.kind == "profile-load"
+    )
     tui._activate_dashboard(state)
 
-    assert "invalid, missing missing-patch@9.9.9" in screen
-    assert state.selected_patch_indexes == []
-    assert "missing missing-patch@9.9.9" in state.message
+    assert "invalid, missing missing-patch" in screen
+    assert state.selected_dashboard_tweak_ids == []
+    assert "missing missing-patch" in state.message
+
+
+def test_dashboard_run_rejects_legacy_patch_profile_id():
+    state = tui.TuiState(
+        mode="dashboard",
+        dashboard_step=3,
+        dashboard_loaded_profile_id="legacy-package-profile",
+        patch_profiles=[_profile(profile_id="legacy-package-profile", name="Legacy Package Profile")],
+        selected_dashboard_tweak_ids=[tui.DASHBOARD_TWEAK_IDS[0]],
+    )
+
+    tui._run_dashboard_build(state)
+
+    assert state.message == (
+        "Loaded profile is invalid, missing legacy-package-profile is not a dashboard tweak profile"
+    )
 
 
 def test_dashboard_creates_profile_from_selected_patches(tmp_path, monkeypatch):
+    first = tui.DASHBOARD_TWEAK_IDS[0]
     monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(tmp_path / ".cc-extractor"))
     state = tui.TuiState(
         mode="dashboard",
         dashboard_step=2,
-        patch_packages=[_package()],
-        selected_patch_indexes=[0],
+        selected_dashboard_tweak_ids=[first],
         dashboard_profile_name="Focus Build",
     )
 
     tui._create_dashboard_profile(state)
 
-    profile = load_patch_profile("focus-build", root=tmp_path / ".cc-extractor")
+    profile = load_dashboard_tweak_profile("focus-build", root=tmp_path / ".cc-extractor")
     assert profile.name == "Focus Build"
-    assert profile.patches == [{"id": "replace-before", "version": "0.1.0"}]
+    assert profile.tweak_ids == [first]
     assert state.dashboard_loaded_profile_id == "focus-build"
 
 
@@ -376,17 +425,15 @@ def test_dashboard_delete_profile_requires_confirmation(tmp_path, monkeypatch):
     state = tui.TuiState(
         mode="dashboard",
         dashboard_step=2,
-        patch_profiles=[_profile()],
+        dashboard_tweak_profiles=[_tweak_profile()],
         dashboard_loaded_profile_id="daily-build",
     )
 
-    from cc_extractor.workspace import save_patch_profile
-
-    save_patch_profile("Daily Build", [{"id": "replace-before", "version": "0.1.0"}], root=root)
+    save_dashboard_tweak_profile("Daily Build", [tui.DASHBOARD_TWEAK_IDS[0]], root=root)
 
     tui._delete_dashboard_profile(state, "daily-build")
     assert state.dashboard_delete_confirm_id == "daily-build"
-    assert load_patch_profile("daily-build", root=root).name == "Daily Build"
+    assert load_dashboard_tweak_profile("daily-build", root=root).name == "Daily Build"
 
     tui._delete_dashboard_profile(state, "daily-build")
     assert state.dashboard_delete_confirm_id == ""
@@ -398,13 +445,13 @@ def test_dashboard_run_requires_patches():
 
     tui._run_dashboard_build(state)
 
-    assert state.message == "Select at least one patch package."
+    assert state.message == "Select at least one dashboard patch."
 
 
-def test_dashboard_run_applies_selected_packages_to_artifact(monkeypatch, tmp_path):
+def test_dashboard_run_applies_selected_tweaks_to_artifact(monkeypatch, tmp_path):
     calls = []
     artifact = NativeArtifact(
-        version="1.2.3",
+        version="2.1.123",
         platform="darwin-arm64",
         sha256="a" * 64,
         path=tmp_path / "claude",
@@ -414,24 +461,23 @@ def test_dashboard_run_applies_selected_packages_to_artifact(monkeypatch, tmp_pa
     class Result:
         output_path = tmp_path / "claude-patched"
 
-    def fake_apply(source_artifact, packages):
-        calls.append((source_artifact, packages))
+    def fake_apply(source_artifact, tweak_ids):
+        calls.append((source_artifact, tweak_ids))
         return Result()
 
-    monkeypatch.setattr(tui, "apply_patch_packages_to_native", fake_apply)
+    monkeypatch.setattr(tui, "apply_dashboard_tweaks_to_native", fake_apply)
 
     state = tui.TuiState(
         mode="dashboard",
         dashboard_step=3,
         dashboard_source_kind=tui.SOURCE_ARTIFACT,
         native_artifacts=[artifact],
-        patch_packages=[_package()],
-        selected_patch_indexes=[0],
+        selected_dashboard_tweak_ids=[tui.DASHBOARD_TWEAK_IDS[0]],
     )
 
     tui._run_dashboard_build(state)
 
-    assert calls == [(artifact, [state.patch_packages[0]])]
+    assert calls == [(artifact, [tui.DASHBOARD_TWEAK_IDS[0]])]
     assert state.message == f"Dashboard build complete: {tmp_path / 'claude-patched'}"
 
 

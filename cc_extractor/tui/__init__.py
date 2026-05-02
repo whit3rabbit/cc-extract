@@ -12,31 +12,34 @@ re-exported below to keep the existing ``tui._foo`` test API stable.
 
 __all__ = [
     "TUI_THEMES", "TuiTheme",
-    "apply_patch_packages_to_native", "create_variant", "doctor_variant",
+    "apply_dashboard_tweaks_to_native", "apply_patch_packages_to_native", "create_variant", "doctor_variant",
     "download_binary", "download_versions", "extract_all",
     "load_download_index", "list_variant_providers", "parse_bun_binary",
     "provider_default_variant_name", "refresh_download_index", "scan_variants",
-    "CURATED_TWEAK_IDS", "DEFAULT_TWEAK_IDS",
-    "NativeArtifact", "PatchPackage", "PatchProfile",
-    "delete_patch_profile", "extraction_paths", "load_patch_profile",
-    "load_tui_settings", "native_artifact_from_path", "rename_patch_profile",
-    "save_patch_profile", "save_tui_settings", "scan_extractions",
-    "scan_native_downloads", "scan_npm_downloads", "scan_patch_packages",
+    "CURATED_TWEAK_IDS", "DASHBOARD_TWEAK_IDS", "DEFAULT_TWEAK_IDS",
+    "DashboardTweakProfile", "NativeArtifact", "PatchPackage", "PatchProfile",
+    "delete_dashboard_tweak_profile", "delete_patch_profile", "extraction_paths",
+    "load_dashboard_tweak_profile", "load_patch_profile",
+    "load_tui_settings", "native_artifact_from_path", "rename_dashboard_tweak_profile", "rename_patch_profile",
+    "save_dashboard_tweak_profile", "save_patch_profile", "save_tui_settings", "scan_dashboard_tweak_profiles",
+    "scan_extractions", "scan_native_downloads", "scan_npm_downloads", "scan_patch_packages",
     "scan_patch_profiles", "short_sha", "workspace_root",
     "DASHBOARD_STEPS", "DEFAULT_THEME_ID", "MenuOption", "SOURCE_ARTIFACT",
     "SOURCE_LATEST", "SOURCE_VERSION", "TABS", "TAB_MODES", "THEME_ORDER",
     "VARIANT_MODEL_FIELDS", "VARIANT_STEPS",
     "_active_tab", "_body_text", "_footer_lines", "_footer_text", "_gauge_widget",
     "_list_widget", "_tabs_widget", "_normalize_theme_id", "_theme_name",
-    "_dashboard_options", "_dashboard_source_artifact", "_loaded_profile",
-    "_profile_by_id", "_profile_refs_by_key", "_selected_patch_refs",
+    "_dashboard_options", "_dashboard_source_artifact", "_dashboard_tweak_ids", "_loaded_profile",
+    "_dashboard_tweak_profile_by_id", "_dashboard_tweak_profile_missing_ids",
+    "_profile_by_id", "_profile_missing_refs", "_profile_refs_by_key",
+    "_selected_dashboard_tweaks", "_selected_patch_refs",
     "_variant_model_display_value", "_variant_options",
     "_selected_artifact",
     "_run_quiet",
     "_advance_dashboard", "_create_dashboard_profile", "_dashboard_artifact_for_run",
     "_delete_dashboard_profile", "_load_dashboard_profile", "_overwrite_dashboard_profile",
     "_refresh_dashboard_index", "_rename_dashboard_profile", "_require_dashboard_patches",
-    "_reset_dashboard", "_toggle_dashboard_patch",
+    "_reset_dashboard", "_toggle_dashboard_patch", "_toggle_dashboard_tweak",
     "_dashboard_accepts_profile_text", "_dashboard_backspace",
     "_variant_accepts_text", "_variant_append_text", "_variant_backspace",
     "_activate_extract", "_activate_inspect", "_activate_patch_source",
@@ -61,22 +64,28 @@ from ..bun_extract import parse_bun_binary
 from ..download_index import download_versions, load_download_index, refresh_download_index
 from ..downloader import download_binary
 from ..extractor import extract_all
-from ..patch_workflow import apply_patch_packages_to_native
+from ..patch_workflow import apply_dashboard_tweaks_to_native, apply_patch_packages_to_native
 from ..providers import provider_default_variant_name
-from ..variant_tweaks import CURATED_TWEAK_IDS, DEFAULT_TWEAK_IDS
+from ..variant_tweaks import CURATED_TWEAK_IDS, DASHBOARD_TWEAK_IDS, DEFAULT_TWEAK_IDS
 from ..variants import create_variant, doctor_variant, list_variant_providers, scan_variants
 from ..workspace import (
+    DashboardTweakProfile,
     NativeArtifact,
     PatchPackage,
     PatchProfile,
+    delete_dashboard_tweak_profile,
     delete_patch_profile,
     extraction_paths,
+    load_dashboard_tweak_profile,
     load_patch_profile,
     load_tui_settings,
     native_artifact_from_path,
+    rename_dashboard_tweak_profile,
     rename_patch_profile,
+    save_dashboard_tweak_profile,
     save_patch_profile,
     save_tui_settings,
+    scan_dashboard_tweak_profiles,
     scan_extractions,
     scan_native_downloads,
     scan_npm_downloads,
@@ -112,6 +121,7 @@ from .dashboard import (
     require_dashboard_patches as _require_dashboard_patches,
     reset_dashboard as _reset_dashboard,
     toggle_dashboard_patch as _toggle_dashboard_patch,
+    toggle_dashboard_tweak as _toggle_dashboard_tweak,
 )
 from .keys import (
     dashboard_accepts_profile_text as _dashboard_accepts_profile_text,
@@ -136,14 +146,18 @@ from .nav import (
     toggle_tweak as _toggle_tweak,
 )
 from .options import (
+    dashboard_tweak_ids as _dashboard_tweak_ids,
     dashboard_options as _dashboard_options,
     dashboard_source_artifact as _dashboard_source_artifact,
+    dashboard_tweak_profile_by_id as _dashboard_tweak_profile_by_id,
+    dashboard_tweak_profile_missing_ids as _dashboard_tweak_profile_missing_ids,
     loaded_profile as _loaded_profile,
     profile_by_id as _profile_by_id,
     profile_missing_refs as _profile_missing_refs,
     profile_refs_by_key as _profile_refs_by_key,
     selected_dashboard_option as _selected_dashboard_option,
     selected_dashboard_packages as _selected_dashboard_packages,
+    selected_dashboard_tweaks as _selected_dashboard_tweaks,
     selected_patch_refs as _selected_patch_refs,
     selected_tweaks_source_variant_id as _selected_tweaks_source_variant_id,
     selected_variant_option as _selected_variant_option,
@@ -334,8 +348,8 @@ def _variant_accepts_name_text(state):
 def _toggle_selected(state):
     if state.mode == "dashboard":
         option = _selected_dashboard_option(state)
-        if option and option.kind == "patch-toggle":
-            _toggle_dashboard_patch(state, int(option.value))
+        if option and option.kind == "dashboard-tweak-toggle":
+            _toggle_dashboard_tweak(state, str(option.value))
     elif state.mode == "patch-package":
         _toggle_patch(state)
     elif state.mode == "variants":
@@ -412,8 +426,8 @@ def _activate_dashboard(state):
         _advance_dashboard(state)
     elif option.kind == "refresh-index":
         _refresh_dashboard_index(state)
-    elif option.kind == "patch-toggle":
-        _toggle_dashboard_patch(state, int(option.value))
+    elif option.kind == "dashboard-tweak-toggle":
+        _toggle_dashboard_tweak(state, str(option.value))
     elif option.kind == "profile-load":
         _load_dashboard_profile(state, str(option.value))
     elif option.kind == "patch-continue":
@@ -519,17 +533,17 @@ def _run_dashboard_build(state):
 
     loaded_profile = _loaded_profile(state)
     if loaded_profile is not None:
-        missing = _profile_missing_refs(state, loaded_profile)
+        missing = _dashboard_tweak_profile_missing_ids(state, loaded_profile)
         if missing:
             state.message = f"Loaded profile is invalid, missing {', '.join(missing)}"
             return
 
-    packages = _selected_dashboard_packages(state)
+    tweak_ids = _selected_dashboard_tweaks(state)
     try:
         artifact = _dashboard_artifact_for_run(state)
         if artifact is None:
             return
-        result, _output = _run_quiet(apply_patch_packages_to_native, artifact, packages)
+        result, _output = _run_quiet(apply_dashboard_tweaks_to_native, artifact, tweak_ids)
         state.message = f"Dashboard build complete: {result.output_path}"
     except Exception as exc:
         state.message = f"Dashboard build failed: {exc}"

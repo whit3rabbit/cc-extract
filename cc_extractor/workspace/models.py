@@ -51,6 +51,15 @@ class PatchProfile:
 
 
 @dataclass
+class DashboardTweakProfile:
+    profile_id: str
+    name: str
+    tweak_ids: List[str]
+    path: Path
+    manifest: Dict
+
+
+@dataclass
 class PatchedArtifact:
     version: str
     platform: str

@@ -35,6 +35,7 @@ def ensure_workspace(root: Optional[os.PathLike] = None) -> Path:
         "extractions/native",
         "patches/packages",
         "patches/profiles",
+        "patches/tweak-profiles",
         "patched/native",
         "variants",
         "bin",
@@ -142,3 +143,9 @@ def patch_profile_path(profile_id: str, root: Optional[os.PathLike] = None) -> P
     if not isinstance(profile_id, str) or not PATCH_ID_RE.match(profile_id):
         raise ValueError("patch profile id must be lower-kebab-case")
     return workspace_root(root) / "patches" / "profiles" / f"{profile_id}.json"
+
+
+def dashboard_tweak_profile_path(profile_id: str, root: Optional[os.PathLike] = None) -> Path:
+    if not isinstance(profile_id, str) or not PATCH_ID_RE.match(profile_id):
+        raise ValueError("dashboard tweak profile id must be lower-kebab-case")
+    return workspace_root(root) / "patches" / "tweak-profiles" / f"{profile_id}.json"

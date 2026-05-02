@@ -24,6 +24,15 @@ CURATED_TWEAK_IDS = [
     "patches-applied-indication",
     *ENV_TWEAK_IDS,
 ]
+DASHBOARD_EXCLUDED_TWEAK_IDS = {
+    "themes",
+    "prompt-overlays",
+    *ENV_TWEAK_IDS,
+}
+DASHBOARD_TWEAK_IDS = [
+    tweak_id for tweak_id in CURATED_TWEAK_IDS
+    if tweak_id not in DASHBOARD_EXCLUDED_TWEAK_IDS
+]
 
 
 @dataclass

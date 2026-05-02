@@ -10,21 +10,19 @@ from typing import Optional
 from ..download_index import download_versions, refresh_download_index
 from ..downloader import download_binary
 from ..workspace import (
-    delete_patch_profile,
+    delete_dashboard_tweak_profile,
     native_artifact_from_path,
-    rename_patch_profile,
-    save_patch_profile,
+    rename_dashboard_tweak_profile,
+    save_dashboard_tweak_profile,
     workspace_root,
 )
 from ._const import DASHBOARD_STEPS, SOURCE_ARTIFACT, SOURCE_LATEST, SOURCE_VERSION
 from ._runtime import run_quiet
 from .options import (
+    dashboard_tweak_profile_by_id,
+    dashboard_tweak_profile_missing_ids,
     dashboard_source_artifact,
-    profile_by_id,
-    profile_missing_refs,
-    profile_refs_by_key,
-    selected_dashboard_packages,
-    selected_patch_refs,
+    selected_dashboard_tweaks,
 )
 
 
@@ -37,6 +35,7 @@ def reset_dashboard(state):
     state.dashboard_step = 0
     state.selected_index = 0
     state.selected_patch_indexes = []
+    state.selected_dashboard_tweak_ids = []
     state.dashboard_source_kind = SOURCE_LATEST
     state.dashboard_source_version = ""
     state.dashboard_source_artifact_index = 0
@@ -56,9 +55,21 @@ def toggle_dashboard_patch(state, index):
         state.dashboard_loaded_profile_id = ""
 
 
+def toggle_dashboard_tweak(state, tweak_id: str):
+    if tweak_id in state.selected_dashboard_tweak_ids:
+        state.selected_dashboard_tweak_ids = [
+            selected for selected in state.selected_dashboard_tweak_ids
+            if selected != tweak_id
+        ]
+    else:
+        state.selected_dashboard_tweak_ids.append(tweak_id)
+    if state.dashboard_loaded_profile_id:
+        state.dashboard_loaded_profile_id = ""
+
+
 def require_dashboard_patches(state) -> bool:
-    if not selected_dashboard_packages(state):
-        state.message = "Select at least one patch package."
+    if not selected_dashboard_tweaks(state):
+        state.message = "Select at least one dashboard patch."
         return False
     return True
 
@@ -77,23 +88,18 @@ def refresh_dashboard_index(state):
 
 
 def load_dashboard_profile(state, profile_id: str) -> bool:
-    profile = profile_by_id(state, profile_id)
+    profile = dashboard_tweak_profile_by_id(state, profile_id)
     if profile is None:
         state.message = f"Profile not found: {profile_id}"
         return False
 
-    missing = profile_missing_refs(state, profile)
+    missing = dashboard_tweak_profile_missing_ids(state, profile)
     if missing:
         state.dashboard_loaded_profile_id = profile.profile_id
         state.message = f"Profile {profile.name} is invalid, missing {', '.join(missing)}"
         return False
 
-    available = profile_refs_by_key(state)
-    state.selected_patch_indexes = [
-        available[(ref["id"], ref["version"])]
-        for ref in profile.patches
-    ]
-    state.selected_patch_indexes.sort()
+    state.selected_dashboard_tweak_ids = list(profile.tweak_ids)
     state.dashboard_profile_name = profile.name
     state.dashboard_loaded_profile_id = profile.profile_id
     state.message = f"Loaded profile: {profile.name}"
@@ -104,9 +110,9 @@ def create_dashboard_profile(state):
     if not require_dashboard_patches(state):
         return
     try:
-        profile = save_patch_profile(
+        profile = save_dashboard_tweak_profile(
             state.dashboard_profile_name,
-            selected_patch_refs(state),
+            selected_dashboard_tweaks(state),
             overwrite=False,
         )
         state.dashboard_loaded_profile_id = profile.profile_id
@@ -121,7 +127,7 @@ def rename_dashboard_profile(state, profile_id: str):
         state.message = "Type a non-empty profile name before renaming."
         return
     try:
-        profile = rename_patch_profile(profile_id, state.dashboard_profile_name)
+        profile = rename_dashboard_tweak_profile(profile_id, state.dashboard_profile_name)
         if state.dashboard_loaded_profile_id == profile_id:
             state.dashboard_loaded_profile_id = profile.profile_id
         state.dashboard_profile_name = profile.name
@@ -133,14 +139,14 @@ def rename_dashboard_profile(state, profile_id: str):
 def overwrite_dashboard_profile(state, profile_id: str):
     if not require_dashboard_patches(state):
         return
-    profile = profile_by_id(state, profile_id)
+    profile = dashboard_tweak_profile_by_id(state, profile_id)
     if profile is None:
         state.message = f"Profile not found: {profile_id}"
         return
     try:
-        updated = save_patch_profile(
+        updated = save_dashboard_tweak_profile(
             profile.name,
-            selected_patch_refs(state),
+            selected_dashboard_tweaks(state),
             profile_id=profile.profile_id,
             overwrite=True,
         )
@@ -152,7 +158,7 @@ def overwrite_dashboard_profile(state, profile_id: str):
 
 
 def delete_dashboard_profile(state, profile_id: str):
-    profile = profile_by_id(state, profile_id)
+    profile = dashboard_tweak_profile_by_id(state, profile_id)
     if profile is None:
         state.message = f"Profile not found: {profile_id}"
         return
@@ -161,7 +167,7 @@ def delete_dashboard_profile(state, profile_id: str):
         state.message = f"Press Enter again to delete profile: {profile.name}"
         return
     try:
-        delete_patch_profile(profile_id)
+        delete_dashboard_tweak_profile(profile_id)
         if state.dashboard_loaded_profile_id == profile_id:
             state.dashboard_loaded_profile_id = ""
         state.dashboard_delete_confirm_id = ""
@@ -204,4 +210,5 @@ __all__ = [
     "require_dashboard_patches",
     "reset_dashboard",
     "toggle_dashboard_patch",
+    "toggle_dashboard_tweak",
 ]

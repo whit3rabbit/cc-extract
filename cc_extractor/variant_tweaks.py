@@ -4,6 +4,8 @@ import path. The implementation lives in :mod:`cc_extractor.variants.tweaks`.
 
 from .variants.tweaks import (  # noqa: F401
     CURATED_TWEAK_IDS,
+    DASHBOARD_EXCLUDED_TWEAK_IDS,
+    DASHBOARD_TWEAK_IDS,
     CUSTOM_MODELS,
     DEFAULT_TWEAK_IDS,
     ENV_TWEAK_IDS,

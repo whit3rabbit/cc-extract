@@ -9,16 +9,22 @@ from .models import PatchPackage, PatchProfile
 from .paths import (
     PATCH_ID_RE,
     SEMVER_RE,
+    dashboard_tweak_profile_path,
     ensure_workspace,
     patch_profile_path,
     read_json,
     workspace_root,
     write_json,
 )
+from .models import DashboardTweakProfile
 
 
 def patch_profile_id_from_name(name: str) -> str:
     return make_kebab_id(name, label="patch profile name")
+
+
+def dashboard_tweak_profile_id_from_name(name: str) -> str:
+    return make_kebab_id(name, label="dashboard tweak profile name")
 
 
 def scan_patch_packages(root: Optional[os.PathLike] = None) -> List[PatchPackage]:
@@ -45,6 +51,21 @@ def scan_patch_profiles(root: Optional[os.PathLike] = None) -> List[PatchProfile
     for manifest_path in base.glob("*.json"):
         try:
             profiles.append(load_patch_profile(manifest_path.stem, root=root))
+        except ValueError:
+            continue
+
+    return sorted(profiles, key=lambda item: item.name.lower())
+
+
+def scan_dashboard_tweak_profiles(root: Optional[os.PathLike] = None) -> List[DashboardTweakProfile]:
+    base = workspace_root(root) / "patches" / "tweak-profiles"
+    profiles: List[DashboardTweakProfile] = []
+    if not base.exists():
+        return profiles
+
+    for manifest_path in base.glob("*.json"):
+        try:
+            profiles.append(load_dashboard_tweak_profile(manifest_path.stem, root=root))
         except ValueError:
             continue
 
@@ -86,6 +107,27 @@ def load_patch_profile(profile_id: str, root: Optional[os.PathLike] = None) -> P
     )
 
 
+def load_dashboard_tweak_profile(
+    profile_id: str,
+    root: Optional[os.PathLike] = None,
+) -> DashboardTweakProfile:
+    path = dashboard_tweak_profile_path(profile_id, root=root)
+    if not path.exists():
+        raise ValueError(f"No dashboard tweak profile found for {profile_id}")
+
+    manifest = read_json(path)
+    validate_dashboard_tweak_profile_manifest(manifest)
+    if manifest["id"] != profile_id:
+        raise ValueError("dashboard tweak profile filename does not match id")
+    return DashboardTweakProfile(
+        profile_id=manifest["id"],
+        name=manifest["name"],
+        tweak_ids=list(manifest["tweakIds"]),
+        path=path,
+        manifest=manifest,
+    )
+
+
 def save_patch_profile(
     name: str,
     patches: Sequence[Dict],
@@ -115,6 +157,35 @@ def save_patch_profile(
     return load_patch_profile(profile_id, root=root)
 
 
+def save_dashboard_tweak_profile(
+    name: str,
+    tweak_ids: Sequence[str],
+    root: Optional[os.PathLike] = None,
+    profile_id: Optional[str] = None,
+    overwrite: bool = False,
+) -> DashboardTweakProfile:
+    clean_name = _clean_profile_name(name)
+    profile_id = profile_id or dashboard_tweak_profile_id_from_name(clean_name)
+    path = dashboard_tweak_profile_path(profile_id, root=root)
+    existing = _safe_read_json(path)
+    if path.exists() and not overwrite:
+        raise ValueError(f"Dashboard tweak profile {profile_id} already exists")
+
+    now = _utc_now()
+    manifest = {
+        "schemaVersion": 1,
+        "id": profile_id,
+        "name": clean_name,
+        "tweakIds": _normalize_tweak_ids(tweak_ids),
+        "createdAt": existing.get("createdAt") if existing else now,
+        "updatedAt": now,
+    }
+    validate_dashboard_tweak_profile_manifest(manifest)
+    ensure_workspace(root)
+    write_json(path, manifest)
+    return load_dashboard_tweak_profile(profile_id, root=root)
+
+
 def rename_patch_profile(
     profile_id: str,
     name: str,
@@ -139,8 +210,40 @@ def rename_patch_profile(
     return load_patch_profile(new_id, root=root)
 
 
+def rename_dashboard_tweak_profile(
+    profile_id: str,
+    name: str,
+    root: Optional[os.PathLike] = None,
+) -> DashboardTweakProfile:
+    profile = load_dashboard_tweak_profile(profile_id, root=root)
+    clean_name = _clean_profile_name(name)
+    new_id = dashboard_tweak_profile_id_from_name(clean_name)
+    old_path = profile.path
+    new_path = dashboard_tweak_profile_path(new_id, root=root)
+    if new_id != profile.profile_id and new_path.exists():
+        raise ValueError(f"Dashboard tweak profile {new_id} already exists")
+
+    manifest = dict(profile.manifest)
+    manifest["id"] = new_id
+    manifest["name"] = clean_name
+    manifest["updatedAt"] = _utc_now()
+    validate_dashboard_tweak_profile_manifest(manifest)
+    write_json(new_path, manifest)
+    if new_path != old_path and old_path.exists():
+        old_path.unlink()
+    return load_dashboard_tweak_profile(new_id, root=root)
+
+
 def delete_patch_profile(profile_id: str, root: Optional[os.PathLike] = None) -> bool:
     path = patch_profile_path(profile_id, root=root)
+    if not path.exists():
+        return False
+    path.unlink()
+    return True
+
+
+def delete_dashboard_tweak_profile(profile_id: str, root: Optional[os.PathLike] = None) -> bool:
+    path = dashboard_tweak_profile_path(profile_id, root=root)
     if not path.exists():
         return False
     path.unlink()
@@ -204,6 +307,29 @@ def validate_patch_profile_manifest(manifest: Dict) -> None:
             raise ValueError(f"patch profile {field} must be a non-empty string")
 
 
+def validate_dashboard_tweak_profile_manifest(manifest: Dict) -> None:
+    if manifest.get("schemaVersion") != 1:
+        raise ValueError("dashboard tweak profile schemaVersion must be 1")
+
+    profile_id = manifest.get("id")
+    if not isinstance(profile_id, str) or not PATCH_ID_RE.match(profile_id):
+        raise ValueError("dashboard tweak profile id must be lower-kebab-case")
+
+    name = manifest.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("dashboard tweak profile name must be a non-empty string")
+
+    tweak_ids = manifest.get("tweakIds")
+    if not isinstance(tweak_ids, list) or not tweak_ids:
+        raise ValueError("dashboard tweak profile tweakIds must be a non-empty list")
+    _normalize_tweak_ids(tweak_ids)
+
+    for field in ("createdAt", "updatedAt"):
+        value = manifest.get(field)
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"dashboard tweak profile {field} must be a non-empty string")
+
+
 def _clean_profile_name(name: str) -> str:
     if not isinstance(name, str) or not name.strip():
         raise ValueError("patch profile name must be a non-empty string")
@@ -218,3 +344,15 @@ def _normalize_profile_patch_ref(ref: Dict) -> Dict:
     if not isinstance(version, str) or not SEMVER_RE.match(version):
         raise ValueError("patch profile patch version must be SemVer")
     return {"id": patch_id, "version": version}
+
+
+def _normalize_tweak_ids(tweak_ids: Sequence[str]) -> List[str]:
+    result: List[str] = []
+    for index, tweak_id in enumerate(tweak_ids):
+        if not isinstance(tweak_id, str) or not PATCH_ID_RE.match(tweak_id):
+            raise ValueError(f"dashboard tweak profile tweakIds[{index}] must be lower-kebab-case")
+        if tweak_id not in result:
+            result.append(tweak_id)
+    if not result:
+        raise ValueError("dashboard tweak profile tweakIds must be a non-empty list")
+    return result

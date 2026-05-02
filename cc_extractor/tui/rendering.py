@@ -13,9 +13,11 @@ from .options import (
     dashboard_options,
     dashboard_source_label,
     dashboard_title,
+    dashboard_tweak_ids,
     format_native_artifact,
     loaded_profile,
     selected_dashboard_packages,
+    selected_dashboard_tweaks,
     selected_variant_provider,
     selected_tweaks_edit_patch,
     tweaks_edit_groups,
@@ -140,7 +142,7 @@ def empty_text(state):
     if state.mode == "patch-package":
         return "No patch packages found."
     if state.mode == "dashboard" and state.dashboard_step == 1:
-        return "No patch packages found."
+        return "No curated dashboard patches available."
     if state.mode == "variants":
         return "No variants or providers found."
     if state.mode == "tweaks-source":
@@ -201,7 +203,7 @@ def progress_specs(state):
             f"{state.dashboard_step + 1}/{len(DASHBOARD_STEPS)} {DASHBOARD_STEPS[state.dashboard_step]}",
         ))
         if state.dashboard_step == 1:
-            specs.append(_patch_progress_spec(state))
+            specs.append(_dashboard_tweak_progress_spec(state))
     elif state.mode == "patch-package":
         specs.append(_patch_progress_spec(state))
     elif state.mode == "variants":
@@ -218,6 +220,13 @@ def _patch_progress_spec(state):
     total = len(state.patch_packages)
     ratio = selected / total if total else 0.0
     return ("Patches", ratio, f"{selected}/{total} selected")
+
+
+def _dashboard_tweak_progress_spec(state):
+    selected = len(selected_dashboard_tweaks(state))
+    available = len(dashboard_tweak_ids())
+    ratio = selected / available if available else 0.0
+    return ("Patches", ratio, f"{selected}/{available} selected")
 
 
 # -- Compact chrome / key hints -----------------------------------------------
@@ -237,7 +246,7 @@ def context_line(state):
         return (
             f"Dashboard {step} | Step {state.dashboard_step + 1}/{len(DASHBOARD_STEPS)} | "
             f"Source {dashboard_source_label(state)} | "
-            f"Patches {len(selected_dashboard_packages(state))} | Profile {profile_label}"
+            f"Patches {len(selected_dashboard_tweaks(state))} | Profile {profile_label}"
         )
     if state.mode == "variants":
         provider = selected_variant_provider(state)
