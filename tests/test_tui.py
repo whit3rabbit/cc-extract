@@ -557,6 +557,8 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
         return Result()
 
     monkeypatch.setattr(tui, "create_variant", fake_create_variant)
+    monkeypatch.setattr(tui, "doctor_variant", lambda name: [{"id": name, "ok": True, "checks": []}])
+    monkeypatch.setattr(tui, "_refresh_state", lambda state_arg: True)
     state = tui.TuiState(
         mode="variants",
         variant_providers=[
@@ -595,11 +597,17 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     assert state.variant_step == 5
 
     tui._activate_variants(state)
+    assert calls == []
+    assert state.mode == "create-preview"
+    assert "Setup create preview" in tui._screen_text(state)
+
+    tui._handle_char_key(state, "y")
     assert calls[0]["provider_key"] == "mirror"
     assert calls[0]["name"] == "mirror"
     assert calls[0]["credential_env"] is None
     assert calls[0]["model_overrides"] == {}
     assert first_tweak not in calls[0]["tweaks"]
+    assert state.mode == "health-result"
 
 
 def test_variants_wizard_blocks_required_model_mapping():
@@ -732,6 +740,24 @@ def test_setup_manager_lists_rows_and_opens_detail():
     tui._activate_setup_manager(state)
     assert state.mode == "setup-detail"
     assert state.selected_setup_id == "deepseek-main"
+
+
+def test_setup_detail_copies_command_and_logs(monkeypatch):
+    copied = []
+    variant = _variant("deepseek-main")
+    state = tui.TuiState(mode="setup-detail", variants=[variant], selected_setup_id="deepseek-main")
+
+    monkeypatch.setattr(tui, "_copy_text_to_clipboard", copied.append)
+
+    tui._handle_char_key(state, "c")
+
+    assert copied == ["/tmp/bin/deepseek-main"]
+    assert state.message == "Copied command path for setup deepseek-main."
+    assert state.last_action_log == ["Copied command path: /tmp/bin/deepseek-main"]
+
+    tui._handle_char_key(state, "l")
+    assert state.mode == "logs"
+    assert "Copied command path: /tmp/bin/deepseek-main" in tui._screen_text(state)
 
 
 def test_upgrade_preview_applies_update_and_health(monkeypatch, tmp_path):

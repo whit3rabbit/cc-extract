@@ -36,6 +36,8 @@ def go_back(state) -> None:
         set_mode(state, "setup-manager")
     elif state.mode in {"upgrade-preview", "delete-confirm", "logs", "error"}:
         set_mode(state, "setup-detail" if state.selected_setup_id else "setup-manager")
+    elif state.mode == "create-preview":
+        set_mode(state, "variants" if state.variants else "first-run-setup")
     elif state.mode == "health-result":
         set_mode(state, "setup-detail" if state.selected_setup_id else "setup-manager")
     elif state.mode == "first-run-setup":
@@ -222,8 +224,10 @@ def apply_tweaks(state) -> None:
 
     claude_version = (manifest.get("source") or {}).get("version")
     try:
-        run_quiet(variants_module.apply_variant, variant_id, claude_version=claude_version)
+        _result, output = run_quiet(variants_module.apply_variant, variant_id, claude_version=claude_version)
+        state.last_action_log = output.splitlines() if output else ["No rebuild output captured."]
     except Exception as exc:
+        state.last_action_log = [f"Apply failed: {exc}"]
         state.message = f"Apply failed: {exc}"
         return
 

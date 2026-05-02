@@ -5,10 +5,12 @@ objects. They do not mutate state and do not call externally-monkey-patched
 functions.
 """
 
+import os
 from typing import Optional
 
+from ..variants.model import default_bin_dir, variant_id_from_name
 from ..workspace import workspace_root
-from ._const import DASHBOARD_STEPS, TABS, TAB_MODES, VARIANT_STEPS
+from ._const import DASHBOARD_STEPS, TABS, TAB_MODES, VARIANT_MODEL_FIELDS, VARIANT_STEPS
 from .options import (
     dashboard_options,
     dashboard_source_label,
@@ -21,6 +23,7 @@ from .options import (
     selected_setup_variant,
     selected_variant_provider,
     selected_tweaks_edit_patch,
+    variant_model_display_value,
     setup_detail_lines,
     setup_detail_options,
     setup_manager_options,
@@ -43,6 +46,7 @@ def active_tab(state):
         return "Patch"
     if state.mode in {
         "loading",
+        "create-preview",
         "first-run-setup",
         "setup-manager",
         "setup-detail",
@@ -99,6 +103,8 @@ def current_labels(state):
     if state.mode == "first-run-setup":
         title = "No Claude Code setups found"
         return f"{title}: {VARIANT_STEPS[state.variant_step]}", [option.label for option in variant_options(state)]
+    if state.mode == "create-preview":
+        return "Setup create preview", create_preview_labels(state)
     if state.mode == "upgrade-preview":
         return "Upgrade preview", upgrade_preview_labels(state)
     if state.mode == "delete-confirm":
@@ -106,7 +112,7 @@ def current_labels(state):
     if state.mode == "health-result":
         return "Setup result", state.last_action_summary or ["No result available."]
     if state.mode == "logs":
-        return "Logs", state.last_action_summary or ["No logs available."]
+        return "Logs", state.last_action_log or ["No logs available."]
     if state.mode == "error":
         return "Error", state.last_action_summary or [state.message or "Unknown error."]
     if state.mode == "dashboard":
@@ -134,6 +140,62 @@ def current_labels(state):
         title = f"Edit tweaks: {state.tweaks_variant_id or 'no setup'}"
         return title, labels
     return "Status", []
+
+
+def create_preview_labels(state):
+    provider = selected_variant_provider(state)
+    if provider is None:
+        return ["No provider selected."]
+    name = state.variant_name.strip() or str(provider.get("defaultVariantName") or provider.get("key") or "")
+    try:
+        setup_id = variant_id_from_name(name)
+        command = default_bin_dir() / setup_id
+    except Exception as exc:
+        setup_id = "(invalid)"
+        command = "(unavailable)"
+        validation = f"Validation: {exc}"
+    else:
+        validation = "Validation: ready"
+
+    model_lines = _create_preview_model_lines(state, provider)
+    tweak_lines = [f"  {tweak_id}" for tweak_id in state.selected_variant_tweaks] or ["  none"]
+    return [
+        f"Setup: {name or '(unnamed)'}",
+        f"Setup id: {setup_id}",
+        f"Provider: {provider.get('key') or '?'}",
+        "Claude Code: latest",
+        f"Command: {command}",
+        f"Credential env: {_create_preview_credential(state, provider)}",
+        *model_lines,
+        "Default tweaks:",
+        *tweak_lines,
+        validation,
+        "",
+        "Proceed? y/N",
+    ]
+
+
+def _create_preview_credential(state, provider):
+    if provider.get("authMode") == "none":
+        return "not required"
+    value = state.variant_credential_env.strip()
+    if not value:
+        return "not set"
+    suffix = "set" if value in os.environ else "missing"
+    if provider.get("credentialOptional"):
+        suffix = f"optional, {suffix}"
+    return f"{value} ({suffix})"
+
+
+def _create_preview_model_lines(state, provider):
+    if not provider.get("requiresModelMapping"):
+        return ["Models: provider defaults"]
+    lines = ["Models:"]
+    for key, label in VARIANT_MODEL_FIELDS:
+        value = variant_model_display_value(state, provider, key)
+        source = "override" if state.variant_model_overrides.get(key, "").strip() else "default"
+        lines.append(f"  {label}: {value or '(not set)'} ({source})")
+    return lines
 
 
 def upgrade_preview_labels(state):
@@ -363,6 +425,8 @@ def context_line(state):
         return f"Home > {state.selected_setup_id or 'setup'}"
     if state.mode == "upgrade-preview":
         return f"Home > {state.selected_setup_id or 'setup'} > Upgrade"
+    if state.mode == "create-preview":
+        return "Create setup > Preview"
     if state.mode == "delete-confirm":
         return f"Home > {state.selected_setup_id or 'setup'} > Delete"
     if state.mode == "health-result":
@@ -416,6 +480,8 @@ def context_hint(state):
         return "Type the exact setup id, then press Enter."
     if state.mode == "upgrade-preview":
         return "Press y to proceed or n to cancel."
+    if state.mode == "create-preview":
+        return "Press y to create this setup or n to return to review."
     if state.mode in {"tweaks-edit", "tweak-editor"} and state.tweak_apply_preview:
         return "Review the diff, then press y to rebuild or n to cancel."
     if state.mode == "dashboard" and state.dashboard_step == 2:
@@ -476,13 +542,17 @@ def key_line(state):
     if state.mode == "setup-manager":
         return "Keys: Up/Down move | Enter manage | N new | U upgrade | T tweaks | H health | D delete | R refresh | Q quit"
     if state.mode == "setup-detail":
-        return "Keys: Enter select | Esc back | H health | U upgrade | T tweaks | D delete | C copy | Q quit"
+        return "Keys: Enter select | Esc back | H health | U upgrade | T tweaks | D delete | C copy | L logs | Q quit"
     if state.mode == "delete-confirm":
         return "Keys: Type setup name | Enter delete | Esc cancel"
     if state.mode == "upgrade-preview":
         return "Keys: Y proceed | N/Esc cancel"
+    if state.mode == "create-preview":
+        return "Keys: Y create | N/Esc cancel"
     if state.mode == "health-result":
-        return "Keys: Esc back | Enter manage | Q quit"
+        return "Keys: Esc back | Enter manage | L logs | Q quit"
+    if state.mode == "logs":
+        return "Keys: Esc back | Q quit"
     if state.mode == "first-run-setup":
         return _variant_key_line(state)
     if state.mode == "dashboard":

@@ -272,7 +272,7 @@ def variant_options(state):
         options.append(MenuOption("variant-tweaks-continue", "Continue to review"))
         return options
     return [
-        MenuOption("variant-create", "Create setup"),
+        MenuOption("variant-create", "Preview setup create"),
         MenuOption("variant-review-back", "Back to tweaks"),
         MenuOption("variant-reset", "Reset setup wizard"),
     ]
