@@ -13,7 +13,16 @@ patch lives in `cc_extractor/patches/<id>.py` and is registered in
 3. Add a synthetic snippet for `<id>` to `tests/patches/fixtures/synthetic.py`.
 4. Add `tests/patches/test_<id>.py` covering synthetic + real fixtures.
 5. Register in `cc_extractor/patches/_registry.py`.
-6. Run `pytest -q tests/patches/test_<id>.py` until green.
+6. If users should be able to select it, add the ID to `CURATED_TWEAK_IDS` in
+   `cc_extractor/variants/tweaks.py`.
+7. If it is safe for Dashboard one-click use, leave it out of
+   `DASHBOARD_EXCLUDED_TWEAK_IDS`; otherwise add it there.
+8. Run `pytest -q tests/patches/test_<id>.py` until green.
+
+The TUI does not have a separate patch registry. The setup wizard Tweaks step
+auto-populates from `CURATED_TWEAK_IDS`. The Dashboard Patches step
+auto-populates from `DASHBOARD_TWEAK_IDS`, which is derived from curated IDs
+minus dashboard exclusions and filtered against `_registry.REGISTRY`.
 
 ## Patch metadata fields
 

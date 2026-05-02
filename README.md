@@ -123,6 +123,34 @@ cc-extractor patch apply ./my_patch ./extracted_files --binary /path/to/claude -
 
 Creates or applies text patch manifests against extracted bundle files. `--check` validates without writing. `--binary` and `--source-version` override source metadata for cross-version patches.
 
+### Updating Prompt Catalogs
+
+Prompt catalogs live under `prompts/<version>.json`.
+
+To update prompt catalogs after new Claude Code releases:
+
+```bash
+.venv/bin/python tools/extract_prompt_versions.py --since-existing-latest
+```
+
+To process only the newest five missing versions:
+
+```bash
+.venv/bin/python tools/extract_prompt_versions.py --missing --max-versions 5
+```
+
+To regenerate explicit versions:
+
+```bash
+.venv/bin/python tools/extract_prompt_versions.py \
+  --versions 2.1.130 2.1.129 \
+  --force-prompts
+```
+
+The extractor downloads each native binary, extracts the bundled entry JS, extracts prompt strings, validates the prompt JSON schema, and writes `prompts/<version>.json`.
+
+New versions inherit prompt metadata from the nearest older local prompt catalog when same-version metadata is unavailable. Review unnamed prompts before release, or use `--fail-on-unnamed` to make unnamed entries fail the run.
+
 ### Variants
 
 Variants are isolated, patched Claude Code installations addressed by name or id. Each variant pins a provider, optional model overrides, and a set of tweaks.

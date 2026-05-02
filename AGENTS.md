@@ -1,154 +1,386 @@
-# AGENTS.md
+`cc-extractor` is a Python toolkit for inspecting, extracting, patching, repacking, and managing Claude Code Bun standalone binaries.
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+The current product surface has three major workflows:
 
-## Project Overview
+1. Binary tooling: download, inspect, extract, unpack, replace entry JS, apply binary-level theme/prompt patches, and repack.
+2. Setup management: create isolated Claude Code setups/variants with provider configuration, model overrides, credentials, wrappers, and curated tweaks.
+3. TUI workflow: manage setups, build patched binaries from curated tweaks, inspect/download artifacts, extract bundles, and apply workspace patch packages.
 
-A standalone Python toolkit for extracting, patching, and repacking Bun standalone bundles inside Claude Code binaries. Used for research and educational purposes.
+Use this repository for research and controlled local patching only. Avoid adding behavior that silently mutates user-global Claude Code state unless the relevant workflow explicitly owns that config write.
 
 ## Commands
+
+Use `.venv/bin/python` from the repository root.
 
 ```bash
 # Install
 .venv/bin/python -m pip install -e .
 .venv/bin/python -m pip install -e '.[dev]'
 
-# Run commands
-.venv/bin/python main.py download [version]
-.venv/bin/python main.py download --latest
-.venv/bin/python main.py download --npm [version]
-.venv/bin/python main.py inspect <binary> --json
-.venv/bin/python main.py extract <binary> <dir>
-.venv/bin/python main.py unpack <binary> --out <dir>
-.venv/bin/python main.py replace-entry <binary> <entry-js> --out <binary>
-.venv/bin/python main.py apply-binary <binary> --config <config.json> [--overlays <overlays.json>]
-.venv/bin/python main.py pack <dir> <base> <out>
-.venv/bin/python -m cc_extractor  # opens the TUI when attached to a TTY
+# Open TUI
+.venv/bin/python -m cc_extractor
+
+# Binary / bundle commands
+.venv/bin/python -m cc_extractor download [version]
+.venv/bin/python -m cc_extractor download --latest
+.venv/bin/python -m cc_extractor download --npm [version]
+.venv/bin/python -m cc_extractor inspect <binary> --json
+.venv/bin/python -m cc_extractor extract <binary> [outdir] [--source-version <version>] [--include-sourcemaps]
+.venv/bin/python -m cc_extractor unpack <binary> --out <dir>
+.venv/bin/python -m cc_extractor replace-entry <binary> <entry-js> --out <binary>
+.venv/bin/python -m cc_extractor apply-binary <binary> --config <config.json> [--overlays <overlays.json>]
+.venv/bin/python -m cc_extractor pack <dir> <base-binary> <out-binary>
+
+# Legacy extracted-bundle patch manifests
+.venv/bin/python -m cc_extractor patch init <patch-dir>
+.venv/bin/python -m cc_extractor patch apply <patch-dir> <extract-dir> [--check] [--binary <binary>] [--source-version <version>]
+
+# Setup / variant commands
+.venv/bin/python -m cc_extractor variant providers [--json]
+.venv/bin/python -m cc_extractor variant create --name <name> --provider <key> [--claude-version <v>] [--patch-profile <id>] [--tweak <id> ...]
+.venv/bin/python -m cc_extractor variant create --name <name> --provider <key> --credential-env <ENV_NAME>
+.venv/bin/python -m cc_extractor variant create --name <name> --provider <key> --api-key <key> --store-secret
+.venv/bin/python -m cc_extractor variant list [--json]
+.venv/bin/python -m cc_extractor variant show <name-or-id> [--json]
+.venv/bin/python -m cc_extractor variant apply <name-or-id> [--json]
+.venv/bin/python -m cc_extractor variant update [<name-or-id> | --all] [--claude-version <v>] [--json]
+.venv/bin/python -m cc_extractor variant doctor [<name-or-id> | --all] [--json]
+.venv/bin/python -m cc_extractor variant remove <name-or-id> [--yes]
+.venv/bin/python -m cc_extractor variant run <name-or-id> -- [args...]
+
+# Test / lint
 .venv/bin/python -m pytest -q
+ruff check cc_extractor/
+ruff check --fix cc_extractor/
+````
 
-# Lint
-ruff check cc_extractor/ tools/ main.py
-ruff check --fix cc_extractor/ tools/ main.py  # autofix
+Do not document `python main.py ...` as canonical unless `main.py` is restored.
 
-# Variants (isolated, named patched Claude Code installs)
-.venv/bin/python main.py variant providers
-.venv/bin/python main.py variant create <name> [--provider <key>] [--tweak <id> ...] [--claude-version <v>]
-.venv/bin/python main.py variant list
-.venv/bin/python main.py variant show <name>
-.venv/bin/python main.py variant apply <name> [--claude-version <v>]
-.venv/bin/python main.py variant update [<name> | --all] [--claude-version <v>]
-.venv/bin/python main.py variant remove <name> [--yes]
-.venv/bin/python main.py variant doctor [<name> | --all]
-.venv/bin/python main.py variant run <name> -- [args...]
+## Prompt Catalog Updates
 
-# Prompt extraction
-.venv/bin/python tools/prompt_extractor.py <entry-js> --output prompts/<version>.json --version-hint <version>
-.venv/bin/python tools/extract_prompt_versions.py --local
-.venv/bin/python tools/extract_prompt_versions.py --versions 2.1.123 2.1.122 --force-prompts
-.venv/bin/python tools/extract_prompt_versions.py --all --force-prompts
+Prompt catalogs live in `prompts/<version>.json`.
+
+Preferred update commands:
+
+```bash
+# Update all released versions newer than the newest local prompt catalog
+.venv/bin/python tools/extract_prompt_versions.py --since-existing-latest
+
+# Fill gaps in prompts/ without touching already-valid files
+.venv/bin/python tools/extract_prompt_versions.py --missing
+
+# Process only the newest five missing catalogs
+.venv/bin/python tools/extract_prompt_versions.py --missing --max-versions 5
+
+# Regenerate known versions intentionally
+.venv/bin/python tools/extract_prompt_versions.py --versions <v1> <v2> --force-prompts
 ```
+
+Rules:
+
+* Prefer `--since-existing-latest` after upstream releases.
+* Prefer `--missing` when backfilling gaps.
+* Avoid `--all --force-prompts` unless intentionally rebuilding the whole catalog.
+* New prompt catalogs should use the nearest older local prompt JSON as metadata seed when same-version tweakcc metadata is unavailable.
+* Validate every generated file before writing.
+* Treat unnamed prompt entries as release blockers unless explicitly accepted. Use `--fail-on-unnamed` for release-prep runs.
+* Commit prompt JSON updates separately from unrelated patch or TUI changes.
 
 ## Architecture
 
 ```text
-main.py / __main__.py        -> CLI entry; `cmd_variant` dispatcher + `main()` (kept thin so tests can monkey-patch variant helpers via `cc_extractor.__main__`)
-cli/parsers.py               -> Argparse parser tree (build_parser)
-cli/handlers.py              -> Per-subcommand handlers (download/extract/inspect/replace-entry/apply-binary/pack/patch) + inspect_binary
-cli/payloads.py              -> JSON payload helpers + variant arg adders
-_utils.py                    -> Shared low-level helpers (safe_read_json, version_sort_key, utc_now, make_kebab_id); stdlib-only, no internal deps
-tui/__init__.py              -> Action layer: run_tui, dispatchers, monkey-patchable hooks (apply_patch_packages_to_native, create_variant, doctor_variant, _variant_accepts_name_text). Tabs: Dashboard, Inspect, Extract, Patch (workspace patch packages), Variants, Tweaks (regex-tweak registry, two-pane editor scoped to a variant)
-tui/state.py, themes.py, options.py, rendering.py, dashboard.py, variant_actions.py, keys.py, nav.py, _runtime.py, _const.py
-workspace/__init__.py        -> Re-exports everything; submodules paths.py, models.py, artifacts.py, patches.py, settings.py
-downloader.py                -> Fetches binaries from Google Cloud Storage or NPM tarballs
-download_index.py            -> Cached live/seed download version index
+__main__.py                  -> CLI entrypoint, simple dispatcher, variant dispatcher, TUI launch when attached to TTY
+cli/parsers.py               -> argparse tree only
+cli/handlers.py              -> top-level command handlers for download/extract/unpack/inspect/replace-entry/apply-binary/pack/patch
+cli/payloads.py              -> JSON payload helpers and variant argument mappers
+
+bun_extract/                 -> Bun standalone parser, extract, same-size replacement, shared binary metadata types
+binary_patcher/              -> Native binary patching, entry replacement, platform repack, theme/prompt patching, codesign, unpacked fallback
+patches/                     -> Curated regex-tweak registry; each patch module exposes PATCH
+patch_workflow.py            -> Native artifact workflows for patch packages and dashboard tweak builds
+patcher.py                   -> Legacy extracted-text patch manifest workflow
+
+providers/                   -> Provider registry package
+providers/registry/*.json    -> Provider templates
+providers/schema.py          -> Provider JSON schema validation/deserialization
+providers/loader.py          -> Provider lookup, env building, theme/prompt overlay helpers
+providers/config.py          -> Claude config merges for settings permissions and MCP servers
+
+variants/                    -> Setup/variant lifecycle
+variants/__init__.py         -> Action layer for create/apply/update/remove/doctor/run
+variants/model.py            -> Variant dataclasses, manifest validation, provider list payloads
+variants/builder.py          -> Source resolution, patch refs, entry JS patch helpers
+variants/tweaks.py           -> Curated tweak application and env-only tweak handling
+variants/wrapper.py          -> Wrapper script, config, and secrets file writing
+variant_tweaks.py            -> Backwards-compatible shim over variants.tweaks
+
+workspace/                   -> Workspace models, paths, artifact scanning, patch/tweak profile persistence, TUI settings
+tui/                         -> TUI action layer, rendering, state, navigation, dashboard, setup actions, keys, themes
+download_index.py            -> Cached live/seed version index
 download_picker.py           -> Interactive version picker
-bun_extract/parser.py        -> Shared Bun binary parser for Mach-O, ELF, and PE
-bun_extract/extract.py       -> Writes extracted module files and `.bundle_manifest.json`
-bun_extract/replace.py       -> Same-size in-place module replacement
-binary_patcher/replace_entry.py -> Resize-capable entry JS replacement
-binary_patcher/repack.py     -> Repack dispatcher for ELF, Mach-O, and PE
-binary_patcher/*_resize.py   -> Platform-specific resize logic
-binary_patcher/theme.py      -> Theme anchor patching + `themes_from_config` helper (canonical, was duplicated 3x before)
-binary_patcher/prompts.py    -> Prompt overlay patching
-binary_patcher/index.py      -> Structured apply_patches API (workspace patch packages; distinct from cc_extractor.patches.apply_patches which is the regex-tweak layer)
-binary_patcher/codesign.py   -> Soft macOS ad-hoc signing helper
-binary_patcher/js_patch.py   -> Patch extracted entry JS
-binary_patcher/unpack_and_patch.py -> Unpacked Node fallback path
-patches/__init__.py          -> Patch dataclass, PatchContext, PatchOutcome, AggregateResult, apply_patches (regex-tweak layer)
-patches/_registry.py         -> Explicit REGISTRY: dict[str, Patch] keyed by patch id
-patches/_versions.py         -> SemVer range parser, version_in_range, resolve_range_to_version
-patches/_pinned_default.py   -> DEFAULT_VERSION_RANGES used by per-patch versions_tested
-patches/<patch-id>.py        -> Per-file patch modules (themes, prompt_overlays, hide_startup_banner, etc.); each exposes PATCH = Patch(...)
-patch_workflow.py            -> Extract, apply patch packages, repack, and write patched metadata
-variants/__init__.py         -> Action layer: lifecycle (create/apply/update/remove/doctor/run) + `_build_variant_from_manifest`, `_copy_patch_or_unpack_variant_binary`, `_unpack_node_runtime_variant`, `_download_source_artifact` (monkey-patched targets stay alongside callers)
-variants/model.py, builder.py, tweaks.py, wrapper.py
-variants/tweaks.py           -> Thin shim: delegates to cc_extractor.patches.apply_patches; preserves TweakResult, TweakPatchError, apply_variant_tweaks public API
-variant_tweaks.py            -> Backwards-compat shim re-exporting `cc_extractor.variants.tweaks`
-providers.py                 -> Provider templates (Kimi, MiniMax, Z.AI, OpenRouter, Vercel, Ollama, NanoGPT) and env builders
+downloader.py                -> Native and NPM download logic
 extractor.py                 -> Compatibility wrapper over bun_extract
 bundler.py                   -> Compatibility wrapper over binary_patcher.repack_binary
-patcher.py                   -> Legacy extracted-text patch manifests
-tools/prompt_extractor.py    -> Tree-sitter prompt extractor that writes tweakcc-style JSON
-tools/extract_prompt_versions.py -> Download, extract, write, and validate prompt JSON files
-prompts/*.json               -> Generated prompt catalogs keyed by Claude Code version
+_utils.py                    -> stdlib-only helpers shared across modules
 ```
+
+## TUI Notes
+
+* The TUI tabs are: `Manage Setup`, `Dashboard`, `Inspect`, `Extract`, `Patch`.
+* Startup routing:
+
+  * if setups/variants exist, start in `setup-manager`;
+  * if none exist, start in `first-run-setup`.
+* `Manage Setup` owns setup lifecycle: create, run, upgrade, health check, delete, logs, tweak editing, and command/config copy actions.
+* `Dashboard` is a guided native-binary tweak workflow: choose source, choose curated dashboard tweaks, manage tweak profiles, review, then build.
+* `Patch` is for workspace patch packages under `.cc-extractor/patches/packages/`.
+* `Tweaks` editing is scoped to an existing setup and rebuilds through `variants.apply_variant`.
+* Keep action-layer functions that tests monkey-patch in `tui/__init__.py`. Pure rendering/options/navigation helpers belong in submodules.
+
+## Workspace Layout
+
+Default workspace root is `.cc-extractor/`, unless `CC_EXTRACTOR_WORKSPACE` is set.
+
+```text
+.cc-extractor/
+  downloads/native/
+  downloads/npm/
+  extractions/native/
+  patches/packages/
+  patches/profiles/
+  patches/tweak-profiles/
+  patched/native/
+  variants/
+  bin/
+  tmp/
+  tui-settings.json
+```
+
+Important distinctions:
+
+* `patches/packages/` stores patch package manifests and operations.
+* `patches/profiles/` stores patch-package profile refs.
+* `patches/tweak-profiles/` stores Dashboard curated tweak profile refs.
+* `variants/<id>/variant.json` is the setup manifest.
+* `variants/<id>/secrets.env` may exist only when the user explicitly uses stored credentials.
+* `bin/` stores wrapper commands.
 
 ## Behavior Notes
 
-- `parse_bun_binary` is the single source of truth for binary layout.
-- `extractor.py` and `bundler.py` are compatibility layers, not independent parsers.
-- `patcher.py` is only for old extracted-text patch manifests (still live: powers `patch apply`/`patch init` CLI plus `variants` and `patch_workflow`). Keep it separate from `binary_patcher`.
-- Action layer stays in `tui/__init__.py` and `variants/__init__.py`: tests do `monkeypatch.setattr(tui, "create_variant", fake)` and `monkeypatch.setattr(variants_module, "_download_source_artifact", ...)`; patched name and call site must share the package's `__init__.py` globals. Pure helpers (rendering, options, builder utilities) belong in submodules.
-- `tests/test_downloader.py` uses `@patch("cc_extractor.downloader.X")` string paths; do not move `downloader.py` into a subpackage without updating ~35 patch decorators.
-- `cc_extractor/_utils.py` is the canonical home for cross-module helpers (`safe_read_json`, `version_sort_key`, `utc_now`, `make_kebab_id`); stdlib-only so any module can import it without circular risk.
-- The TUI opens Dashboard first, then keeps Inspect, Extract, and Patch as advanced tabs.
-- Dashboard v1 handles native binaries only. NPM downloads remain CLI-only.
-- Dashboard profiles are workspace-local JSON files under `.cc-extractor/patches/profiles/<profile-id>.json`.
-- Profile schema v1 uses `schemaVersion`, `id`, `name`, `patches` as `{id, version}` pairs, `createdAt`, and `updatedAt`.
-- Profile names are UI/metadata only. Patched artifact paths still use deterministic patchset slugs.
-- Profiles that reference missing patch packages are invalid for runs until corrected.
-- Prompt anchor misses are recorded and non-fatal.
-- Prompt extraction output belongs in `prompts/<version>.json`.
-- Prompt extraction should preserve tweakcc-compatible JSON shape: top-level `version` and `prompts`, with each prompt carrying stable metadata when available.
-- When available, use `vendor/tweakcc/data/prompts/prompts-<version>.json` as the comparison catalog for names, descriptions, identifiers, and short prompt recovery.
-- Prompt JSON files must be validated after generation. Prefer `tools/extract_prompt_versions.py`, which validates before and after writing.
-- `tools/extract_prompt_versions.py --all` is resumable but large. Prefer `--local` or explicit `--versions` unless intentionally backfilling all available Bun versions.
-- Theme anchor misses are fatal structured failures.
-- Mach-O signing is explicit and soft-failing through `codesign.py`.
-- Unpacked fallback helpers support Python `.bundle_manifest.json` and TS-style `manifest.json`.
-- Variants live under the workspace and are addressable by name or id; `variant_id_from_name` derives the slug.
-- `variant_tweaks.DEFAULT_TWEAK_IDS` is the baseline applied on create. `ENV_TWEAK_IDS` are runtime env vars; the rest patch the binary.
-- Provider templates in `providers.py` distinguish `auth_mode`, `requires_model_mapping`, and `no_prompt_pack`. Use `build_provider_env` rather than constructing env dicts ad hoc.
-- `validate_variant_manifest` is the single source of truth for variant manifest shape; do not bypass it.
-- Bun module bytes live at `data[info.data_start + module.cont_off : info.data_start + module.cont_off + module.cont_len]`. Field names are `cont_off`/`cont_len`, not `data_offset`/`data_size`.
-- Bun entry module name varies by version: 2.0.x uses `claude`, 2.1.x uses `cli.js`. Use `info.entry_point_id` to find the entry; do not match by name suffix.
-- `cc_extractor.downloader.download_binary(version, out_dir=None)` returns the local path string. There is no `download_native_binary`.
-- Bun-bundled cli.js does not parse standalone under `node --check` (uses `bun:` imports). L2 parse tests must pre-check the unpatched JS and skip if it does not parse.
-- `cc_extractor.patches.apply_patches` (regex tweaks) is separate from `cc_extractor.binary_patcher.index.apply_patches` (workspace patch packages). Do not confuse them.
-- `range_contains_range` checks endpoint versions, so an inner range `<3` against an outer `<3` fails because `3.0.0` does not satisfy `<3`. Patches default to `<2.2` in versions_tested as a workaround.
-- Two distinct "patch" tabs in the TUI: "Patch" manages workspace patch packages (binary-operation manifests under `.cc-extractor/patches/packages/`); "Tweaks" manages the regex-tweak registry (`cc_extractor.patches.REGISTRY`) with a stage-and-apply flow per variant.
-- Tweaks tab flow: pick variant -> two-pane editor (patches grouped by category on left, details on right). Space toggles, `a` applies via `variants.apply_variant` (full rebuild), `b`/Esc discards staged changes or returns to picker.
-- First two-pane TUI screen uses `ratatui_py.layout.split_v(rect, 0.45, 0.55, gap=1)`. See `cc_extractor/tui/rendering.py::render_frame` for the integration point.
+* `parse_bun_binary` is the single source of truth for binary layout.
+* Use `info.entry_point_id` to find the entry module. Do not assume entry names like `claude` or `cli.js`.
+* Bun module bytes use `cont_off` and `cont_len`; do not invent `data_offset` or `data_size`.
+* `extractor.py` and `bundler.py` are compatibility wrappers, not independent implementations.
+* Keep `patcher.py` separate from `binary_patcher`; it handles legacy extracted-text patch manifests.
+* `cc_extractor.patches.apply_patches` applies curated regex tweaks.
+* `cc_extractor.binary_patcher.index.apply_patches` applies binary theme/prompt patches.
+* `patch_workflow.apply_patch_packages_to_native` extracts, applies workspace patch packages, repacks, and writes patched metadata.
+* `patch_workflow.apply_dashboard_tweaks_to_native` applies curated tweak IDs directly for Dashboard builds.
+* Theme anchor misses are fatal structured failures.
+* Prompt anchor misses are recorded and non-fatal.
+* Mach-O signing is explicit and soft-failing through `binary_patcher/codesign.py`.
+* Unpacked fallback supports both Python `.bundle_manifest.json` and TS-style `manifest.json`.
+* PE resize requires `.bun` to be the last raw-data section.
+* On non-Windows, written binaries/wrappers should be chmodded executable.
+
+## Provider Notes
+
+* Provider definitions live in `providers/registry/*.json`.
+* Validate provider JSON through `providers/schema.py`.
+* Build runtime env through `build_provider_env`; do not hand-roll provider env dictionaries.
+* Provider auth modes are `apiKey`, `authToken`, and `none`.
+* Provider templates may define model mappings, prompt overlays, themes, denied tools, MCP servers, setup links, and TUI metadata.
+* `providers/config.py` is responsible for merging provider-specific Claude config into `settings.json` and `.claude.json`.
+
+## Variant / Setup Notes
+
+* Variants are addressable by name or id; `variant_id_from_name` derives lower-kebab-case ids.
+* `validate_variant_manifest` is the manifest authority. Do not bypass it.
+* Runtime may be `native` or `node`.
+* Node runtime wrappers require a Node version with explicit resource management support and allow `NODE=/path/to/node` override.
+* `DEFAULT_TWEAK_IDS` are selected on create.
+* `ENV_TWEAK_IDS` affect wrapper environment rather than patching JS.
+* In-place rebuild optimization applies only to supported theme/prompt/env tweak changes; otherwise rebuild from source.
 
 ## Development Notes
 
-- Use `.venv/bin/python` for Python commands from the repository root.
-- Linter: `ruff` (installed via Homebrew, not in venv). No `ruff.toml` config; defaults only. `tui/__init__.py` uses `__all__` for re-export suppression.
-- Tests use `pytest`.
-- Prompt extractor tests live under `tests/`.
-- Prompt extraction dev dependencies include `tree-sitter` and `tree-sitter-javascript`.
-- Runtime dependencies: `ratatui`, `tqdm`. The `ratatui` dep is the holo-q ctypes-based shim (https://github.com/holo-q/ratatui-py); imports use `from ratatui_py import ...` and rely on `headless_render_frame` for tests. Do NOT swap to `pyratatui` (https://github.com/pyratatui/pyratatui), which is a separate, newer PyO3-based project with a different API, no `headless_render_frame`, and a Python 3.10+ floor (this project targets 3.8+).
-- Python 3.8+.
-- No extra runtime dependency is required for P5. The unpacked fallback shells out to `npm` only when that helper is used.
-- For TUI changes, add widget-independent state tests and smoke test with the TUI MCP using a temporary `CC_EXTRACTOR_WORKSPACE`.
-- In TUI MCP smoke tests use `Down`/`Up` (not `ArrowDown`/`ArrowUp` - those silently no-op). Each `send_keys` call sends ONE named key; chaining like `"Tab Tab"` interprets the spaces and letters as char keys (`t` cycles theme). Prefer `Tab`, `Enter`, `Space`, text input, and `q`.
-- Variant manifest stubs for TUI tests need only: schemaVersion=1, id (kebab-case), name, provider.key, source.version, paths (dict), createdAt, updatedAt. No real binary required - list/edit flows only validate the manifest.
-- Do not stage or commit submodule changes, including `vendor/tweakcc`, unless explicitly requested.
-- Patch test tiers: L1 (anchor) + L2 (`node --check`) run by default under `pytest -q tests/patches/`. L3 (boot smoke) gated by `CC_EXTRACTOR_REAL_BINARY=1`. L4 (TUI MCP behavioral) gated by `CC_EXTRACTOR_TUI_MCP=1`. See `docs/patches.md`.
-- Expected skips on a clean `pytest -q` run: ~14 total, all environment-gated, none are failures. Breakdown:
-  - ~10 L2 parse tests under `tests/patches/` skip because the unpatched 2.1.123 `cli.js` does not parse under `node --check` (Bun-only `bun:` imports). This is the documented L2 pre-check, not a regression.
-  - 2 L3 boot smoke tests in `tests/patches_smoke/test_variant_smoke.py` gated on `CC_EXTRACTOR_REAL_BINARY=1` (needs a real Claude Code binary).
-  - 1 L4 TUI MCP snapshot test (`tests/patches_behavioral/test_hide_startup_banner_snapshot.py`) gated on `CC_EXTRACTOR_TUI_MCP=1`.
-  - 1 real-binary integration test (`tests/test_integration_real_binary.py`) gated on `CC_EXTRACTOR_RUN_REAL_BINARY_TEST=1` (downloads, patches, and executes a real binary; distinct from `CC_EXTRACTOR_REAL_BINARY`).
-  - Use `pytest -q -rs` to print skip reasons when verifying.
-- Worktree convention: `.worktrees/<branch-name>` (gitignored).
+* Python target: 3.8+.
+* TUI dependency is the holo-q `ratatui-py` shim imported as `ratatui_py`.
+* Do not swap to `pyratatui` unless the TUI/test API is deliberately migrated.
+* TUI changes should include widget-independent state tests and, when available, headless/smoke coverage.
+* For TUI MCP/key tests, use single named keys like `Down`, `Up`, `Tab`, `Enter`, `Space`, and `q`. Avoid strings like `"Tab Tab"`.
+* `Down`/`Up` are the expected named keys; `ArrowDown`/`ArrowUp` silently no-op in the current test harness.
+* Keep monkey-patch-sensitive action functions in `tui/__init__.py` and `variants/__init__.py`.
+* Keep `_utils.py` stdlib-only to avoid circular imports.
+* Do not move `downloader.py` without updating tests that patch `cc_extractor.downloader.*`.
+* Do not stage or commit submodule/vendor changes unless explicitly requested.
+
+
+Yes. AGENTS.md should have a dedicated section for **patch authoring and validation**, plus a separate section for **TUI MCP behavioral testing**. Right now the file mentions the test tiers, but it does not tell an agent how to safely add a new patch or how to prove the patch works through the UI.
+
+The important distinction is that your repo has two patch systems:
+
+* **Curated regex tweaks** in `patches/`, registered in `patches/_registry.py`. These are surfaced through the tweak registry and TUI tweak editing flow. The patch object uses `PatchContext`, `PatchOutcome`, and statuses like `applied`, `skipped`, and `missed`. 
+* **Workspace patch packages** under `.cc-extractor/patches/packages/`, applied through `patch_workflow.apply_patch_packages_to_native`. These are separate from curated tweaks. 
+
+I would add this to AGENTS.md:
+
+````md
+## Adding Curated Regex Tweaks
+
+Curated tweaks live under `cc_extractor/patches/` and are registered explicitly in
+`cc_extractor/patches/_registry.py`.
+
+Use this flow when adding a new tweak:
+
+1. Create a new module under `patches/` using snake_case, for example:
+
+   ```text
+   patches/my_new_tweak.py
+````
+
+2. Implement `_apply(js: str, ctx: PatchContext) -> PatchOutcome`.
+
+   Required behavior:
+
+   * Return `PatchOutcome(js=new_js, status="applied")` when the patch changed JS.
+   * Return `PatchOutcome(js=js, status="skipped")` when the patch is already present or intentionally inactive.
+   * Return `PatchOutcome(js=js, status="missed")` when the expected anchor cannot be found.
+   * Make patches idempotent when possible by checking for a stable marker or already-patched shape.
+   * Do not silently return `applied` when the output is identical.
+   * Keep regex windows narrow enough to avoid unrelated minified code.
+
+3. Define `PATCH = Patch(...)` at the bottom of the module.
+
+   Required fields:
+
+   * `id`: lower-kebab-case, stable public id.
+   * `name`: short human-readable label.
+   * `group`: one of `ui`, `thinking`, `prompts`, `tools`, or `system`.
+   * `versions_supported`: broad compatible range, usually `>=2.0.0,<3`.
+   * `versions_tested`: use `DEFAULT_VERSION_RANGES` unless the patch has narrower proven coverage.
+   * `apply`: `_apply`.
+   * `description`: one sentence explaining user-visible behavior.
+   * `on_miss`: default is `fatal`; use `warn` only for optional/provider-dependent anchors.
+
+4. Register the module in `patches/_registry.py`.
+
+   Add the import and add the `PATCH` object to `REGISTRY`. Registry order controls display order inside groups, so place the patch near related tweaks.
+
+5. If the patch should be selectable in the Dashboard default/recommended flow, update the relevant tweak list in `variant_tweaks.py` or `variants/tweaks.py`.
+   Do not add risky or behavior-changing patches to defaults without explicit reason.
+
+6. Add tests before widening `versions_tested`.
+
+   Minimum tests:
+
+   * anchor/applies test with a representative JS fixture;
+   * idempotency test if the patch injects code;
+   * miss test that verifies `missed` or the configured `on_miss` behavior;
+   * registry test that confirms the patch id is registered and grouped correctly;
+   * version-range test that confirms every `versions_tested` range is inside `versions_supported`.
+
+7. Do not confuse curated tweaks with workspace patch packages.
+
+   `cc_extractor.patches.apply_patches` is the regex-tweak registry.
+   `cc_extractor.binary_patcher.index.apply_patches` is the binary theme/prompt patch API.
+   `patch_workflow.apply_patch_packages_to_native` applies workspace patch packages.
+
+````
+
+And add this test section:
+
+```md
+## Patch Testing
+
+Use layered validation for patch work.
+
+```bash
+# Fast unit/registry/anchor tests
+.venv/bin/python -m pytest -q tests/patches/
+
+# Show skip reasons while validating patch support
+.venv/bin/python -m pytest -q -rs tests/patches/
+
+# Full suite
+.venv/bin/python -m pytest -q
+````
+
+Patch test expectations:
+
+* L1 anchor tests should prove the regex finds the intended minified structure.
+* L2 parse tests may use `node --check`, but Bun-bundled `cli.js` can fail under Node because of `bun:` imports. Pre-check the unpatched JS and skip L2 if the baseline does not parse.
+* L3 real-binary boot smoke tests must be gated behind `CC_EXTRACTOR_REAL_BINARY=1`.
+* L4 TUI/MCP behavioral tests must be gated behind `CC_EXTRACTOR_TUI_MCP=1`.
+* Real download/patch/execute integration tests must be separately gated behind `CC_EXTRACTOR_RUN_REAL_BINARY_TEST=1`.
+* Expected environment-gated skips are not failures. Use `pytest -q -rs` to verify skip reasons.
+
+Before updating `versions_tested`, prove the patch against a concrete Claude Code version. Do not widen `versions_tested` just because `versions_supported` is broad.
+
+## TUI MCP Behavioral Testing
+
+Use the TUI MCP testing tool for workflows that cannot be validated by pure state/render tests alone.
+
+Use MCP smoke tests for:
+- first-run setup flow;
+- setup manager navigation;
+- tweak selection/edit/apply flow;
+- Dashboard source selection;
+- Dashboard tweak profile save/load/rename/delete;
+- patch package profile selection;
+- focus, resize, and keyboard navigation regressions.
+
+Always run MCP TUI tests with an isolated workspace:
+
+```bash
+CC_EXTRACTOR_WORKSPACE="$(mktemp -d)" \
+CC_EXTRACTOR_TUI_MCP=1 \
+.venv/bin/python -m pytest -q tests/patches_behavioral/
+```
+
+Rules for writing TUI MCP tests:
+
+* Use a temporary `CC_EXTRACTOR_WORKSPACE`.
+* Do not depend on the developer’s real `.cc-extractor` workspace.
+* Prefer fixture-created variant manifests over real binaries for list/edit flows.
+* Variant manifest stubs only need:
+
+  * `schemaVersion`
+  * `id`
+  * `name`
+  * `provider.key`
+  * `source.version`
+  * `paths`
+  * `createdAt`
+  * `updatedAt`
+* Use named keys exactly as supported by the harness:
+
+  * `Down`
+  * `Up`
+  * `Tab`
+  * `Enter`
+  * `Space`
+  * `Esc`
+  * `q`
+* Do not use `ArrowDown` or `ArrowUp`; they silently no-op in the current harness.
+* Each `send_keys` call sends one named key. Do not send `"Tab Tab"` because spaces and letters are interpreted as character input.
+* Assert visible text and mode transitions, not implementation details.
+* For layout changes, assert that key panels still render after resize and that important controls are not clipped.
+* Pair MCP tests with widget-independent state tests. MCP should cover user workflow, not every state transition.
+
+## Definition of Done for a New Tweak
+
+A new curated tweak is not complete until:
+
+- patch module exists under `patches/`;
+- `PATCH.id` is stable lower-kebab-case;
+- `PATCH.group` is valid;
+- `_apply` is idempotent or intentionally documents why not;
+- `_apply` returns only `applied`, `skipped`, or `missed`;
+- patch is registered in `_registry.py`;
+- registry grouping still works;
+- tests cover apply, miss, and idempotency paths;
+- version tests prove `versions_tested` is inside `versions_supported`;
+- Dashboard/Tweaks visibility is intentional;
+- TUI MCP smoke test exists if the patch changes visible UI behavior;
+- real-binary smoke test is gated, not run by default.

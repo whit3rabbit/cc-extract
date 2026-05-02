@@ -19,6 +19,19 @@ CURATED_TWEAK_IDS = [
     "hide-startup-clawd",
     "hide-ctrl-g-to-edit",
     "suppress-line-numbers",
+    "suppress-native-installer-warning",
+    "suppress-rate-limit-options",
+    "thinking-visibility",
+    "input-box-border",
+    "filter-scroll-escape-sequences",
+    "agents-md",
+    "session-memory",
+    "remember-skill",
+    "opusplan1m",
+    "mcp-non-blocking",
+    "mcp-batch-size",
+    "token-count-rounding",
+    "statusline-update-throttle",
     "auto-accept-plan-mode",
     "allow-custom-agent-models",
     "patches-applied-indication",
@@ -27,6 +40,7 @@ CURATED_TWEAK_IDS = [
 DASHBOARD_EXCLUDED_TWEAK_IDS = {
     "themes",
     "prompt-overlays",
+    "remember-skill",
     *ENV_TWEAK_IDS,
 }
 DASHBOARD_TWEAK_IDS = [

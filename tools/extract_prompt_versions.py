@@ -33,6 +33,9 @@ class VersionResult:
     ok: bool
     output_path: Optional[Path] = None
     prompt_count: int = 0
+    named_count: int = 0
+    unnamed_count: int = 0
+    seed_path: Optional[Path] = None
     error: Optional[str] = None
 
 
@@ -69,6 +72,16 @@ def load_existing_prompts(path: Optional[Path]) -> List[Dict[str, Any]]:
         return []
     data = json.loads(path.read_text(encoding="utf-8"))
     return data.get("prompts", [])
+
+
+def prompt_summary(data: PromptData) -> Dict[str, int]:
+    prompts = data.get("prompts", [])
+    named = sum(1 for prompt in prompts if prompt.get("id") and prompt.get("name"))
+    return {
+        "total": len(prompts),
+        "named": named,
+        "unnamed": len(prompts) - named,
+    }
 
 
 def validate_prompt_data(data: PromptData, expected_version: str) -> None:
@@ -183,7 +196,15 @@ def extract_version_prompts(
     if output_path.exists() and not force_prompts:
         data = json.loads(output_path.read_text(encoding="utf-8"))
         validate_prompt_data(data, version)
-        return VersionResult(version, True, output_path, len(data["prompts"]))
+        summary = prompt_summary(data)
+        return VersionResult(
+            version,
+            True,
+            output_path,
+            summary["total"],
+            summary["named"],
+            summary["unnamed"],
+        )
 
     binary_name = "claude.exe" if sys.platform.startswith("win") else "claude"
     binary_path = download_dir / version / binary_name
@@ -194,7 +215,10 @@ def extract_version_prompts(
     extract_dir = work_dir / version / "extracted"
     cli_path = extract_binary(binary_path, extract_dir, version, force=force_extract)
     existing_path = (
-        output_path if output_path.exists() else catalog_path(catalog_dir_value, version)
+        output_path
+        if output_path.exists()
+        else catalog_path(catalog_dir_value, version)
+        or nearest_existing_prompt_path(prompts_dir, version)
     )
     data = extract_prompts(
         str(cli_path),
@@ -202,7 +226,16 @@ def extract_version_prompts(
         existing_prompts=load_existing_prompts(existing_path),
     )
     write_validated_prompt_data(data, output_path, version)
-    return VersionResult(version, True, output_path, len(data["prompts"]))
+    summary = prompt_summary(data)
+    return VersionResult(
+        version,
+        True,
+        output_path,
+        summary["total"],
+        summary["named"],
+        summary["unnamed"],
+        existing_path,
+    )
 
 
 def local_versions(download_dir: Path) -> List[str]:
@@ -218,17 +251,69 @@ def is_version(value: str) -> bool:
     return bool(VERSION_RE.match(value))
 
 
-def sort_versions(versions: Iterable[str]) -> List[str]:
-    def key(version: str) -> Tuple[int, ...]:
-        parts = []
-        for part in version.split("."):
-            try:
-                parts.append(int(part))
-            except ValueError:
-                parts.append(-1)
-        return tuple(parts)
+def version_tuple(version: str) -> Tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
 
-    return sorted({version for version in versions if is_version(version)}, key=key, reverse=True)
+
+def newer_than(version: str, baseline: str) -> bool:
+    return version_tuple(version) > version_tuple(baseline)
+
+
+def sort_versions(versions: Iterable[str]) -> List[str]:
+    return sorted(
+        {version for version in versions if is_version(version)},
+        key=version_tuple,
+        reverse=True,
+    )
+
+
+def prompt_versions(prompts_dir: Path) -> List[str]:
+    return sort_versions(path.stem for path in prompts_dir.glob("*.json"))
+
+
+def latest_prompt_version(prompts_dir: Path) -> Optional[str]:
+    versions = prompt_versions(prompts_dir)
+    return versions[0] if versions else None
+
+
+def missing_versions(prompts_dir: Path, available_versions: Sequence[str]) -> List[str]:
+    existing = set(prompt_versions(prompts_dir))
+    return [
+        version
+        for version in sort_versions(available_versions)
+        if version not in existing
+    ]
+
+
+def versions_since_existing_latest(
+    prompts_dir: Path,
+    available_versions: Sequence[str],
+) -> List[str]:
+    latest_existing = latest_prompt_version(prompts_dir)
+    if latest_existing is None:
+        return sort_versions(available_versions)
+    return [
+        version
+        for version in sort_versions(available_versions)
+        if newer_than(version, latest_existing)
+    ]
+
+
+def nearest_existing_prompt_path(prompts_dir: Path, version: str) -> Optional[Path]:
+    candidates = []
+    target = version_tuple(version)
+
+    for path in prompts_dir.glob("*.json"):
+        if not is_version(path.stem):
+            continue
+        candidate_tuple = version_tuple(path.stem)
+        if candidate_tuple < target:
+            candidates.append((candidate_tuple, path))
+
+    if not candidates:
+        return None
+
+    return max(candidates, key=lambda item: item[0])[1]
 
 
 def resolve_versions(args: argparse.Namespace) -> List[str]:
@@ -236,9 +321,26 @@ def resolve_versions(args: argparse.Namespace) -> List[str]:
         return sort_versions(args.versions)
     if args.local:
         return local_versions(args.download_dir)
+    if args.missing:
+        return missing_versions(args.prompts_dir, list_available_binary_versions())
+    if args.since_existing_latest:
+        return versions_since_existing_latest(
+            args.prompts_dir,
+            list_available_binary_versions(),
+        )
     if args.all:
         return sort_versions(list_available_binary_versions())
-    raise ValueError("Pass --versions, --local, or --all")
+    raise ValueError(
+        "Pass --versions, --local, --missing, --since-existing-latest, or --all"
+    )
+
+
+def print_result_summary(result: VersionResult) -> None:
+    print(f"[+] {result.version}: {result.prompt_count} prompts -> {result.output_path}")
+    seed = str(result.seed_path) if result.seed_path else "none"
+    print(f"    seed: {seed}")
+    print(f"    named: {result.named_count}/{result.prompt_count}")
+    print(f"    unnamed: {result.unnamed_count}")
 
 
 def run_versions(args: argparse.Namespace) -> List[VersionResult]:
@@ -260,7 +362,11 @@ def run_versions(args: argparse.Namespace) -> List[VersionResult]:
                 force_extract=args.force_extract,
                 force_prompts=args.force_prompts,
             )
-            print(f"[+] {version}: {result.prompt_count} prompts -> {result.output_path}")
+            print_result_summary(result)
+            if args.fail_on_unnamed and result.unnamed_count:
+                result.ok = False
+                result.error = f"{result.unnamed_count} unnamed prompts"
+                print(f"[!] {version}: {result.error}", file=sys.stderr)
         except Exception as exc:
             result = VersionResult(version, False, error=str(exc))
             print(f"[!] {version}: {exc}", file=sys.stderr)
@@ -284,6 +390,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="Process versions already in --download-dir",
     )
     source.add_argument("--versions", nargs="+", help="Specific versions to process")
+    source.add_argument(
+        "--missing",
+        action="store_true",
+        help="Process released versions missing from --prompts-dir",
+    )
+    source.add_argument(
+        "--since-existing-latest",
+        action="store_true",
+        help="Process released versions newer than the newest prompts/<version>.json",
+    )
     parser.add_argument("--max-versions", type=int, help="Limit processed version count")
     parser.add_argument("--prompts-dir", type=Path, default=Path("prompts"))
     parser.add_argument("--download-dir", type=Path, default=Path("downloads"))
@@ -297,6 +413,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--force-download", action="store_true")
     parser.add_argument("--force-extract", action="store_true")
     parser.add_argument("--force-prompts", action="store_true")
+    parser.add_argument("--fail-on-unnamed", action="store_true")
     parser.add_argument("--stop-on-error", action="store_true")
     args = parser.parse_args(argv)
 

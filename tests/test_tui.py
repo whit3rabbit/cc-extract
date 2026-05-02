@@ -249,12 +249,38 @@ def test_dashboard_first_run_lists_curated_tweaks_without_dead_end_continue():
     tui._toggle_selected(state)
     assert state.selected_dashboard_tweak_ids == [tui.DASHBOARD_TWEAK_IDS[0]]
 
-    screen = tui._screen_text(state)
-    assert "Continue to profile management" in screen
+    option_labels = [option.label for option in tui._dashboard_options(state)]
+    assert "Continue to profile management" in option_labels
 
     state.selected_dashboard_tweak_ids = []
     tui._activate_dashboard(state)
     assert state.selected_dashboard_tweak_ids == [tui.DASHBOARD_TWEAK_IDS[0]]
+
+
+def test_dashboard_tweak_ids_include_first_wave_ports():
+    ids = tui._dashboard_tweak_ids()
+
+    assert "suppress-native-installer-warning" in ids
+    assert "suppress-rate-limit-options" in ids
+    assert "thinking-visibility" in ids
+    assert "input-box-border" in ids
+    assert "filter-scroll-escape-sequences" in ids
+
+
+def test_dashboard_tweak_ids_include_latest_safe_ports():
+    ids = tui._dashboard_tweak_ids()
+
+    assert "agents-md" in ids
+    assert "session-memory" in ids
+    assert "opusplan1m" in ids
+    assert "mcp-non-blocking" in ids
+    assert "mcp-batch-size" in ids
+    assert "token-count-rounding" in ids
+    assert "statusline-update-throttle" in ids
+    assert "auto-accept-plan-mode" in ids
+    assert "remember-skill" not in ids
+    assert "allow-sudo-bypass-permissions" not in ids
+    assert "input-pattern-highlighters" not in ids
 
 
 def test_footer_keys_match_dashboard_step():
@@ -432,14 +458,14 @@ def test_dashboard_marks_profile_with_missing_patch_invalid():
         dashboard_tweak_profiles=[_tweak_profile(tweak_ids=[first, "missing-patch"])],
     )
 
-    screen = tui._screen_text(state)
+    option_labels = [option.label for option in tui._dashboard_options(state)]
     state.selected_index = next(
         index for index, option in enumerate(tui._dashboard_options(state))
         if option.kind == "profile-load"
     )
     tui._activate_dashboard(state)
 
-    assert "invalid, missing missing-patch" in screen
+    assert any("invalid, missing missing-patch" in label for label in option_labels)
     assert state.selected_dashboard_tweak_ids == []
     assert "missing missing-patch" in state.message
 

@@ -1,0 +1,2 @@
+first_wave_ui=booted
+native_installer_warning=absent

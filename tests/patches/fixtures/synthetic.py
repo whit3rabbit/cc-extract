@@ -24,6 +24,72 @@ SYNTHETIC = {
         'function fmt({content:C,startLine:S}){if(!C)return"";'
         'let L=C.split(/\\r?\\n/);return L.map(x=>x).join("\\n")}function next(){}'
     ),
+    "suppress-native-installer-warning": (
+        "Claude Code has switched from npm to native installer. Run `claude install` "
+        "or see https://docs.anthropic.com/en/docs/claude-code/getting-started "
+        "for more options."
+    ),
+    "suppress-rate-limit-options": (
+        'R.createElement(X,{a:1}),showAllInTranscript:A,'
+        'agentDefinitions:B,onOpenRateLimitOptions:C,other:true'
+    ),
+    "thinking-visibility": (
+        'case"thinking":{if(!D&&!H)return null;'
+        'let T=D&&H;isTranscriptMode:D,verbose:H,hideInTranscript:T}'
+    ),
+    "input-box-border": (
+        'createElement(T,{color:V.bgColor},"\\u2500".repeat(W));'
+        'borderColor:Y(),borderStyle:"round",borderLeft:!1,borderRight:!1,'
+        'borderBottom:!0,width:"100%",borderText:Z();'
+        'borderStyle:"round",borderLeft:!1,borderRight:!1,borderBottom:!0,'
+        'width:"100%"},x,"Save and close editor"'
+    ),
+    "filter-scroll-escape-sequences": (
+        '#!/usr/bin/env node\n'
+        '// Version 2.1.123\n'
+        'console.log("ready");'
+    ),
+    "mcp-non-blocking": (
+        'async function connect(){if(!envFlag(process.env.MCP_CONNECTION_NONBLOCKING))'
+        'return await waitForServers()}'
+    ),
+    "mcp-batch-size": (
+        'let batch=parseInt(process.env.MCP_SERVER_CONNECTION_BATCH_SIZE||"",10)||3;'
+        'return batch'
+    ),
+    "token-count-rounding": (
+        'let overrideMessage:true,count=format(inputTokens+outputTokens),'
+        'view={key:"tokens"},count," tokens";'
+    ),
+    "statusline-update-throttle": (
+        ',O=Pc.useCallback(async()=>{let D=await run();'
+        'w((j)=>({...j,statusLineText:D}))},[w]),X=Gr(()=>O(A),300);'
+    ),
+    "session-memory": (
+        'function enabled(){return gate("tengu_session_memory",!1)}'
+        'if(gate("tengu_coral_fern",!1)){searchPastSessions()}'
+        'let per=2000,total=12000;return `# Session Title`'
+        'const opts={minimumMessageTokensToInit:1e4,'
+        'minimumTokensBetweenUpdate:5000,toolCallsBetweenUpdates:3};'
+    ),
+    "remember-skill": (
+        '{register({name:"claude-in-chrome",description:"Chrome"})}'
+        'function loadSessionMemory(A){return []}function addCommands(){return},'
+        'skillPrompt=`# Remember Skill\\nUse memories`;'
+    ),
+    "agents-md": (
+        'async function readClaude(A,q,K){try{let z=await fs().readFile(A,{encoding:"utf-8"});'
+        'return processClaude(z,A,q,K)}catch(_){return handleReadError(_,A),'
+        '{info:null,includePaths:[]}}}'
+    ),
+    "opusplan1m": (
+        'if(currentModel()==="opusplan"&&mode==="plan"&&!overLimit)return opusModel();'
+        'let aliases=["sonnet","opus","haiku","sonnet[1m]","opusplan"];'
+        'function desc(A){if(A==="opusplan")return"Opus 4.6 in plan mode, else Sonnet 4.6";return""}'
+        'function label(A){if(A==="opusplan")return"Opus Plan";return""}'
+        'function options(K,A){if(K==="opusplan")return [...A,opusPlanOption()];'
+        'if(K===null||A.some((Z)=>Z.value===K))return A;}'
+    ),
     "auto-accept-plan-mode": (
         'function plan(){return R.createElement(Box,'
         '{title:"Ready to code?",onChange:onPick,onCancel:onCancel})}'

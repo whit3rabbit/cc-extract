@@ -52,6 +52,18 @@ def test_curated_tweak_ports_patch_fixture_patterns():
             'function inner(){return"\\u259B\\u2588\\u2588\\u2588\\u259C"}function wrapper(){return R.createElement(inner,{})}',
             'if(v&&P)p("tengu_external_editor_hint_shown",{})',
             'function fmt({content:C,startLine:S}){if(!C)return"";let L=C.split(/\\r?\\n/);return L.map(x=>x).join("\\n")}function next(){}',
+            "Claude Code has switched from npm to native installer. Run `claude install` or see https://docs.anthropic.com/en/docs/claude-code/getting-started for more options.",
+            'R.createElement(X,{a:1}),showAllInTranscript:A,agentDefinitions:B,onOpenRateLimitOptions:C,other:true',
+            'case"thinking":{if(!D&&!H)return null;let T=D&&H;isTranscriptMode:D,verbose:H,hideInTranscript:T}',
+            'createElement(T,{color:V.bgColor},"\\u2500".repeat(W));borderColor:Y(),borderStyle:"round",borderLeft:!1,borderRight:!1,borderBottom:!0,width:"100%",borderText:Z();',
+            '#!/usr/bin/env node\n// Version 2.1.123\nconsole.log("ready");',
+            'async function readClaude(A,q,K){try{let z=await fs().readFile(A,{encoding:"utf-8"});return processClaude(z,A,q,K)}catch(_){return handleReadError(_,A),{info:null,includePaths:[]}}}',
+            'function enabled(){return gate("tengu_session_memory",!1)}if(gate("tengu_coral_fern",!1)){searchPastSessions()}let per=2000,total=12000;return `# Session Title`const opts={minimumMessageTokensToInit:1e4,minimumTokensBetweenUpdate:5000,toolCallsBetweenUpdates:3};',
+            'if(currentModel()==="opusplan"&&mode==="plan"&&!overLimit)return opusModel();let aliases=["sonnet","opus","haiku","sonnet[1m]","opusplan"];function desc(A){if(A==="opusplan")return"Opus 4.6 in plan mode, else Sonnet 4.6";return""}function label(A){if(A==="opusplan")return"Opus Plan";return""}function options(K,A){if(K==="opusplan")return [...A,opusPlanOption()];if(K===null||A.some((Z)=>Z.value===K))return A;}',
+            'async function connect(){if(!envFlag(process.env.MCP_CONNECTION_NONBLOCKING))return await waitForServers()}',
+            'let batch=parseInt(process.env.MCP_SERVER_CONNECTION_BATCH_SIZE||"",10)||3;return batch',
+            'let overrideMessage:true,count=format(inputTokens+outputTokens),view={key:"tokens"},count," tokens";',
+            ',O=Pc.useCallback(async()=>{let D=await run();w((j)=>({...j,statusLineText:D}))},[w]),X=Gr(()=>O(A),300);',
             'function plan(){return R.createElement(Box,{title:"Ready to code?",onChange:onPick,onCancel:onCancel})}',
             ',model:z.enum(MODELS).optional();let ok=K&&typeof K==="string"&&MODELS.includes(K)',
         ]
@@ -66,6 +78,18 @@ def test_curated_tweak_ports_patch_fixture_patterns():
             "hide-startup-clawd",
             "hide-ctrl-g-to-edit",
             "suppress-line-numbers",
+            "suppress-native-installer-warning",
+            "suppress-rate-limit-options",
+            "thinking-visibility",
+            "input-box-border",
+            "filter-scroll-escape-sequences",
+            "agents-md",
+            "session-memory",
+            "opusplan1m",
+            "mcp-non-blocking",
+            "mcp-batch-size",
+            "token-count-rounding",
+            "statusline-update-throttle",
             "auto-accept-plan-mode",
             "allow-custom-agent-models",
         ],
@@ -77,6 +101,19 @@ def test_curated_tweak_ports_patch_fixture_patterns():
     assert "return null;" in result.js
     assert 'if(false)p("tengu_external_editor_hint_shown"' in result.js
     assert "return C}function next" in result.js
+    assert "Claude Code has switched from npm to native installer" not in result.js
+    assert "onOpenRateLimitOptions:()=>{}" in result.js
+    assert "isTranscriptMode:true," in result.js
+    assert "borderStyle:undefined" in result.js
+    assert "SCROLLING FIX PATCH START" in result.js
+    assert "didReroute" in result.js
+    assert "AGENTS.md" in result.js
+    assert 'function enabled(){return true;return gate("tengu_session_memory",!1)}' in result.js
+    assert 'currentModel()==="opusplan[1m]"' in result.js
+    assert "if(false)" in result.js
+    assert 'MCP_SERVER_CONNECTION_BATCH_SIZE||"",10)||10' in result.js
+    assert "Math.round((inputTokens+outputTokens)/1000)*1000" in result.js
+    assert "lastCall=Pc.useRef(0)" in result.js
     assert 'onPick("yes-accept-edits");return null;return R.createElement' in result.js
     assert ",model:z.string().optional()" in result.js
     assert 'let ok=K&&typeof K==="string"' in result.js
