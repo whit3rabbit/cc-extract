@@ -18,11 +18,18 @@ from .options import (
     loaded_profile,
     selected_dashboard_packages,
     selected_dashboard_tweaks,
+    selected_setup_variant,
     selected_variant_provider,
     selected_tweaks_edit_patch,
+    setup_detail_lines,
+    setup_detail_options,
+    setup_manager_options,
+    tweak_diff,
+    tweak_status,
     tweaks_edit_groups,
     tweaks_edit_options,
     tweaks_source_options,
+    unsupported_pending_tweaks,
     variant_options,
     variant_title,
 )
@@ -34,12 +41,26 @@ from .themes import active_theme, theme_name
 def active_tab(state):
     if state.mode == "patch-package":
         return "Patch"
-    if state.mode == "tweaks-edit":
-        return "Tweaks"
+    if state.mode in {
+        "loading",
+        "first-run-setup",
+        "setup-manager",
+        "setup-detail",
+        "upgrade-preview",
+        "delete-confirm",
+        "health-result",
+        "logs",
+        "error",
+        "variants",
+        "tweaks-source",
+        "tweaks-edit",
+        "tweak-editor",
+    }:
+        return "Manage Setup"
     for tab, mode in zip(TABS, TAB_MODES):
         if state.mode == mode:
             return tab
-    return "Dashboard"
+    return "Manage Setup"
 
 
 def active_tab_index(state):
@@ -65,6 +86,29 @@ def compact_tab_bar(state):
 # -- Body labels and progress -------------------------------------------------
 
 def current_labels(state):
+    if state.mode == "loading":
+        return "Loading setups", ["Refreshing workspace state..."]
+    if state.mode == "setup-manager":
+        labels = ["Name                 Provider     Claude Code  Health   Command"]
+        labels.extend(option.label for option in setup_manager_options(state))
+        return "Setup manager", labels
+    if state.mode == "setup-detail":
+        labels = setup_detail_lines(state) + ["", "Actions"]
+        labels.extend(option.label for option in setup_detail_options(state))
+        return f"Manage setup: {state.selected_setup_id or 'none'}", labels
+    if state.mode == "first-run-setup":
+        title = "No Claude Code setups found"
+        return f"{title}: {VARIANT_STEPS[state.variant_step]}", [option.label for option in variant_options(state)]
+    if state.mode == "upgrade-preview":
+        return "Upgrade preview", upgrade_preview_labels(state)
+    if state.mode == "delete-confirm":
+        return "Delete setup", delete_confirm_labels(state)
+    if state.mode == "health-result":
+        return "Setup result", state.last_action_summary or ["No result available."]
+    if state.mode == "logs":
+        return "Logs", state.last_action_summary or ["No logs available."]
+    if state.mode == "error":
+        return "Error", state.last_action_summary or [state.message or "Unknown error."]
     if state.mode == "dashboard":
         return dashboard_title(state), [option.label for option in dashboard_options(state)]
     if state.mode == "inspect":
@@ -78,16 +122,80 @@ def current_labels(state):
         for index, package in enumerate(state.patch_packages):
             marker = "[x]" if index in state.selected_patch_indexes else "[ ]"
             labels.append(f"{marker} {package.patch_id}@{package.version}  {package.name}")
-        return "Patch packages", labels
+        return "Patch bundles", labels
     if state.mode == "variants":
         return variant_title(state), [option.label for option in variant_options(state)]
     if state.mode == "tweaks-source":
-        return "Tweaks: pick variant", [option.label for option in tweaks_source_options(state)]
-    if state.mode == "tweaks-edit":
+        return "Tweaks: pick setup", [option.label for option in tweaks_source_options(state)]
+    if state.mode in {"tweaks-edit", "tweak-editor"}:
+        if state.tweak_apply_preview:
+            return "Tweak rebuild preview", tweak_preview_labels(state)
         labels = _tweaks_edit_labels(state)
-        title = f"Patches  ({state.tweaks_variant_id or 'no variant'})"
+        title = f"Edit tweaks: {state.tweaks_variant_id or 'no setup'}"
         return title, labels
     return "Status", []
+
+
+def upgrade_preview_labels(state):
+    variant = selected_setup_variant(state)
+    if variant is None:
+        return ["No setup selected."]
+    manifest = variant.manifest or {}
+    current = (manifest.get("source") or {}).get("version") or "?"
+    target = state.setup_upgrade_target or "latest"
+    tweaks = manifest.get("tweaks", []) or []
+    paths = manifest.get("paths") or {}
+    return [
+        f"Setup: {variant.variant_id}",
+        f"Current Claude Code: {current}",
+        f"Target Claude Code: {target}",
+        f"Tweak count: {len(tweaks)}",
+        f"Command path: {paths.get('wrapper') or '(no command)'}",
+        "Rebuild: yes",
+        "",
+        "Proceed? y/N",
+    ]
+
+
+def delete_confirm_labels(state):
+    variant = selected_setup_variant(state)
+    if variant is None:
+        return ["No setup selected."]
+    paths = (variant.manifest or {}).get("paths") or {}
+    return [
+        f"Type setup id to delete: {variant.variant_id}",
+        f"Typed: {state.delete_confirm_text or '(empty)'}",
+        "",
+        "Will remove:",
+        f"Setup directory: {variant.path}",
+        f"Command: {paths.get('wrapper') or '(no command)'}",
+        "",
+        "Shared downloads and caches are not removed.",
+    ]
+
+
+def tweak_preview_labels(state):
+    variant = selected_setup_variant(state)
+    added, removed = tweak_diff(state)
+    unsupported = unsupported_pending_tweaks(state)
+    command = ""
+    if variant is not None:
+        command = ((variant.manifest or {}).get("paths") or {}).get("wrapper") or ""
+    labels = [
+        f"Setup: {state.tweaks_variant_id or state.selected_setup_id or '(none)'}",
+        "",
+        "Add:",
+        *(f"  {item}" for item in (added or ["none"])),
+        "",
+        "Remove:",
+        *(f"  {item}" for item in (removed or ["none"])),
+        "",
+        f"Will rebuild command: {command or '(no command)'}",
+    ]
+    if unsupported:
+        labels.extend(["", f"Blocked unsupported tweaks: {', '.join(unsupported)}"])
+    labels.extend(["", "Proceed? y/N"])
+    return labels
 
 
 def _tweaks_edit_labels(state):
@@ -123,6 +231,8 @@ def tweaks_detail_text(state) -> str:
     return "\n".join([
         patch.name,
         f"Group: {patch.group}",
+        f"Status: {tweak_status(state, patch.id)['label']}",
+        f"Reason: {tweak_status(state, patch.id)['reason']}",
         "",
         description,
         "",
@@ -131,8 +241,8 @@ def tweaks_detail_text(state) -> str:
         f"Blacklisted: {blacklist}",
         f"On miss: {patch.on_miss}",
         "",
-        f"Applied to {state.tweaks_variant_id or '(no variant)'}: {applied}",
-        f"Pending: {pending}",
+        f"Enabled in setup {state.tweaks_variant_id or '(no setup)'}: {applied}",
+        f"Pending after apply: {pending}",
     ])
 
 
@@ -140,15 +250,15 @@ def empty_text(state):
     if state.mode in {"inspect", "extract", "patch-source"}:
         return "No centralized native downloads found."
     if state.mode == "patch-package":
-        return "No patch packages found."
+        return "No patch bundles found."
     if state.mode == "dashboard" and state.dashboard_step == 1:
         return "No curated dashboard patches available."
-    if state.mode == "variants":
-        return "No variants or providers found."
+    if state.mode in {"variants", "first-run-setup"}:
+        return "No setup providers found."
     if state.mode == "tweaks-source":
-        return "No variants found - create one in the Variants tab first."
-    if state.mode == "tweaks-edit":
-        return "No patches registered."
+        return "No setups found - create one first."
+    if state.mode in {"tweaks-edit", "tweak-editor"}:
+        return "No tweaks registered."
     return "Ready."
 
 
@@ -157,7 +267,9 @@ def selected_label_index(state):
     index in `current_labels()`. Modes with non-selectable header rows (like
     tweaks-edit's group headers) need this offset.
     """
-    if state.mode == "tweaks-edit":
+    if state.mode in {"tweaks-edit", "tweak-editor"} and state.tweak_apply_preview:
+        return 0
+    if state.mode in {"tweaks-edit", "tweak-editor"}:
         target = state.selected_index
         label_index = 0
         seen = 0
@@ -169,6 +281,10 @@ def selected_label_index(state):
                 label_index += 1
                 seen += 1
         return max(0, label_index - 1)
+    if state.mode == "setup-manager":
+        return state.selected_index + 1
+    if state.mode == "setup-detail":
+        return state.selected_index + len(setup_detail_lines(state)) + 2
     return state.selected_index
 
 
@@ -206,9 +322,9 @@ def progress_specs(state):
             specs.append(_dashboard_tweak_progress_spec(state))
     elif state.mode == "patch-package":
         specs.append(_patch_progress_spec(state))
-    elif state.mode == "variants":
+    elif state.mode in {"variants", "first-run-setup"}:
         specs.append((
-            "Variant",
+            "Setup",
             (state.variant_step + 1) / len(VARIANT_STEPS),
             f"{state.variant_step + 1}/{len(VARIANT_STEPS)} {VARIANT_STEPS[state.variant_step]}",
         ))
@@ -219,14 +335,14 @@ def _patch_progress_spec(state):
     selected = len(selected_dashboard_packages(state))
     total = len(state.patch_packages)
     ratio = selected / total if total else 0.0
-    return ("Patches", ratio, f"{selected}/{total} selected")
+    return ("Patch bundles", ratio, f"{selected}/{total} selected")
 
 
 def _dashboard_tweak_progress_spec(state):
     selected = len(selected_dashboard_tweaks(state))
     available = len(dashboard_tweak_ids())
     ratio = selected / available if available else 0.0
-    return ("Patches", ratio, f"{selected}/{available} selected")
+    return ("Tweaks", ratio, f"{selected}/{available} selected")
 
 
 # -- Compact chrome / key hints -----------------------------------------------
@@ -239,6 +355,27 @@ def top_chrome_lines(state):
 
 
 def context_line(state):
+    if state.mode == "loading":
+        return "Loading | Refreshing setup state"
+    if state.mode == "setup-manager":
+        return f"Home | Setups {len(state.variants)}"
+    if state.mode == "setup-detail":
+        return f"Home > {state.selected_setup_id or 'setup'}"
+    if state.mode == "upgrade-preview":
+        return f"Home > {state.selected_setup_id or 'setup'} > Upgrade"
+    if state.mode == "delete-confirm":
+        return f"Home > {state.selected_setup_id or 'setup'} > Delete"
+    if state.mode == "health-result":
+        return f"Home > {state.selected_setup_id or 'setup'} > Result"
+    if state.mode == "first-run-setup":
+        provider = selected_variant_provider(state)
+        name = state.variant_name or (provider.get("defaultVariantName") if provider else "")
+        return (
+            f"First run setup {VARIANT_STEPS[state.variant_step]} | "
+            f"Step {state.variant_step + 1}/{len(VARIANT_STEPS)} | "
+            f"Provider {provider.get('key') if provider else 'none'} | "
+            f"Name {name or 'none'}"
+        )
     if state.mode == "dashboard":
         step = DASHBOARD_STEPS[state.dashboard_step]
         profile = loaded_profile(state)
@@ -253,7 +390,7 @@ def context_line(state):
         name = state.variant_name or (provider.get("defaultVariantName") if provider else "")
         credential = state.variant_credential_env or "none"
         return (
-            f"Variants {VARIANT_STEPS[state.variant_step]} | "
+            f"Create setup {VARIANT_STEPS[state.variant_step]} | "
             f"Step {state.variant_step + 1}/{len(VARIANT_STEPS)} | "
             f"Provider {provider.get('key') if provider else 'none'} | "
             f"Name {name or 'none'} | Credential {credential}"
@@ -261,23 +398,31 @@ def context_line(state):
     if state.mode == "patch-package":
         selected = len(selected_dashboard_packages(state))
         total = len(state.patch_packages)
-        return f"Patch packages | Patches {selected}/{total} selected"
+        return f"Patch bundles | Bundles {selected}/{total} selected"
     if state.mode == "tweaks-source":
-        return f"Tweaks | Variants {len(state.variants)}"
-    if state.mode == "tweaks-edit":
+        return f"Tweaks | Setups {len(state.variants)}"
+    if state.mode in {"tweaks-edit", "tweak-editor"}:
         pending = len(set(state.tweaks_pending) ^ set(state.tweaks_baseline))
-        return f"Tweaks edit | Variant {state.tweaks_variant_id or 'none'} | Pending changes {pending}"
+        return f"Home > {state.tweaks_variant_id or 'setup'} > Edit tweaks | Pending changes {pending}"
     if state.mode in {"inspect", "extract", "patch-source"}:
         return f"{active_tab(state)} | Native artifacts {len(state.native_artifacts)}"
     return active_tab(state)
 
 
 def context_hint(state):
+    if state.mode == "setup-manager":
+        return "Pick a setup or use a lifecycle action."
+    if state.mode == "delete-confirm":
+        return "Type the exact setup id, then press Enter."
+    if state.mode == "upgrade-preview":
+        return "Press y to proceed or n to cancel."
+    if state.mode in {"tweaks-edit", "tweak-editor"} and state.tweak_apply_preview:
+        return "Review the diff, then press y to rebuild or n to cancel."
     if state.mode == "dashboard" and state.dashboard_step == 2:
         return "Profile names: select Name, then type or Backspace."
-    if state.mode == "variants":
+    if state.mode in {"variants", "first-run-setup"}:
         if state.variant_step == 1:
-            return "Variant names: select Name, then type or Backspace."
+            return "Setup names: select Name, then type or Backspace."
         if state.variant_step == 2:
             return "Credential env: select row, then type or Backspace. Raw API keys are not accepted."
         if state.variant_step == 3:
@@ -317,7 +462,7 @@ def _dashboard_key_line(state):
 
 def _variant_key_line(state):
     if state.variant_step == 4:
-        action = "Space toggle tweak | Enter choose"
+        action = "Space toggle tweak | V view | Enter choose"
     elif state.variant_step == 5:
         action = "Enter choose"
     elif state.variant_step in {1, 2, 3}:
@@ -328,6 +473,18 @@ def _variant_key_line(state):
 
 
 def key_line(state):
+    if state.mode == "setup-manager":
+        return "Keys: Up/Down move | Enter manage | N new | U upgrade | T tweaks | H health | D delete | R refresh | Q quit"
+    if state.mode == "setup-detail":
+        return "Keys: Enter select | Esc back | H health | U upgrade | T tweaks | D delete | C copy | Q quit"
+    if state.mode == "delete-confirm":
+        return "Keys: Type setup name | Enter delete | Esc cancel"
+    if state.mode == "upgrade-preview":
+        return "Keys: Y proceed | N/Esc cancel"
+    if state.mode == "health-result":
+        return "Keys: Esc back | Enter manage | Q quit"
+    if state.mode == "first-run-setup":
+        return _variant_key_line(state)
     if state.mode == "dashboard":
         return _dashboard_key_line(state)
     if state.mode == "patch-package":
@@ -335,9 +492,11 @@ def key_line(state):
     if state.mode == "variants":
         return _variant_key_line(state)
     if state.mode == "tweaks-source":
-        return "Keys: Tabs Left/Right/Tab | Move Up/Down | Enter pick variant | Back B/Esc | Theme T | Quit Q"
-    if state.mode == "tweaks-edit":
-        return "Keys: Move Up/Down | Space toggle | Apply A | Back B/Esc | Theme T | Quit Q"
+        return "Keys: Tabs Left/Right/Tab | Move Up/Down | Enter pick setup | Back B/Esc | Theme T | Quit Q"
+    if state.mode in {"tweaks-edit", "tweak-editor"}:
+        if state.tweak_apply_preview:
+            return "Keys: Y proceed | N/Esc cancel"
+        return "Keys: Space toggle | A apply | D discard | V view | Esc back"
     return "Keys: Tabs Left/Right/Tab | Move Up/Down | Enter run | Theme T | Quit Q"
 
 
@@ -361,9 +520,14 @@ def screen_text(state, height=24):
     else:
         lines.append("  " + empty_text(state))
 
-    if state.mode == "tweaks-edit":
+    if state.mode in {"tweaks-edit", "tweak-editor"} and not state.tweak_apply_preview:
+        added, removed = tweak_diff(state)
         lines.append("")
-        lines.append("Patch details")
+        lines.append("Pending changes")
+        lines.append("  Add: " + (", ".join(added) if added else "none"))
+        lines.append("  Remove: " + (", ".join(removed) if removed else "none"))
+        lines.append("")
+        lines.append("Tweak details")
         for line in tweaks_detail_text(state).splitlines():
             lines.append("  " + line)
 
@@ -404,9 +568,11 @@ def color(Color, name: Optional[str]):
 def status_style(state, Style, Color):
     theme = active_theme(state)
     lowered = state.message.lower()
-    if "failed" in lowered or "invalid" in lowered or "missing" in lowered:
+    if "failed" in lowered or "invalid" in lowered or "missing" in lowered or "broken" in lowered:
         return style(Style, Color, theme.error_fg, theme.footer_bg, bold=True)
-    if "complete" in lowered or "created" in lowered or "loaded" in lowered:
+    if "warning" in lowered:
+        return style(Style, Color, theme.warning_fg, theme.footer_bg, bold=True)
+    if "complete" in lowered or "created" in lowered or "loaded" in lowered or "healthy" in lowered:
         return style(Style, Color, theme.success_fg, theme.footer_bg, bold=True)
     return style(Style, Color, theme.warning_fg, theme.footer_bg)
 
@@ -434,9 +600,14 @@ def list_widget(state, height, TuiList, Style, Color, theme):
     )
 
     if labels:
-        item_style = style(Style, Color, theme.body_fg, theme.body_bg)
         for label in labels:
-            body.append_item(label, item_style)
+            role = _label_role(label)
+            fg = {
+                "success": theme.success_fg,
+                "warning": theme.warning_fg,
+                "error": theme.error_fg,
+            }.get(role, theme.body_fg)
+            body.append_item(label, style(Style, Color, fg, theme.body_bg))
         cursor = selected_label_index(state)
         body.set_selected(cursor)
         body.set_scroll_offset(max(0, cursor - max(0, height // 2)))
@@ -450,7 +621,7 @@ def tweaks_detail_widget(state, Paragraph, Style, Color, theme):
     """Right-pane Paragraph for tweaks-edit mode."""
     text = tweaks_detail_text(state)
     paragraph = Paragraph.from_text(text)
-    paragraph.set_block_title("Patch details", True)
+    paragraph.set_block_title("Tweak details", True)
     paragraph.set_style(style(Style, Color, theme.body_fg, theme.body_bg))
     paragraph.set_wrap(True)
     return paragraph
@@ -544,8 +715,19 @@ def _body_content_rows(state, height):
         index = start_index + offset
         selected = index == cursor
         prefix = "> " if selected else "  "
-        rows.append((prefix + label, "highlight" if selected else "body"))
+        rows.append((prefix + label, "highlight" if selected else _label_role(label)))
     return rows
+
+
+def _label_role(label):
+    lowered = str(label).lower()
+    if " broken" in lowered or "blocked:" in lowered or "unsupported" in lowered:
+        return "error"
+    if " warning" in lowered or "advanced" in lowered or "unknown" in lowered:
+        return "warning"
+    if " healthy" in lowered or " ready" in lowered:
+        return "success"
+    return "body"
 
 
 def _body_box_rows(state, width, height):
@@ -555,7 +737,7 @@ def _body_box_rows(state, width, height):
 
 def _tweaks_detail_box_rows(state, width, height):
     detail_rows = [(line, "body") for line in tweaks_detail_text(state).splitlines()]
-    return _box_rows("Patch details", detail_rows, width, height, "body")
+    return _box_rows("Tweak details", detail_rows, width, height, "body")
 
 
 def _combine_segment_rows(left_rows, right_rows, gap_width):
@@ -621,7 +803,7 @@ def _frame_rows(state, width, height):
     body_height = max(1, height - top_height - footer_height)
 
     rows = _box_rows("", top_chrome_lines(state), width, top_height, "header")
-    if state.mode == "tweaks-edit" and width > 60:
+    if state.mode in {"tweaks-edit", "tweak-editor"} and not state.tweak_apply_preview and width > 60:
         rows.extend(_tweaks_two_pane_rows(state, width, body_height))
     else:
         rows.extend(_body_box_rows(state, width, body_height))
@@ -638,6 +820,9 @@ def _frame_styles(state, Style, Color, theme):
         "tabs": style(Style, Color, theme.tab_fg, theme.tab_bg),
         "body": style(Style, Color, theme.body_fg, theme.body_bg),
         "highlight": style(Style, Color, theme.highlight_fg, theme.highlight_bg, bold=True),
+        "success": style(Style, Color, theme.success_fg, theme.body_bg),
+        "warning": style(Style, Color, theme.warning_fg, theme.body_bg),
+        "error": style(Style, Color, theme.error_fg, theme.body_bg, bold=True),
         "gauge": style(Style, Color, theme.gauge_fg, theme.gauge_bg),
         "footer": status_style(state, Style, Color),
     }

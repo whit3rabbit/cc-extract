@@ -7,8 +7,8 @@ risk.
 from dataclasses import dataclass
 
 
-TABS = ["Dashboard", "Inspect", "Extract", "Patch", "Variants", "Tweaks"]
-TAB_MODES = ["dashboard", "inspect", "extract", "patch-source", "variants", "tweaks-source"]
+TABS = ["Manage Setup", "Dashboard", "Inspect", "Extract", "Patch"]
+TAB_MODES = ["setup-manager", "dashboard", "inspect", "extract", "patch-source"]
 DASHBOARD_STEPS = ["Source", "Patches", "Profiles", "Review"]
 VARIANT_STEPS = ["Provider", "Name", "Credentials", "Models", "Tweaks", "Review"]
 VARIANT_MODEL_FIELDS = [

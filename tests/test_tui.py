@@ -91,7 +91,7 @@ def test_screen_text_contains_dashboard_first_tab():
     screen = tui._screen_text(state)
 
     assert "Workspace:" in screen
-    assert "cc-extractor | [Dashboard] Inspect Extract Patch Variants Tweaks" in screen
+    assert "cc-extractor | Manage Setup [Dashboard] Inspect Extract Patch" in screen
     assert "Dashboard Source | Step 1/4" in screen
     assert "Latest native binary" in screen
     assert "Native 2.1.121" in screen
@@ -217,7 +217,7 @@ def test_footer_keys_match_dashboard_step():
 def test_footer_keys_match_variant_step():
     state = tui.TuiState(mode="variants", variant_step=1)
     footer = tui._footer_text(state)
-    assert "Variant names:" in footer
+    assert "Setup names:" in footer
     assert "Space toggle tweak" not in footer
 
     state.variant_step = 2
@@ -541,8 +541,8 @@ def test_variants_tab_lists_providers_and_progress():
 
     screen = tui._screen_text(state)
 
-    assert "[Variants]" in screen
-    assert "Variants Provider | Step 1/6" in screen
+    assert "[Manage Setup]" in screen
+    assert "Create setup Provider | Step 1/6" in screen
     assert "mirror  Mirror Claude" in screen
 
 
@@ -572,7 +572,7 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
         ],
     )
 
-    state.selected_index = 1
+    state.selected_index = 0
     tui._activate_variants(state)
     assert state.variant_step == 1
     assert state.variant_name == "mirror"
@@ -583,10 +583,6 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
 
     state.selected_index = 1
     tui._activate_variants(state)
-    assert state.variant_step == 3
-
-    state.selected_index = len(tui.VARIANT_MODEL_FIELDS)
-    tui._activate_variants(state)
     assert state.variant_step == 4
 
     state.selected_index = 0
@@ -594,7 +590,7 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     tui._toggle_selected(state)
     assert first_tweak not in state.selected_variant_tweaks
 
-    state.selected_index = len(tui.CURATED_TWEAK_IDS)
+    state.selected_index = len(tui.DEFAULT_TWEAK_IDS) + 1
     tui._activate_variants(state)
     assert state.variant_step == 5
 
@@ -656,20 +652,28 @@ def test_variants_text_inputs_cover_credentials_and_models():
     assert state.variant_model_overrides["opus"] == "gl"
 
 
-def test_variant_status_reports_doctor_failure(monkeypatch):
+def test_setup_manager_health_reports_doctor_failure(monkeypatch):
     class Variant:
         variant_id = "mirror"
-        manifest = {"paths": {"wrapper": "/tmp/mirror"}}
+        name = "Mirror"
+        path = Path("/tmp/mirror")
+        manifest = {
+            "provider": {"key": "mirror"},
+            "source": {"version": "2.1.123"},
+            "paths": {"wrapper": "/tmp/mirror"},
+            "tweaks": [],
+        }
 
     def fail_doctor(name):
         raise RuntimeError("doctor broke")
 
     monkeypatch.setattr(tui, "doctor_variant", fail_doctor)
-    state = tui.TuiState(mode="variants", variants=[Variant()], selected_index=1)
+    state = tui.TuiState(mode="setup-manager", variants=[Variant()], selected_index=1)
 
-    tui._activate_variants(state)
+    tui._handle_char_key(state, "h")
 
-    assert state.message == "Variant status failed: doctor broke"
+    assert state.message == "Health for setup mirror: broken"
+    assert state.setup_health["mirror"]["status"] == "broken"
 
 
 # -- Tweaks tab tests ----------------------------------------------------------
@@ -687,16 +691,159 @@ def _variant(variant_id="my-variant", name="My Variant", tweaks=None, version="2
             "name": name,
             "provider": {"key": "kimi", "label": "Kimi"},
             "source": {"version": version, "platform": "darwin-arm64", "sha256": "x", "path": "/tmp/x"},
+            "paths": {"wrapper": f"/tmp/bin/{variant_id}"},
             "tweaks": tweaks,
             "runtime": "native",
         },
     )
 
 
+def test_startup_routes_to_first_run_or_setup_manager():
+    empty = tui.TuiState(mode="loading")
+    tui._route_startup(empty)
+    assert empty.mode == "first-run-setup"
+    assert "No Claude Code setups found" in empty.message
+
+    variant = _variant("deepseek-main")
+    existing = tui.TuiState(mode="loading", variants=[variant])
+    tui._route_startup(existing)
+    assert existing.mode == "setup-manager"
+    assert existing.selected_setup_id == "deepseek-main"
+
+
+def test_setup_manager_lists_rows_and_opens_detail():
+    variant = _variant("deepseek-main")
+    state = tui.TuiState(
+        mode="setup-manager",
+        variants=[variant],
+        setup_health={"deepseek-main": {"status": "healthy"}},
+        selected_index=1,
+    )
+
+    screen = tui._screen_text(state)
+    assert "Setup manager" in screen
+    assert "Name" in screen
+    assert "Provider" in screen
+    assert "Health" in screen
+    assert "deepseek-main" in screen
+    assert "healthy" in screen
+    assert "deepseek-main" in screen
+
+    tui._activate_setup_manager(state)
+    assert state.mode == "setup-detail"
+    assert state.selected_setup_id == "deepseek-main"
+
+
+def test_upgrade_preview_applies_update_and_health(monkeypatch, tmp_path):
+    variant = _variant("deepseek-main", version="2.1.122")
+    calls = []
+
+    class Result:
+        wrapper_path = tmp_path / "cc-deepseek"
+
+    def fake_update(name, *, claude_version=None):
+        calls.append((name, claude_version))
+        return [Result()]
+
+    def fake_refresh(state_arg):
+        variant.manifest["source"]["version"] = "2.1.123"
+        state_arg.variants = [variant]
+        return True
+
+    def fake_doctor(name):
+        return [{"id": name, "ok": True, "checks": [{"name": "wrapper", "ok": True, "path": "/tmp/bin/deepseek-main"}]}]
+
+    monkeypatch.setattr(tui, "update_variants", fake_update)
+    monkeypatch.setattr(tui, "_refresh_state", fake_refresh)
+    monkeypatch.setattr(tui, "doctor_variant", fake_doctor)
+    state = tui.TuiState(mode="upgrade-preview", variants=[variant], selected_setup_id="deepseek-main")
+
+    tui._run_setup_upgrade(state)
+
+    assert calls == [("deepseek-main", "latest")]
+    assert state.mode == "health-result"
+    assert "2.1.122 -> 2.1.123" in "\n".join(state.last_action_summary)
+    assert "Health: healthy" in "\n".join(state.last_action_summary)
+
+
+def test_delete_requires_typed_setup_id(monkeypatch, tmp_path):
+    variant = _variant("deepseek-main")
+    variant.path = tmp_path / "deepseek-main"
+    variant.path.mkdir()
+    wrapper = tmp_path / "cc-deepseek"
+    wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
+    variant.manifest["paths"]["wrapper"] = str(wrapper)
+    calls = []
+
+    def fake_remove(name, *, yes=False):
+        calls.append((name, yes))
+        wrapper.unlink()
+        variant.path.rmdir()
+        return True
+
+    def fake_refresh(state_arg):
+        state_arg.variants = []
+        return True
+
+    monkeypatch.setattr(tui, "remove_variant", fake_remove)
+    monkeypatch.setattr(tui, "_refresh_state", fake_refresh)
+    state = tui.TuiState(
+        mode="delete-confirm",
+        variants=[variant],
+        selected_setup_id="deepseek-main",
+        delete_confirm_text="wrong",
+    )
+
+    tui._run_setup_delete(state)
+    assert calls == []
+    assert "exactly" in state.message
+
+    state.delete_confirm_text = "deepseek-main"
+    tui._run_setup_delete(state)
+    assert calls == [("deepseek-main", True)]
+    assert state.mode == "setup-manager"
+    assert "Shared downloads untouched: yes" in "\n".join(state.last_action_summary)
+
+
+def test_tweak_apply_uses_preview_then_post_health(monkeypatch):
+    variant = _variant("deepseek-main", tweaks=["themes"])
+    state = tui.TuiState(
+        mode="tweak-editor",
+        variants=[variant],
+        selected_setup_id="deepseek-main",
+        tweaks_variant_id="deepseek-main",
+        tweaks_baseline=("themes",),
+        tweaks_pending=["themes", "patches-applied-indication"],
+    )
+
+    tui._begin_tweak_apply_preview(state)
+    assert state.tweak_apply_preview is True
+    assert "Tweak rebuild preview" in tui._screen_text(state)
+
+    def fake_apply(app_state):
+        app_state.tweaks_baseline = tuple(app_state.tweaks_pending)
+        app_state.message = "Applied tweaks to setup deepseek-main (+1 added, -0 removed)."
+
+    def fake_doctor(name):
+        return [{"id": name, "ok": True, "checks": []}]
+
+    monkeypatch.setattr(tui, "_apply_tweaks", fake_apply)
+    monkeypatch.setattr(tui, "doctor_variant", fake_doctor)
+
+    tui._run_tweak_apply(state)
+
+    assert state.mode == "health-result"
+    assert state.last_tweak_result == {
+        "added": ["patches-applied-indication"],
+        "removed": [],
+        "health": "healthy",
+    }
+
+
 def test_tweaks_tab_initial_state():
     state = tui.TuiState(mode="tweaks-source", variants=[_variant()])
     title, labels = tui.rendering.current_labels(state)
-    assert title.startswith("Tweaks: pick variant")
+    assert title.startswith("Tweaks: pick setup")
     assert any("my-variant" in label for label in labels)
 
 
@@ -706,7 +853,7 @@ def test_tweaks_select_variant_enters_edit_mode():
 
     tui._activate(state)
 
-    assert state.mode == "tweaks-edit"
+    assert state.mode == "tweak-editor"
     assert state.tweaks_variant_id == variant.variant_id
     assert state.tweaks_baseline == ("themes", "hide-startup-banner")
     assert state.tweaks_pending == ["themes", "hide-startup-banner"]
@@ -716,11 +863,11 @@ def test_tweaks_toggle_updates_pending():
     variant = _variant(tweaks=["themes"])
     state = tui.TuiState(mode="tweaks-source", variants=[variant])
     tui._activate(state)  # enter edit mode
-    state.selected_index = 0  # first option (allow-custom-agent-models, alphabetical first in ui group)
+    state.selected_index = 0
 
     tui._toggle_tweak(state)
 
-    assert "allow-custom-agent-models" in state.tweaks_pending
+    assert "patches-applied-indication" in state.tweaks_pending
     assert "1 pending change" in state.message
 
 
@@ -795,8 +942,8 @@ def test_tweaks_screen_text_two_pane():
 
     text = tui._screen_text(state, height=40)
 
-    assert "Patches" in text
-    assert "Patch details" in text
+    assert "Edit tweaks" in text
+    assert "Tweak details" in text
     assert "Group:" in text
     assert "Versions supported" in text
 
@@ -826,7 +973,7 @@ def test_tweaks_two_pane_renders_at_typical_widths():
         assert term.commands, f"no commands at {width}x{height}"
 
         screen = headless_render_frame(width, height, term.commands)
-        assert "Patches" in screen
-        assert "Patch details" in screen
+        assert "Edit tweaks" in screen
+        assert "Tweak details" in screen
         # ensure the right pane content was actually rendered
         assert "Group:" in screen

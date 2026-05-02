@@ -32,7 +32,17 @@ def move_tab(state, offset: int) -> None:
 
 
 def go_back(state) -> None:
-    if state.mode == "dashboard":
+    if state.mode == "setup-detail":
+        set_mode(state, "setup-manager")
+    elif state.mode in {"upgrade-preview", "delete-confirm", "logs", "error"}:
+        set_mode(state, "setup-detail" if state.selected_setup_id else "setup-manager")
+    elif state.mode == "health-result":
+        set_mode(state, "setup-detail" if state.selected_setup_id else "setup-manager")
+    elif state.mode == "first-run-setup":
+        if state.variant_step > 0:
+            state.variant_step -= 1
+            state.selected_index = 0
+    elif state.mode == "dashboard":
         if state.dashboard_delete_confirm_id:
             state.dashboard_delete_confirm_id = ""
             state.message = "Delete cancelled."
@@ -46,14 +56,20 @@ def go_back(state) -> None:
         if state.variant_step > 0:
             state.variant_step -= 1
             state.selected_index = 0
-    elif state.mode == "tweaks-edit":
+        else:
+            set_mode(state, "setup-manager")
+    elif state.mode in {"tweaks-edit", "tweak-editor"}:
+        if state.tweak_apply_preview:
+            state.tweak_apply_preview = False
+            state.message = "Tweak rebuild cancelled."
+            return
         if list(state.tweaks_pending) != list(state.tweaks_baseline):
             discard_tweaks(state)
         else:
             state.tweaks_variant_id = None
             state.tweaks_pending = []
             state.tweaks_baseline = ()
-            set_mode(state, "tweaks-source")
+            set_mode(state, "setup-detail" if state.selected_setup_id else "setup-manager")
 
 
 def toggle_patch(state) -> None:
@@ -122,28 +138,34 @@ def activate_patch_source(state):
 
 
 def enter_tweaks_for_variant(state, variant_id: str) -> None:
-    """Enter tweaks-edit mode scoped to the given variant."""
+    """Enter tweak-editor mode scoped to the given setup."""
     variant = next((v for v in state.variants if v.variant_id == variant_id), None)
     if variant is None:
-        state.message = f"Variant {variant_id!r} not found"
+        state.message = f"Setup {variant_id!r} not found"
         return
     manifest = variant.manifest or {}
     baseline = tuple(manifest.get("tweaks", []) or [])
     state.tweaks_variant_id = variant_id
     state.tweaks_baseline = baseline
     state.tweaks_pending = list(baseline)
+    state.selected_setup_id = variant_id
+    state.tweak_apply_preview = False
     state.message = ""
-    set_mode(state, "tweaks-edit")
+    set_mode(state, "tweak-editor")
 
 
 def toggle_tweak(state) -> None:
     """Toggle the patch under the cursor in `state.tweaks_pending`."""
-    from .options import selected_tweaks_edit_option
+    from .options import selected_tweaks_edit_option, tweak_status
 
     option = selected_tweaks_edit_option(state)
     if option is None or option.kind != "tweak-toggle":
         return
     patch_id = option.value
+    status = tweak_status(state, str(patch_id))
+    if not status["selectable"] and patch_id not in state.tweaks_pending:
+        state.message = f"Tweak not selectable: {status['reason']}"
+        return
     if patch_id in state.tweaks_pending:
         state.tweaks_pending = [pid for pid in state.tweaks_pending if pid != patch_id]
     else:
@@ -156,13 +178,14 @@ def discard_tweaks(state) -> None:
     if state.tweaks_variant_id is None:
         return
     state.tweaks_pending = list(state.tweaks_baseline)
+    state.tweak_apply_preview = False
     state.message = "Discarded pending tweak changes."
 
 
 def apply_tweaks(state) -> None:
-    """Persist `tweaks_pending` to the variant manifest and rebuild."""
+    """Persist `tweaks_pending` to the setup config and rebuild."""
     if state.tweaks_variant_id is None:
-        state.message = "No variant selected."
+        state.message = "No setup selected."
         return
     if list(state.tweaks_pending) == list(state.tweaks_baseline):
         state.message = "No tweak changes to apply."
@@ -184,7 +207,7 @@ def apply_tweaks(state) -> None:
     try:
         variant = variants_module.load_variant(variant_id)
     except Exception as exc:
-        state.message = f"Failed to load variant: {exc}"
+        state.message = f"Failed to load setup: {exc}"
         return
 
     manifest = dict(variant.manifest or {})
@@ -194,7 +217,7 @@ def apply_tweaks(state) -> None:
         validate_variant_manifest(manifest)
         write_json(variant.path / "variant.json", manifest)
     except Exception as exc:
-        state.message = f"Failed to update manifest: {exc}"
+        state.message = f"Failed to update setup config: {exc}"
         return
 
     claude_version = (manifest.get("source") or {}).get("version")
@@ -204,7 +227,7 @@ def apply_tweaks(state) -> None:
         state.message = f"Apply failed: {exc}"
         return
 
-    # Refresh state from the now-rebuilt variant.
+    # Refresh state from the now-rebuilt setup.
     state.refresh()
     refreshed = next((v for v in state.variants if v.variant_id == variant_id), None)
     if refreshed is not None:
@@ -212,7 +235,7 @@ def apply_tweaks(state) -> None:
         state.tweaks_baseline = new_baseline
         state.tweaks_pending = list(new_baseline)
     state.message = (
-        f"Applied tweaks to {variant_id} "
+        f"Applied tweaks to setup {variant_id} "
         f"(+{len(added)} added, -{len(removed)} removed)."
     )
 

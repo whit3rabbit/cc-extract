@@ -5,8 +5,11 @@ MenuOption, label strings, lookup helpers). They do not mutate state and do not
 call any externally-monkey-patched function.
 """
 
+from pathlib import Path
+
 from ..patches._registry import REGISTRY as PATCH_REGISTRY, patches_grouped
-from ..variant_tweaks import CURATED_TWEAK_IDS, DASHBOARD_TWEAK_IDS
+from ..patches._versions import SemverRangeError, version_in_range
+from ..variant_tweaks import CURATED_TWEAK_IDS, DASHBOARD_TWEAK_IDS, DEFAULT_TWEAK_IDS, ENV_TWEAK_IDS
 from ..workspace import short_sha
 from ._const import (
     DASHBOARD_STEPS,
@@ -63,7 +66,7 @@ def _dashboard_patch_options(state):
         if missing:
             label = f"Load profile: {profile.name} (invalid, missing {', '.join(missing)})"
         else:
-            label = f"Load profile: {profile.name} ({len(profile.tweak_ids)} patches)"
+            label = f"Load profile: {profile.name} ({len(profile.tweak_ids)} tweaks)"
         options.append(MenuOption("profile-load", label, profile.profile_id))
 
     if selected_dashboard_tweaks(state):
@@ -75,7 +78,7 @@ def _dashboard_profile_options(state):
     name = state.dashboard_profile_name or "(type a profile name)"
     options = [
         MenuOption("profile-name", f"Name: {name}"),
-        MenuOption("profile-create", "Create new profile from selected patches"),
+        MenuOption("profile-create", "Create new profile from selected tweaks"),
         MenuOption("review-continue", "Continue to review"),
     ]
     for profile in state.dashboard_tweak_profiles:
@@ -83,7 +86,7 @@ def _dashboard_profile_options(state):
         options.extend([
             MenuOption("profile-load", f"Load profile: {profile.name}{suffix}", profile.profile_id),
             MenuOption("profile-rename", f"Rename profile to typed name: {profile.name}", profile.profile_id),
-            MenuOption("profile-overwrite", f"Overwrite profile with selected patches: {profile.name}", profile.profile_id),
+            MenuOption("profile-overwrite", f"Overwrite profile with selected tweaks: {profile.name}", profile.profile_id),
             MenuOption("profile-delete", _delete_label(state, profile), profile.profile_id),
         ])
     return options
@@ -117,20 +120,108 @@ def _delete_label(state, profile):
 
 # -- Variant options ----------------------------------------------------------
 
+def setup_manager_options(state):
+    options = [MenuOption("setup-action-new", "Create new setup")]
+    for variant in state.variants:
+        options.append(MenuOption("setup-row", setup_row_label(state, variant), variant.variant_id))
+    return options
+
+
+def setup_detail_options(state):
+    setup_id = selected_setup_id(state)
+    if setup_id is None:
+        return [MenuOption("setup-action-new", "Create new setup")]
+    return [
+        MenuOption("setup-action-health", "Run health check", setup_id),
+        MenuOption("setup-action-upgrade", "Upgrade Claude Code", setup_id),
+        MenuOption("setup-action-tweaks", "Edit tweaks", setup_id),
+        MenuOption("setup-action-delete", "Delete setup", setup_id),
+        MenuOption("setup-action-new", "Create new setup"),
+    ]
+
+
+def setup_row_label(state, variant):
+    manifest = variant.manifest or {}
+    provider = (manifest.get("provider") or {}).get("key") or "?"
+    version = (manifest.get("source") or {}).get("version") or "?"
+    health = setup_health_status(state, variant.variant_id)
+    return f"{variant.variant_id:<20} {provider:<12} {version:<12} {health:<8} {setup_command_label(variant)}"
+
+
+def setup_command_label(variant):
+    wrapper = (variant.manifest.get("paths") or {}).get("wrapper") if variant.manifest else ""
+    if not wrapper:
+        return "(no command)"
+    return Path(str(wrapper)).name or str(wrapper)
+
+
+def setup_health_status(state, setup_id):
+    summary = state.setup_health.get(setup_id)
+    if not summary:
+        return "never"
+    return str(summary.get("status") or "unknown")
+
+
+def selected_setup_option(state):
+    options = setup_detail_options(state) if state.mode == "setup-detail" else setup_manager_options(state)
+    if not options:
+        return None
+    index = max(0, min(state.selected_index, len(options) - 1))
+    return options[index]
+
+
+def selected_setup_id(state):
+    if state.selected_setup_id:
+        return state.selected_setup_id
+    if state.variants:
+        return state.variants[0].variant_id
+    return None
+
+
+def selected_setup_variant(state):
+    setup_id = selected_setup_id(state)
+    if setup_id is None:
+        return None
+    for variant in state.variants:
+        if variant.variant_id == setup_id:
+            return variant
+    return None
+
+
+def setup_detail_lines(state):
+    variant = selected_setup_variant(state)
+    if variant is None:
+        return ["No setup selected."]
+    manifest = variant.manifest or {}
+    paths = manifest.get("paths") or {}
+    provider = (manifest.get("provider") or {}).get("key") or "?"
+    version = (manifest.get("source") or {}).get("version") or "?"
+    tweak_count = len(manifest.get("tweaks", []) or [])
+    return [
+        f"Setup: {variant.variant_id}",
+        f"Provider: {provider}",
+        f"Claude Code: {version}",
+        f"Health: {setup_health_status(state, variant.variant_id)}",
+        f"Command: {paths.get('wrapper') or '(no command)'}",
+        f"Setup config: {variant.path / 'variant.json'}",
+        f"Enabled tweaks: {tweak_count}",
+    ]
+
+
 def variant_options(state):
     if state.variant_step == 0:
         options = []
-        if state.variants:
-            options.append(MenuOption("section", "Existing variants"))
+        if state.variants and state.mode not in {"variants", "first-run-setup"}:
+            options.append(MenuOption("section", "Existing setups"))
             for variant in state.variants:
                 paths = variant.manifest.get("paths", {})
                 options.append(MenuOption(
                     "variant-status",
-                    f"{variant.variant_id}: {paths.get('wrapper', '(no wrapper)')}",
+                    f"{variant.variant_id}: {paths.get('wrapper', '(no command)')}",
                     variant.variant_id,
                 ))
-        if state.variant_providers:
-            options.append(MenuOption("section", "Create provider"))
+        if state.variant_providers and state.mode not in {"variants", "first-run-setup"}:
+            options.append(MenuOption("section", "Create setup provider"))
         for index, provider in enumerate(state.variant_providers):
             marker = "*" if index == state.variant_provider_index else " "
             options.append(MenuOption(
@@ -140,7 +231,7 @@ def variant_options(state):
             ))
         return options
     if state.variant_step == 1:
-        name = state.variant_name or "(type a variant name)"
+        name = state.variant_name or "(type a setup name)"
         return [
             MenuOption("variant-name", f"Name: {name}"),
             MenuOption("variant-name-continue", "Continue to credentials"),
@@ -156,6 +247,11 @@ def variant_options(state):
         ]
     if state.variant_step == 3:
         provider = selected_variant_provider(state)
+        if provider and not provider.get("requiresModelMapping"):
+            return [
+                MenuOption("variant-models-default", "Using provider default models"),
+                MenuOption("variant-models-continue", "Continue to tweaks"),
+            ]
         options = []
         for key, label in VARIANT_MODEL_FIELDS:
             value = variant_model_display_value(state, provider, key)
@@ -165,15 +261,20 @@ def variant_options(state):
         return options
     if state.variant_step == 4:
         options = []
-        for tweak_id in CURATED_TWEAK_IDS:
+        tweak_ids = list(DEFAULT_TWEAK_IDS) if state.tweak_filter == "recommended" else list(CURATED_TWEAK_IDS)
+        for tweak_id in tweak_ids:
             marker = "[x]" if tweak_id in state.selected_variant_tweaks else "[ ]"
-            options.append(MenuOption("variant-tweak", f"{marker} {tweak_id}", tweak_id))
+            options.append(MenuOption("variant-tweak", f"{marker} {_tweak_display_name(tweak_id)}  ({tweak_id})", tweak_id))
+        if state.tweak_filter == "recommended":
+            options.append(MenuOption("variant-tweak-view", "Show advanced tweaks", "all"))
+        else:
+            options.append(MenuOption("variant-tweak-view", "Show recommended tweaks", "recommended"))
         options.append(MenuOption("variant-tweaks-continue", "Continue to review"))
         return options
     return [
-        MenuOption("variant-create", "Create variant"),
+        MenuOption("variant-create", "Create setup"),
         MenuOption("variant-review-back", "Back to tweaks"),
-        MenuOption("variant-reset", "Reset variant wizard"),
+        MenuOption("variant-reset", "Reset setup wizard"),
     ]
 
 
@@ -200,6 +301,13 @@ def variant_model_display_value(state, provider, key):
     if not provider:
         return ""
     return str(provider.get("models", {}).get(key) or "")
+
+
+def _tweak_display_name(tweak_id):
+    patch = PATCH_REGISTRY.get(tweak_id)
+    if patch is not None:
+        return patch.name
+    return tweak_id.replace("-", " ").title()
 
 
 # -- Selection helpers --------------------------------------------------------
@@ -350,7 +458,7 @@ def dashboard_source_label(state):
 
 
 def variant_title(state):
-    return f"Variants: {VARIANT_STEPS[state.variant_step]}"
+    return f"Create setup: {VARIANT_STEPS[state.variant_step]}"
 
 
 def variant_steps(state):
@@ -362,7 +470,7 @@ def variant_steps(state):
             labels.append(f"{step}*")
         else:
             labels.append(step)
-    return "Variant steps: " + " > ".join(labels)
+    return "Setup steps: " + " > ".join(labels)
 
 
 def variant_summary(state):
@@ -384,7 +492,7 @@ def variant_summary(state):
 def tweaks_source_options(state):
     options = []
     if not state.variants:
-        options.append(MenuOption("section", "No variants found - create one in the Variants tab first"))
+        options.append(MenuOption("section", "No setups found - create one first"))
         return options
     for variant in state.variants:
         manifest = variant.manifest or {}
@@ -403,10 +511,11 @@ def tweaks_edit_options(state):
     via `tweaks_edit_groups()` for rendering, not as MenuOption entries.
     """
     options = []
-    for group, patches in patches_grouped().items():
+    for group, patches in _filtered_patches_grouped(state):
         for patch in patches:
             marker = "[x]" if patch.id in state.tweaks_pending else "[ ]"
-            label = f"{marker} {patch.name}  ({patch.id})"
+            status = tweak_status(state, patch.id)
+            label = f"{marker} {patch.name}  ({patch.id})  {status['label']}"
             options.append(MenuOption("tweak-toggle", label, patch.id))
     return options
 
@@ -417,7 +526,7 @@ def tweaks_edit_groups(state):
     The renderer walks options in order and inserts a group header before the
     first patch belonging to each new group.
     """
-    return [(group, [patch.id for patch in patches]) for group, patches in patches_grouped().items()]
+    return [(group, [patch.id for patch in patches]) for group, patches in _filtered_patches_grouped(state)]
 
 
 def selected_tweaks_edit_option(state):
@@ -434,6 +543,79 @@ def selected_tweaks_edit_patch(state):
     if option is None:
         return None
     return PATCH_REGISTRY.get(option.value)
+
+
+def selected_setup_version(state):
+    variant = selected_setup_variant(state)
+    if variant is None:
+        return None
+    return ((variant.manifest or {}).get("source") or {}).get("version")
+
+
+def tweak_status(state, tweak_id):
+    if tweak_id in ENV_TWEAK_IDS:
+        return {"label": "env-backed", "selectable": True, "reason": "Sets environment only."}
+    patch = PATCH_REGISTRY.get(tweak_id)
+    if patch is None:
+        return {"label": "unknown", "selectable": False, "reason": "Tweak is not registered."}
+    version = selected_setup_version(state)
+    if not version or version == "latest":
+        if patch.id in DEFAULT_TWEAK_IDS:
+            return {"label": "ready", "selectable": True, "reason": "Version is not pinned yet."}
+        return {"label": "advanced", "selectable": True, "reason": "Version is not pinned yet."}
+    if version in patch.versions_blacklisted:
+        return {
+            "label": "blocked: blacklisted version",
+            "selectable": False,
+            "reason": f"Claude Code {version} is blacklisted for this tweak.",
+        }
+    try:
+        supported = version_in_range(version, patch.versions_supported)
+    except SemverRangeError as exc:
+        return {"label": "unsupported", "selectable": False, "reason": str(exc)}
+    if not supported:
+        return {
+            "label": f"unsupported for Claude Code {version}",
+            "selectable": False,
+            "reason": f"Supported range: {patch.versions_supported}",
+        }
+    if patch.id in DEFAULT_TWEAK_IDS:
+        return {"label": "ready", "selectable": True, "reason": "Recommended setup tweak."}
+    return {"label": "advanced", "selectable": True, "reason": "Advanced tweak. Review before enabling."}
+
+
+def tweak_diff(state):
+    pending = set(state.tweaks_pending or [])
+    baseline = set(state.tweaks_baseline or ())
+    return sorted(pending - baseline), sorted(baseline - pending)
+
+
+def unsupported_pending_tweaks(state):
+    return [
+        tweak_id for tweak_id in sorted(set(state.tweaks_pending or []))
+        if not tweak_status(state, tweak_id)["selectable"]
+    ]
+
+
+def _filtered_patches_grouped(state):
+    grouped = []
+    recommended = set(DEFAULT_TWEAK_IDS) | set(state.tweaks_baseline or ()) | set(state.tweaks_pending or [])
+    for group, patches in patches_grouped().items():
+        filtered = []
+        for patch in patches:
+            status = tweak_status(state, patch.id)
+            if state.tweak_filter == "recommended" and patch.id not in recommended:
+                continue
+            if state.tweak_filter == "advanced" and patch.id in DEFAULT_TWEAK_IDS:
+                continue
+            if state.tweak_filter == "incompatible" and status["selectable"]:
+                continue
+            if state.tweak_search and state.tweak_search.lower() not in f"{patch.id} {patch.name}".lower():
+                continue
+            filtered.append(patch)
+        if filtered:
+            grouped.append((group, filtered))
+    return grouped
 
 
 def selected_tweaks_source_variant_id(state):

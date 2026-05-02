@@ -21,6 +21,7 @@ def reset_variant(state):
     state.variant_credential_env = ""
     state.variant_model_overrides = {}
     state.selected_variant_tweaks = list(DEFAULT_TWEAK_IDS)
+    state.tweak_filter = "recommended"
 
 
 def set_variant_provider_defaults(state, provider):

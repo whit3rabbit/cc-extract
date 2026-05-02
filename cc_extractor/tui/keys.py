@@ -24,7 +24,7 @@ def dashboard_backspace(state) -> bool:
 
 
 def variant_accepts_text(state) -> bool:
-    if state.mode != "variants":
+    if state.mode not in {"variants", "first-run-setup"}:
         return False
     option = selected_variant_option(state)
     return option is not None and option.kind in {

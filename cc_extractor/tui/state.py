@@ -55,9 +55,18 @@ class TuiState:
     variant_credential_env: str = ""
     variant_model_overrides: Dict[str, str] = field(default_factory=dict)
     selected_variant_tweaks: List[str] = field(default_factory=lambda: list(DEFAULT_TWEAK_IDS))
+    selected_setup_id: Optional[str] = None
+    setup_health: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    delete_confirm_text: str = ""
+    setup_upgrade_target: str = "latest"
+    last_action_summary: List[str] = field(default_factory=list)
     tweaks_variant_id: Optional[str] = None
     tweaks_baseline: Tuple[str, ...] = ()
     tweaks_pending: List[str] = field(default_factory=list)
+    tweak_filter: str = "recommended"
+    tweak_search: str = ""
+    tweak_apply_preview: bool = False
+    last_tweak_result: Optional[Dict[str, Any]] = None
 
     def refresh(self):
         self.theme_id = normalize_theme_id(self.theme_id)
@@ -75,10 +84,23 @@ class TuiState:
             f"Native: {len(self.native_artifacts)}  "
             f"NPM: {npm_count}  "
             f"Extractions: {extraction_count}  "
-            f"Patch packages: {len(self.patch_packages)}  "
+            f"Patch bundles: {len(self.patch_packages)}  "
             f"Profiles: {len(self.dashboard_tweak_profiles)}  "
-            f"Variants: {len(self.variants)}"
+            f"Setups: {len(self.variants)}"
         )
+        setup_ids = {variant.variant_id for variant in self.variants}
+        self.setup_health = {
+            setup_id: summary
+            for setup_id, summary in self.setup_health.items()
+            if setup_id in setup_ids
+        }
+        if self.selected_setup_id not in setup_ids:
+            self.selected_setup_id = self.variants[0].variant_id if self.variants else None
+        if self.tweaks_variant_id not in setup_ids and self.mode not in {"tweaks-edit", "tweak-editor"}:
+            self.tweaks_variant_id = None
+            self.tweaks_baseline = ()
+            self.tweaks_pending = []
+            self.tweak_apply_preview = False
         self.selected_patch_indexes = [
             index for index in self.selected_patch_indexes
             if 0 <= index < len(self.patch_packages)
@@ -101,19 +123,31 @@ class TuiState:
 
     def item_count(self):
         # Local import avoids a circular module-load on package init.
-        from .options import dashboard_options, tweaks_edit_options, variant_options
+        from .options import (
+            dashboard_options,
+            setup_detail_options,
+            setup_manager_options,
+            tweaks_edit_options,
+            variant_options,
+        )
 
+        if self.mode == "setup-manager":
+            return len(setup_manager_options(self))
+        if self.mode == "setup-detail":
+            return len(setup_detail_options(self))
+        if self.mode in {"loading", "upgrade-preview", "delete-confirm", "health-result", "logs", "error"}:
+            return 1
         if self.mode == "dashboard":
             return len(dashboard_options(self))
         if self.mode in {"inspect", "extract", "patch-source"}:
             return len(self.native_artifacts)
         if self.mode == "patch-package":
             return len(self.patch_packages)
-        if self.mode == "variants":
+        if self.mode in {"variants", "first-run-setup"}:
             return len(variant_options(self))
         if self.mode == "tweaks-source":
             return len(self.variants)
-        if self.mode == "tweaks-edit":
+        if self.mode in {"tweaks-edit", "tweak-editor"}:
             return len(tweaks_edit_options(self))
         return 1
 
