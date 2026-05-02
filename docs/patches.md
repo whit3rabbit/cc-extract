@@ -20,7 +20,8 @@ patch lives in `cc_extractor/patches/<id>.py` and is registered in
 8. Run `pytest -q tests/patches/test_<id>.py` until green.
 
 The TUI does not have a separate patch registry. The setup wizard Tweaks step
-auto-populates from `CURATED_TWEAK_IDS`. The Dashboard Patches step
+auto-populates from `CURATED_TWEAK_IDS`. The two-pane Tweaks editor uses the
+same curated IDs, including env-backed tweaks. The Dashboard Patches step
 auto-populates from `DASHBOARD_TWEAK_IDS`, which is derived from curated IDs
 minus dashboard exclusions and filtered against `_registry.REGISTRY`.
 

@@ -6,6 +6,7 @@ call any externally-monkey-patched function.
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from .._utils import version_sort_key
 from ..patches._registry import REGISTRY as PATCH_REGISTRY, patches_grouped
@@ -21,6 +22,24 @@ from ._const import (
     VARIANT_MODEL_FIELDS,
     VARIANT_STEPS,
 )
+
+ENV_TWEAK_META = {
+    "context-limit": (
+        "Context limit",
+        "environment",
+        "Sets CLAUDE_CODE_CONTEXT_LIMIT and disables automatic compaction.",
+    ),
+    "file-read-limit": (
+        "File read limit",
+        "environment",
+        "Sets CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS.",
+    ),
+    "subagent-model": (
+        "Subagent model",
+        "environment",
+        "Sets CLAUDE_CODE_SUBAGENT_MODEL.",
+    ),
+}
 
 
 # -- Dashboard options --------------------------------------------------------
@@ -407,6 +426,8 @@ def _tweak_display_name(tweak_id):
     patch = PATCH_REGISTRY.get(tweak_id)
     if patch is not None:
         return patch.name
+    if tweak_id in ENV_TWEAK_META:
+        return ENV_TWEAK_META[tweak_id][0]
     return tweak_id.replace("-", " ").title()
 
 
@@ -605,18 +626,18 @@ def tweaks_source_options(state):
 
 
 def tweaks_edit_options(state):
-    """Patches grouped by category. Each item is a togglable patch row.
+    """Curated tweaks grouped by category. Each item is a togglable row.
 
     `selected_index` walks only the togglable rows; group headers are returned
     via `tweaks_edit_groups()` for rendering, not as MenuOption entries.
     """
     options = []
-    for group, patches in _filtered_patches_grouped(state):
-        for patch in patches:
-            marker = "[x]" if patch.id in state.tweaks_pending else "[ ]"
-            status = tweak_status(state, patch.id)
-            label = f"{marker} {patch.name}  ({patch.id})  {status['label']}"
-            options.append(MenuOption("tweak-toggle", label, patch.id))
+    for group, tweaks in _filtered_patches_grouped(state):
+        for tweak in tweaks:
+            marker = "[x]" if tweak.id in state.tweaks_pending else "[ ]"
+            status = tweak_status(state, tweak.id)
+            label = f"{marker} {tweak.name}  ({tweak.id})  {status['label']}"
+            options.append(MenuOption("tweak-toggle", label, tweak.id))
     return options
 
 
@@ -638,11 +659,11 @@ def selected_tweaks_edit_option(state):
 
 
 def selected_tweaks_edit_patch(state):
-    """Return the Patch object currently selected in tweaks-edit mode, or None."""
+    """Return the Patch-like object currently selected in tweaks-edit mode, or None."""
     option = selected_tweaks_edit_option(state)
     if option is None:
         return None
-    return PATCH_REGISTRY.get(option.value)
+    return _tweak_meta(str(option.value))
 
 
 def tweak_control_summary(state):
@@ -714,23 +735,61 @@ def unsupported_pending_tweaks(state):
 def _filtered_patches_grouped(state):
     grouped = []
     recommended = set(DEFAULT_TWEAK_IDS) | set(state.tweaks_baseline or ()) | set(state.tweaks_pending or [])
+    curated = set(CURATED_TWEAK_IDS)
     for group, patches in patches_grouped().items():
         filtered = []
         for patch in patches:
-            status = tweak_status(state, patch.id)
-            if state.tweak_filter == "recommended" and patch.id not in recommended:
+            if patch.id not in curated:
                 continue
-            if state.tweak_filter == "advanced" and patch.id in DEFAULT_TWEAK_IDS:
-                continue
-            if state.tweak_filter == "incompatible" and status["selectable"]:
-                continue
-            search_text = f"{patch.id} {patch.name} {patch.group} {patch.description}".lower()
-            if state.tweak_search and state.tweak_search.lower() not in search_text:
+            if not _tweak_passes_filter(state, patch.id, recommended):
                 continue
             filtered.append(patch)
         if filtered:
             grouped.append((group, filtered))
+    env_filtered = [
+        _tweak_meta(tweak_id)
+        for tweak_id in ENV_TWEAK_IDS
+        if tweak_id in curated and _tweak_passes_filter(state, tweak_id, recommended)
+    ]
+    if env_filtered:
+        grouped.append(("environment", env_filtered))
     return grouped
+
+
+def _tweak_meta(tweak_id):
+    patch = PATCH_REGISTRY.get(tweak_id)
+    if patch is not None:
+        return patch
+    if tweak_id not in ENV_TWEAK_META:
+        return None
+    name, group, description = ENV_TWEAK_META[tweak_id]
+    return SimpleNamespace(
+        id=tweak_id,
+        name=name,
+        group=group,
+        versions_supported="env-backed",
+        versions_tested=("env-backed",),
+        versions_blacklisted=(),
+        on_miss="skip",
+        description=description,
+    )
+
+
+def _tweak_passes_filter(state, tweak_id, recommended):
+    status = tweak_status(state, tweak_id)
+    if state.tweak_filter == "recommended" and tweak_id not in recommended:
+        return False
+    if state.tweak_filter == "advanced" and tweak_id in DEFAULT_TWEAK_IDS:
+        return False
+    if state.tweak_filter == "incompatible" and status["selectable"]:
+        return False
+    meta = _tweak_meta(tweak_id)
+    if meta is None:
+        return False
+    search_text = f"{meta.id} {meta.name} {meta.group} {meta.description}".lower()
+    if state.tweak_search and state.tweak_search.lower() not in search_text:
+        return False
+    return True
 
 
 def selected_tweaks_source_variant_id(state):

@@ -707,6 +707,21 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     assert state.mode == "health-result"
 
 
+def test_variants_wizard_all_tweaks_lists_latest_curated_ports():
+    state = tui.TuiState(mode="variants", variant_step=4, tweak_filter="all")
+
+    labels = [option.label for option in tui._variant_options(state)]
+    text = "\n".join(labels)
+
+    assert "agents-md" in text
+    assert "session-memory" in text
+    assert "opusplan1m" in text
+    assert "mcp-non-blocking" in text
+    assert "mcp-batch-size" in text
+    assert "token-count-rounding" in text
+    assert "statusline-update-throttle" in text
+
+
 def test_create_failure_summary_reports_verified_path_state(monkeypatch, tmp_path):
     root = tmp_path / ".cc-extractor"
     monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
@@ -1460,6 +1475,44 @@ def test_tweaks_search_no_results_message():
 
     assert tui.options.tweaks_edit_options(state) == []
     assert "No tweaks match current search/filter." in tui._screen_text(state)
+
+
+def test_tweaks_editor_advanced_view_uses_curated_tweaks_and_env_backed():
+    variant = _variant(tweaks=["themes"])
+    state = tui.TuiState(mode="tweaks-source", variants=[variant], tweak_filter="advanced")
+    tui._activate(state)
+
+    values = [option.value for option in tui.options.tweaks_edit_options(state)]
+
+    assert "agents-md" in values
+    assert "session-memory" in values
+    assert "opusplan1m" in values
+    assert "mcp-non-blocking" in values
+    assert "mcp-batch-size" in values
+    assert "token-count-rounding" in values
+    assert "statusline-update-throttle" in values
+    assert "context-limit" in values
+    assert "file-read-limit" in values
+    assert "subagent-model" in values
+
+
+def test_tweaks_editor_env_backed_detail_and_toggle():
+    variant = _variant(tweaks=["themes"])
+    state = tui.TuiState(mode="tweaks-source", variants=[variant], tweak_filter="advanced")
+    tui._activate(state)
+    state.tweak_search = "context-limit"
+
+    options = tui.options.tweaks_edit_options(state)
+    assert [option.value for option in options] == ["context-limit"]
+
+    text = tui._screen_text(state, height=40)
+    assert "Context limit" in text
+    assert "Group: environment" in text
+    assert "Status: env-backed" in text
+    assert "CLAUDE_CODE_CONTEXT_LIMIT" in text
+
+    tui._toggle_tweak(state)
+    assert "context-limit" in state.tweaks_pending
 
 
 def test_tweaks_toggle_updates_pending():

@@ -58,6 +58,8 @@ patch test.
 
 - There is no separate TUI registry for regex tweaks.
 - The setup wizard Tweaks step reads `CURATED_TWEAK_IDS`.
+- The two-pane Tweaks editor reads `CURATED_TWEAK_IDS` too, including
+  env-backed curated tweaks.
 - The Dashboard Patches step reads `DASHBOARD_TWEAK_IDS`, which is generated
   from `CURATED_TWEAK_IDS` minus `DASHBOARD_EXCLUDED_TWEAK_IDS`, then filtered
   against `_registry.REGISTRY`.

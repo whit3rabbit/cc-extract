@@ -124,6 +124,10 @@ The setup wizard's Tweaks step auto-populates from `CURATED_TWEAK_IDS` in
 `cc_extractor/variants/tweaks.py`. Add the patch ID there when users should be
 able to select it for variants.
 
+The two-pane Tweaks editor also uses `CURATED_TWEAK_IDS`, filtered by the
+current view and setup version. Env-backed curated tweaks are shown there with
+environment metadata even though they are not registered Python patches.
+
 The Dashboard Patches step auto-populates from `DASHBOARD_TWEAK_IDS`, which is
 derived from `CURATED_TWEAK_IDS` minus `DASHBOARD_EXCLUDED_TWEAK_IDS`. The TUI
 then filters that list against `cc_extractor.patches._registry.REGISTRY`, so a
