@@ -29,8 +29,10 @@ from .options import (
     setup_manager_control_summary,
     setup_manager_empty_label,
     setup_manager_options,
+    tweak_control_summary,
     tweak_diff,
     tweak_status,
+    tweaks_edit_empty_label,
     tweaks_edit_groups,
     tweaks_edit_options,
     tweaks_source_options,
@@ -147,7 +149,11 @@ def current_labels(state):
     if state.mode in {"tweaks-edit", "tweak-editor"}:
         if state.tweak_apply_preview:
             return "Tweak rebuild preview", tweak_preview_labels(state)
-        labels = _tweaks_edit_labels(state)
+        labels = [tweak_control_summary(state)]
+        labels.extend(_tweaks_edit_labels(state))
+        empty_label = tweaks_edit_empty_label(state)
+        if empty_label:
+            labels.append(empty_label)
         title = f"Edit tweaks: {state.tweaks_variant_id or 'no setup'}"
         return title, labels
     return "Status", []
@@ -362,7 +368,7 @@ def empty_text(state):
     if state.mode == "tweaks-source":
         return "No setups found - create one first."
     if state.mode in {"tweaks-edit", "tweak-editor"}:
-        return "No tweaks registered."
+        return "No tweaks match current search/filter."
     return "Ready."
 
 
@@ -375,7 +381,7 @@ def selected_label_index(state):
         return 0
     if state.mode in {"tweaks-edit", "tweak-editor"}:
         target = state.selected_index
-        label_index = 0
+        label_index = 1
         seen = 0
         for _, patch_ids in tweaks_edit_groups(state):
             label_index += 1  # group header
@@ -511,7 +517,10 @@ def context_line(state):
         return f"Tweaks | Setups {len(state.variants)}"
     if state.mode in {"tweaks-edit", "tweak-editor"}:
         pending = len(set(state.tweaks_pending) ^ set(state.tweaks_baseline))
-        return f"Home > {state.tweaks_variant_id or 'setup'} > Edit tweaks | Pending changes {pending}"
+        return (
+            f"Home > {state.tweaks_variant_id or 'setup'} > Edit tweaks | "
+            f"{tweak_control_summary(state)} | Pending changes {pending}"
+        )
     if state.mode in {"inspect", "extract", "patch-source"}:
         return f"{active_tab(state)} | Native artifacts {len(state.native_artifacts)}"
     return active_tab(state)
@@ -530,6 +539,8 @@ def context_hint(state):
         return "Press y to create this setup or n to return to review."
     if state.mode in {"tweaks-edit", "tweak-editor"} and state.tweak_apply_preview:
         return "Review the diff, then press y to rebuild or n to cancel."
+    if state.mode in {"tweaks-edit", "tweak-editor"} and getattr(state, "tweak_search_active", False):
+        return "Type to search tweaks. Enter or Esc keeps the current filter."
     if state.mode == "dashboard" and state.dashboard_step == 2:
         return "Profile names: select Name, then type or Backspace."
     if state.mode in {"variants", "first-run-setup"}:
@@ -614,7 +625,7 @@ def key_line(state):
     if state.mode in {"tweaks-edit", "tweak-editor"}:
         if state.tweak_apply_preview:
             return "Keys: Y proceed | N/Esc cancel"
-        return "Keys: Space toggle | A apply | D discard | V view | Esc back"
+        return "Keys: / search | Space toggle | A apply | D discard | V view | Esc back"
     return "Keys: Tabs Left/Right/Tab | Move Up/Down | Enter run | Theme T | Quit Q"
 
 

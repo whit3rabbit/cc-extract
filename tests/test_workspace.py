@@ -76,6 +76,40 @@ def test_tui_settings_roundtrip_uses_workspace_json(tmp_path):
     assert json.loads(settings_path.read_text(encoding="utf-8")) == saved
 
 
+def test_tui_settings_roundtrip_includes_setup_list(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    setup_list = {
+        "searchText": "openrouter",
+        "providerFilter": "openrouter",
+        "sortKey": "version",
+    }
+
+    saved = save_tui_settings({"themeId": "high-contrast", "setupList": setup_list}, root=root)
+
+    assert saved == {
+        "schemaVersion": 1,
+        "themeId": "high-contrast",
+        "setupList": setup_list,
+    }
+    assert load_tui_settings(root)["setupList"] == setup_list
+
+
+def test_tui_settings_preserves_theme_when_saving_setup_list(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    save_tui_settings({"themeId": "unicorn"}, root=root)
+
+    saved = save_tui_settings({
+        "setupList": {
+            "searchText": "deepseek",
+            "providerFilter": "deepseek",
+            "sortKey": "provider",
+        },
+    }, root=root)
+
+    assert saved["themeId"] == "unicorn"
+    assert load_tui_settings(root)["themeId"] == "unicorn"
+
+
 def test_tui_settings_invalid_schema_falls_back_to_empty(tmp_path):
     root = tmp_path / ".cc-extractor"
     root.mkdir()
@@ -85,6 +119,12 @@ def test_tui_settings_invalid_schema_falls_back_to_empty(tmp_path):
     assert load_tui_settings(root) == {}
 
     settings_path.write_text(json.dumps({"schemaVersion": 1, "themeId": 42}), encoding="utf-8")
+    assert load_tui_settings(root) == {}
+
+    settings_path.write_text(json.dumps({
+        "schemaVersion": 1,
+        "setupList": {"searchText": 42, "providerFilter": "all", "sortKey": "name"},
+    }), encoding="utf-8")
     assert load_tui_settings(root) == {}
 
 

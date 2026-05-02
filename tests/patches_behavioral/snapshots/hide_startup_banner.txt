@@ -1,0 +1,2 @@
+welcome_banner=absent
+theme_selector=present

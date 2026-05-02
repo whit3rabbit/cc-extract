@@ -66,6 +66,10 @@ def go_back(state) -> None:
         else:
             set_mode(state, "setup-manager")
     elif state.mode in {"tweaks-edit", "tweak-editor"}:
+        if getattr(state, "tweak_search_active", False):
+            state.tweak_search_active = False
+            state.message = "Tweak search kept."
+            return
         if state.tweak_apply_preview:
             state.tweak_apply_preview = False
             state.message = "Tweak rebuild cancelled."
@@ -76,6 +80,8 @@ def go_back(state) -> None:
             state.tweaks_variant_id = None
             state.tweaks_pending = []
             state.tweaks_baseline = ()
+            state.tweak_search = ""
+            state.tweak_search_active = False
             set_mode(state, "setup-detail" if state.selected_setup_id else "setup-manager")
 
 
@@ -156,6 +162,8 @@ def enter_tweaks_for_variant(state, variant_id: str) -> None:
     state.tweaks_baseline = baseline
     state.tweaks_pending = list(baseline)
     state.selected_setup_id = variant_id
+    state.tweak_search = ""
+    state.tweak_search_active = False
     state.tweak_apply_preview = False
     state.message = ""
     set_mode(state, "tweak-editor")

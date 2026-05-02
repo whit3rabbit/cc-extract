@@ -114,21 +114,22 @@ def test_cycle_theme_saves_workspace_setting(tmp_path, monkeypatch):
     state = tui.TuiState()
 
     seen = []
-    for _ in range(4):
+    for _ in range(5):
         tui._cycle_theme(state)
         seen.append(state.theme_id)
 
-    assert seen == ["unicorn", "dark", "light", "hacker-bbs"]
+    assert seen == ["unicorn", "dark", "light", "high-contrast", "hacker-bbs"]
     assert load_tui_settings(root)["themeId"] == "hacker-bbs"
     assert state.message == "Theme saved: Hacker BBS"
 
 
 def test_load_saved_theme_id_uses_workspace_setting(tmp_path, monkeypatch):
     root = tmp_path / ".cc-extractor"
-    save_tui_settings({"themeId": "dark"}, root=root)
+    save_tui_settings({"themeId": "high-contrast"}, root=root)
     monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
 
-    assert tui._load_saved_theme_id() == "dark"
+    assert tui._load_saved_theme_id() == "high-contrast"
+    assert tui._theme_name("high-contrast") == "High Contrast"
 
 
 def test_load_saved_theme_id_falls_back_for_unknown_theme(tmp_path, monkeypatch):
@@ -807,7 +808,9 @@ def test_setup_manager_search_filters_rows_and_keeps_create_action():
     assert "No setups match current search/filter." in tui._screen_text(state)
 
 
-def test_setup_manager_search_input_does_not_trigger_global_hotkeys():
+def test_setup_manager_search_input_does_not_trigger_global_hotkeys(tmp_path, monkeypatch):
+    root = tmp_path / ".cc-extractor"
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
     state = tui.TuiState(mode="setup-manager", variants=[_variant("deepseek-main")])
 
     assert tui._handle_char_key(state, "/") is True
@@ -816,13 +819,53 @@ def test_setup_manager_search_input_does_not_trigger_global_hotkeys():
 
     assert state.setup_search_text == "q"
     assert state.setup_search_active is True
+    assert load_tui_settings(root)["setupList"]["searchText"] == "q"
 
     assert tui._activate(state) is True
     assert state.setup_search_active is False
     assert state.mode == "setup-manager"
 
 
-def test_setup_manager_provider_filter_cycles_and_refresh_resets(monkeypatch):
+def test_setup_manager_loads_and_saves_setup_list_preferences(tmp_path, monkeypatch):
+    root = tmp_path / ".cc-extractor"
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    save_tui_settings({
+        "themeId": "dark",
+        "setupList": {
+            "searchText": "openrouter",
+            "providerFilter": "openrouter",
+            "sortKey": "version",
+        },
+    }, root=root)
+    state = tui.TuiState(theme_id=tui._load_saved_theme_id())
+
+    tui._load_saved_setup_list_preferences(state)
+
+    assert state.theme_id == "dark"
+    assert state.setup_search_text == "openrouter"
+    assert state.setup_provider_filter == "openrouter"
+    assert state.setup_sort_key == "version"
+
+    deepseek = _variant("deepseek-main")
+    deepseek.manifest["provider"]["key"] = "deepseek"
+    openrouter = _variant("openrouter-dev")
+    openrouter.manifest["provider"]["key"] = "openrouter"
+    state.mode = "setup-manager"
+    state.variants = [deepseek, openrouter]
+    state.setup_search_text = ""
+    state.setup_provider_filter = "all"
+    tui._handle_char_key(state, "p")
+    tui._handle_char_key(state, "s")
+
+    saved = load_tui_settings(root)
+    assert saved["themeId"] == "dark"
+    assert saved["setupList"]["providerFilter"] == "deepseek"
+    assert saved["setupList"]["sortKey"] == "name"
+
+
+def test_setup_manager_provider_filter_cycles_and_refresh_resets(monkeypatch, tmp_path):
+    root = tmp_path / ".cc-extractor"
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
     from cc_extractor.tui import state as state_module
 
     deepseek = _variant("deepseek-main")
@@ -1163,6 +1206,43 @@ def test_tweaks_select_variant_enters_edit_mode():
     assert state.tweaks_variant_id == variant.variant_id
     assert state.tweaks_baseline == ("themes", "hide-startup-banner")
     assert state.tweaks_pending == ["themes", "hide-startup-banner"]
+
+
+def test_tweaks_search_filters_and_keeps_filter_on_enter_and_escape():
+    variant = _variant(tweaks=["themes", "hide-startup-banner"])
+    state = tui.TuiState(mode="tweaks-source", variants=[variant])
+    tui._activate(state)
+
+    assert tui._handle_char_key(state, "/") is True
+    assert state.tweak_search_active is True
+    for char in "startup-banner":
+        assert tui._handle_char_key(state, char) is True
+
+    options = tui.options.tweaks_edit_options(state)
+    assert [option.value for option in options] == ["hide-startup-banner"]
+    screen = tui._screen_text(state)
+    assert "Search: startup-banner (typing)" in screen
+
+    assert tui._handle_backspace_key(state) is True
+    assert state.tweak_search == "startup-banne"
+    assert tui._activate(state) is True
+    assert state.tweak_search_active is False
+    assert "Tweak search kept: startup-banne" == state.message
+
+    tui._handle_char_key(state, "/")
+    tui._go_back(state)
+    assert state.tweak_search_active is False
+    assert state.tweak_search == "startup-banne"
+
+
+def test_tweaks_search_no_results_message():
+    variant = _variant(tweaks=["themes"])
+    state = tui.TuiState(mode="tweaks-source", variants=[variant])
+    tui._activate(state)
+    state.tweak_search = "no-such-tweak"
+
+    assert tui.options.tweaks_edit_options(state) == []
+    assert "No tweaks match current search/filter." in tui._screen_text(state)
 
 
 def test_tweaks_toggle_updates_pending():

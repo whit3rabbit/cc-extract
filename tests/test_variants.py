@@ -26,6 +26,7 @@ ENTRY_JS = "\n".join(
         'function pickTheme(A){switch(A){case"light":return LX9;case"dark":return CX9;default:return CX9}}',
         'let WEBFETCH=`Fetches URLs.\\n- For GitHub URLs, prefer using the gh CLI via Bash instead (e.g., gh pr view, gh issue view, gh api).`;',
         'const version=`${pkg.VERSION} (Claude Code)`;',
+        ',R.createElement(B,{isBeforeFirstMessage:!1}),',
     ]
 )
 
@@ -160,6 +161,7 @@ def test_macos_grow_skip_uses_unpacked_node_runtime(tmp_path, monkeypatch):
         name="Mac Zai",
         provider_key="zai",
         credential_env="Z_AI_API_KEY",
+        tweaks=["themes", "prompt-overlays"],
         root=root,
         source_artifact=artifact,
         force=True,
@@ -171,7 +173,7 @@ def test_macos_grow_skip_uses_unpacked_node_runtime(tmp_path, monkeypatch):
 
     assert manifest["runtime"] == "node"
     assert manifest["paths"]["unpackedDir"] == str(root / "variants" / "mac-zai" / "unpacked")
-    assert entry_path.read_text(encoding="latin1") == 'const version="2.1.123 (Claude Code, Zai Cloud variant)";'
+    assert entry_path.read_text(encoding="latin1") == 'const version="2.1.123 (Claude Code)";'
     assert unpack_calls[0]["pristine_binary_path"] == str(artifact.path)
     assert "NODE_BIN=\"${NODE:-node}\"" in wrapper
     assert 'exec "$NODE_BIN" "$ENTRY_PATH" "$@"' in wrapper
@@ -179,8 +181,58 @@ def test_macos_grow_skip_uses_unpacked_node_runtime(tmp_path, monkeypatch):
     assert manifest["patchResults"]["appliedTweaks"] == [
         "themes",
         "prompt-overlays",
-        "patches-applied-indication",
     ]
+
+
+def test_macos_regex_tweak_uses_unpacked_node_runtime_not_in_place_binary_patch(tmp_path, monkeypatch):
+    import cc_extractor.variants as variants_module
+
+    root = tmp_path / ".cc-extractor"
+    artifact = write_macho_source_artifact(tmp_path)
+    unpack_calls = []
+
+    def fail_apply_patches(_inputs):
+        raise AssertionError("regex-only tweaks should not use in-place binary patching")
+
+    def fake_unpack_and_patch(**kwargs):
+        unpack_calls.append(kwargs)
+        unpacked_dir = Path(kwargs["unpacked_dir"])
+        entry_path = unpacked_dir / "src" / "cli.js"
+        entry_path.parent.mkdir(parents=True, exist_ok=True)
+        entry_path.write_text(ENTRY_JS, encoding="latin1")
+        (unpacked_dir / "package.json").write_text("{}", encoding="utf-8")
+        (unpacked_dir / "node_modules").mkdir()
+        return SimpleNamespace(
+            entry_path=str(entry_path),
+            patch=SimpleNamespace(
+                theme_replaced=0,
+                prompt_replaced=[],
+                prompt_missing=[],
+            ),
+        )
+
+    monkeypatch.setattr(variants_module, "apply_patches", fail_apply_patches)
+    monkeypatch.setattr(variants_module, "unpack_and_patch", fake_unpack_and_patch)
+
+    result = create_variant(
+        name="Mac Banner",
+        provider_key="ccrouter",
+        tweaks=["hide-startup-banner"],
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+
+    entry_path = Path(result.variant.manifest["paths"]["entryPath"])
+    entry_js = entry_path.read_text(encoding="latin1")
+    stage_names = [stage.name for stage in result.stages]
+
+    assert result.variant.manifest["runtime"] == "node"
+    assert "unpack node runtime" in stage_names
+    assert "patch binary" not in stage_names
+    assert unpack_calls[0]["pristine_binary_path"] == str(artifact.path)
+    assert "isBeforeFirstMessage" not in entry_js
+    assert result.variant.manifest["patchResults"]["appliedTweaks"] == ["hide-startup-banner"]
 
 
 def test_create_variant_build_error_includes_stages(tmp_path, monkeypatch):
@@ -205,6 +257,7 @@ def test_create_variant_build_error_includes_stages(tmp_path, monkeypatch):
             name="Broken Zai",
             provider_key="zai",
             credential_env="Z_AI_API_KEY",
+            tweaks=["themes"],
             root=root,
             source_artifact=artifact,
             force=True,

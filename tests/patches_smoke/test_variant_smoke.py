@@ -41,7 +41,10 @@ def test_variant_boots(version, tmp_path):
         "main.py",
         "variant",
         "create",
+        "--name",
         f"smoke-{version.replace('.', '-')}",
+        "--provider",
+        "ccrouter",
         "--claude-version",
         version,
     ]

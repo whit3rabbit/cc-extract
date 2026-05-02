@@ -644,6 +644,20 @@ def selected_tweaks_edit_patch(state):
     return PATCH_REGISTRY.get(option.value)
 
 
+def tweak_control_summary(state):
+    search = getattr(state, "tweak_search", "") or ""
+    search_label = search if search else "none"
+    if getattr(state, "tweak_search_active", False):
+        search_label = f"{search_label} (typing)"
+    return f"View: {getattr(state, 'tweak_filter', 'recommended') or 'recommended'} | Search: {search_label}"
+
+
+def tweaks_edit_empty_label(state):
+    if len(tweaks_edit_options(state)) == 0:
+        return "No tweaks match current search/filter."
+    return ""
+
+
 def selected_setup_version(state):
     variant = selected_setup_variant(state)
     if variant is None:
@@ -709,7 +723,8 @@ def _filtered_patches_grouped(state):
                 continue
             if state.tweak_filter == "incompatible" and status["selectable"]:
                 continue
-            if state.tweak_search and state.tweak_search.lower() not in f"{patch.id} {patch.name}".lower():
+            search_text = f"{patch.id} {patch.name} {patch.group} {patch.description}".lower()
+            if state.tweak_search and state.tweak_search.lower() not in search_text:
                 continue
             filtered.append(patch)
         if filtered:

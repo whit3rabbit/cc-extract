@@ -25,7 +25,10 @@ from ..workspace import (
     scan_patch_packages,
     workspace_root,
 )
-from .tweaks import apply_variant_tweaks
+from .tweaks import ENV_TWEAK_IDS, apply_variant_tweaks
+
+
+IN_PLACE_TWEAK_IDS = {"themes", "prompt-overlays", *ENV_TWEAK_IDS}
 
 
 def resolve_source_version(version: str, root=None) -> str:
@@ -95,9 +98,11 @@ def patch_entry_js(extract_dir: Path, manifest_data: Dict, *, provider_key: str,
 
 
 def can_use_in_place_variant_patch(source_artifact: NativeArtifact, manifest: Dict) -> bool:
+    requested_tweaks = set(manifest.get("tweaks") or [])
     return (
         source_artifact.platform.startswith("darwin")
         and not manifest.get("patches")
+        and requested_tweaks.issubset(IN_PLACE_TWEAK_IDS)
     )
 
 

@@ -24,7 +24,7 @@ SOURCE_VERSION = "version"
 SOURCE_ARTIFACT = "artifact"
 
 DEFAULT_THEME_ID = "hacker-bbs"
-THEME_ORDER = [DEFAULT_THEME_ID, "unicorn", "dark", "light"]
+THEME_ORDER = [DEFAULT_THEME_ID, "unicorn", "dark", "light", "high-contrast"]
 
 
 @dataclass

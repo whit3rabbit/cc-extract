@@ -19,7 +19,7 @@ def _apply(js: str, ctx: PatchContext) -> PatchOutcome:
     for match in re.finditer(r"(function ([$\w]+)\(\)\{)(?=[^}]{0,500}Apple_Terminal)", js):
         body_start = match.end()
         chunk = js[body_start:body_start + 5000]
-        if "Welcome to Claude Code" in chunk or "Apple_Terminal" in chunk:
+        if "Welcome to Claude Code" in chunk:
             # Find the closing brace of this function
             brace_depth = 1
             pos = body_start

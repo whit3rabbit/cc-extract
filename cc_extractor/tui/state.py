@@ -71,6 +71,7 @@ class TuiState:
     tweaks_pending: List[str] = field(default_factory=list)
     tweak_filter: str = "recommended"
     tweak_search: str = ""
+    tweak_search_active: bool = False
     tweak_apply_preview: bool = False
     last_tweak_result: Optional[Dict[str, Any]] = None
 
@@ -115,6 +116,7 @@ class TuiState:
             self.tweaks_variant_id = None
             self.tweaks_baseline = ()
             self.tweaks_pending = []
+            self.tweak_search_active = False
             self.tweak_apply_preview = False
         self.selected_patch_indexes = [
             index for index in self.selected_patch_indexes

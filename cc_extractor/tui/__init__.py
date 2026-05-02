@@ -59,6 +59,7 @@ __all__ = [
     "_set_variant_provider_defaults", "_toggle_variant_tweak",
     "_variant_credential_env_for_create", "_variant_model_overrides_for_create",
     "_run_setup_health", "_run_setup_upgrade", "_run_setup_delete", "_route_startup",
+    "_load_saved_setup_list_preferences", "_save_setup_list_preferences",
     "_copy_logs", "_copy_setup_config", "_copy_text_to_clipboard", "_open_help", "_open_logs", "_open_variant_create_preview",
     "_screen_text", "_style", "_render_frame",
     "run_tui",
@@ -241,6 +242,7 @@ def run_tui():
         raise RuntimeError(f"ratatui is unavailable: {exc}") from exc
 
     state = TuiState(theme_id=_load_saved_theme_id())
+    _load_saved_setup_list_preferences(state)
     if _refresh_state(state):
         _route_startup(state)
 
@@ -332,6 +334,31 @@ def _route_startup(state):
         state.message = "No Claude Code setups found."
 
 
+def _load_saved_setup_list_preferences(state):
+    setup_list = load_tui_settings().get("setupList") or {}
+    state.setup_search_text = str(setup_list.get("searchText") or "")
+    state.setup_provider_filter = str(setup_list.get("providerFilter") or "all")
+    sort_key = str(setup_list.get("sortKey") or "name")
+    state.setup_sort_key = sort_key if sort_key in {"name", "provider", "health", "updated", "version"} else "name"
+    state.setup_search_active = False
+
+
+def _save_setup_list_preferences(state):
+    settings = load_tui_settings()
+    settings["themeId"] = settings.get("themeId") or state.theme_id
+    settings["setupList"] = {
+        "searchText": state.setup_search_text,
+        "providerFilter": state.setup_provider_filter,
+        "sortKey": state.setup_sort_key,
+    }
+    try:
+        save_tui_settings(settings)
+        return True
+    except Exception as exc:
+        state.message = f"Setup list preferences changed but save failed: {exc}"
+        return False
+
+
 def _log_lines(output, fallback="No backend output captured."):
     lines = str(output or "").splitlines()
     return lines if lines else [fallback]
@@ -397,6 +424,12 @@ def _handle_backspace_key(state):
         state.setup_search_text = state.setup_search_text[:-1]
         _clamp_setup_manager_selection(state)
         state.message = f"Search: {state.setup_search_text or 'none'}"
+        _save_setup_list_preferences(state)
+        return True
+    if state.mode in {"tweaks-edit", "tweak-editor"} and state.tweak_search_active:
+        state.tweak_search = state.tweak_search[:-1]
+        state.selected_index = state._clamp(state.selected_index, state.item_count())
+        state.message = f"Tweak search: {state.tweak_search or 'none'}"
         return True
     if state.mode == "delete-confirm":
         state.delete_confirm_text = state.delete_confirm_text[:-1]
@@ -430,6 +463,14 @@ def _handle_char_key(state, char):
             state.setup_search_text += char
             _clamp_setup_manager_selection(state)
             state.message = f"Search: {state.setup_search_text}"
+            _save_setup_list_preferences(state)
+        return True
+
+    if state.mode in {"tweaks-edit", "tweak-editor"} and state.tweak_search_active:
+        if char.isprintable() and char not in "\r\n\t":
+            state.tweak_search += char
+            state.selected_index = state._clamp(state.selected_index, state.item_count())
+            state.message = f"Tweak search: {state.tweak_search}"
         return True
 
     lowered = char.lower()
@@ -464,6 +505,10 @@ def _handle_char_key(state, char):
         state.setup_search_active = True
         state.message = "Search setups."
         handled_setup_key = True
+    elif char == "/" and state.mode in {"tweaks-edit", "tweak-editor"}:
+        state.tweak_search_active = True
+        state.message = "Search tweaks."
+        return True
     elif lowered == "p" and state.mode == "setup-manager":
         _cycle_setup_provider_filter(state)
         handled_setup_key = True
@@ -553,6 +598,10 @@ def _activate(state):
     if state.mode == "setup-manager" and state.setup_search_active:
         state.setup_search_active = False
         state.message = f"Search filter kept: {state.setup_search_text or 'none'}"
+        return True
+    if state.mode in {"tweaks-edit", "tweak-editor"} and state.tweak_search_active:
+        state.tweak_search_active = False
+        state.message = f"Tweak search kept: {state.tweak_search or 'none'}"
         return True
     try:
         if state.mode == "setup-manager":
@@ -1101,6 +1150,7 @@ def _cycle_setup_provider_filter(state):
     state.setup_provider_filter = options[(options.index(current) + 1) % len(options)]
     state.selected_index = 0
     state.message = f"Provider filter: {state.setup_provider_filter}"
+    _save_setup_list_preferences(state)
 
 
 def _cycle_setup_sort(state):
@@ -1109,6 +1159,7 @@ def _cycle_setup_sort(state):
     state.setup_sort_key = order[(order.index(current) + 1) % len(order)]
     state.selected_index = 0
     state.message = f"Setup sort: {state.setup_sort_key}"
+    _save_setup_list_preferences(state)
 
 
 def _clamp_setup_manager_selection(state):

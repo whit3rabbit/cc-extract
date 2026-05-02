@@ -60,6 +60,7 @@ from .model import (
 )
 from .tweaks import (
     DEFAULT_TWEAK_IDS,
+    ENV_TWEAK_IDS,
     apply_variant_tweaks,
     env_for_tweaks,
     normalize_tweak_ids,
@@ -75,6 +76,7 @@ from .wrapper import (
 VARIANT_METADATA = "variant.json"
 
 _THEME_PROMPT_TWEAKS = ("themes", "prompt-overlays")
+_IN_PLACE_TWEAKS = (*_THEME_PROMPT_TWEAKS, *ENV_TWEAK_IDS)
 
 
 class _BuildStageRecorder:
@@ -376,6 +378,22 @@ def _build_variant_from_manifest(
         sign_result = runtime_result.sign_result
         runtime = runtime_result.runtime
         entry_path = runtime_result.entry_path
+    elif _should_use_unpacked_node_runtime(source_artifact, manifest):
+        runtime_result = stages.run(
+            "unpack node runtime",
+            lambda: _copy_unpack_node_runtime_variant(
+                source_artifact,
+                output_binary,
+                unpacked_dir,
+                provider_key=manifest["provider"]["key"],
+                tweak_ids=manifest.get("tweaks", []),
+            ),
+            detail=str(unpacked_dir),
+        )
+        tweak_result = runtime_result.tweaks
+        sign_result = runtime_result.sign_result
+        runtime = runtime_result.runtime
+        entry_path = runtime_result.entry_path
     else:
         def rebuild_from_extract():
             with tempfile.TemporaryDirectory(prefix="variant-build-", dir=str(tmp_dir)) as temp_name:
@@ -516,6 +534,41 @@ def _copy_patch_or_unpack_variant_binary(
     return _RuntimePatchResult(
         tweaks=_BinaryTweakResult(applied, skipped, missing),
         sign_result=sign_result,
+    )
+
+
+def _should_use_unpacked_node_runtime(source_artifact: NativeArtifact, manifest: Dict) -> bool:
+    tweak_ids = set(manifest.get("tweaks") or [])
+    return (
+        source_artifact.platform.startswith("darwin")
+        and not manifest.get("patches")
+        and not tweak_ids.issubset(_IN_PLACE_TWEAKS)
+    )
+
+
+def _copy_unpack_node_runtime_variant(
+    source_artifact: NativeArtifact,
+    output_binary: Path,
+    unpacked_dir: Path,
+    *,
+    provider_key: str,
+    tweak_ids: List[str],
+) -> _RuntimePatchResult:
+    output_binary.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_artifact.path, output_binary)
+    if os.name != "nt":
+        os.chmod(output_binary, 0o755)
+
+    config = provider_patch_config(provider_key) if "themes" in tweak_ids else {}
+    overlays = provider_prompt_overlays(provider_key) if "prompt-overlays" in tweak_ids else None
+    return _unpack_node_runtime_variant(
+        source_artifact,
+        output_binary,
+        unpacked_dir,
+        provider_key=provider_key,
+        tweak_ids=tweak_ids,
+        config=config,
+        overlays=overlays,
     )
 
 

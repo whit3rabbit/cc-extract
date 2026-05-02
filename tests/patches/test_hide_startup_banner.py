@@ -11,6 +11,18 @@ def test_synthetic_applies(cli_js_synthetic):
     assert "isBeforeFirstMessage" not in outcome.js or "return null;" in outcome.js
 
 
+def test_realistic_function_anchor_skips_terminal_helper_false_positive():
+    js = (
+        'function abH(){return terminal==="Apple_Terminal"}'
+        + ("x" * 6000)
+        + 'function qDH(){let terminal="Apple_Terminal";return "Welcome to Claude Code"}'
+    )
+    outcome = PATCH.apply(js, PatchContext(claude_version="2.1.123"))
+    assert outcome.status == "applied"
+    assert 'function abH(){return terminal==="Apple_Terminal"}' in outcome.js
+    assert 'function qDH(){return null;}' in outcome.js
+
+
 def test_metadata():
     assert PATCH.id == "hide-startup-banner"
     assert PATCH.group == "ui"
