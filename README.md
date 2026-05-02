@@ -40,17 +40,17 @@ cc-extractor --help                 # show CLI help
 
 ### TUI
 
-The TUI opens to the Dashboard tab by default. Navigate with arrow keys, `Tab`/`Shift-Tab` to switch tabs, `Enter` to activate, `Esc` or `Backspace` to go back.
+The TUI opens to Manage Setup when setups exist. If none exist, it starts the first-run setup wizard. Navigate with arrow keys, `Tab`/`Shift-Tab` to switch tabs, `Enter` to activate, `Esc` or `Backspace` to go back.
 
 **Tabs:**
 
 | Tab | Description |
 |-----|-------------|
+| Manage Setup | Create setups, run a custom Claude wrapper, health-check, upgrade, edit tweaks, delete, search, filter, and sort. |
 | Dashboard | 4-step wizard: pick source, select patches, load or save profiles, review and build. |
 | Inspect | View Bun bundle metadata for a selected binary. |
 | Extract | Extract or unpack a binary to disk. |
 | Patch | Apply patch packages to a source binary. |
-| Variants | 6-step wizard: pick provider, name the variant, configure credentials, set model overrides, select tweaks, review and create. |
 
 **Keyboard controls:**
 
@@ -62,9 +62,10 @@ The TUI opens to the Dashboard tab by default. Navigate with arrow keys, `Tab`/`
 | Enter | Activate selection |
 | Space | Toggle selection |
 | q | Quit |
+| x | Run selected setup from Manage Setup or setup detail |
 | t | Cycle theme |
 | b | Go back |
-| r | Refresh (Dashboard) |
+| r | Refresh setup list or dashboard source list |
 
 **Themes:** hacker-bbs (default), unicorn, dark, light.
 

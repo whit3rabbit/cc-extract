@@ -59,6 +59,7 @@ __all__ = [
     "_set_variant_provider_defaults", "_toggle_variant_tweak",
     "_variant_credential_env_for_create", "_variant_model_overrides_for_create",
     "_run_setup_health", "_run_setup_upgrade", "_run_setup_delete", "_route_startup",
+    "_queue_setup_run", "_run_pending_setup",
     "_load_saved_setup_list_preferences", "_save_setup_list_preferences",
     "_copy_logs", "_copy_setup_config", "_copy_text_to_clipboard", "_open_help", "_open_logs", "_open_variant_create_preview",
     "_screen_text", "_style", "_render_frame",
@@ -311,6 +312,10 @@ def run_tui():
         clear_each_frame=True,
     )
     app.run(state)
+    if state.pending_run_command:
+        code = _run_pending_setup(state)
+        if code:
+            raise SystemExit(code)
 
 
 def _refresh_state(state):
@@ -529,6 +534,11 @@ def _handle_char_key(state, char):
     elif lowered == "d" and state.mode in {"setup-manager", "setup-detail"}:
         _open_delete_confirm(state)
         handled_setup_key = True
+    elif lowered == "x" and state.mode in {"setup-manager", "setup-detail"}:
+        setup_id = _current_setup_id_for_action(state)
+        if setup_id:
+            _queue_setup_run(state, setup_id)
+        handled_setup_key = True
     elif lowered == "t" and state.mode in {"setup-manager", "setup-detail"}:
         _open_tweak_editor(state)
         handled_setup_key = True
@@ -549,7 +559,7 @@ def _handle_char_key(state, char):
         _open_logs(state)
         handled_setup_key = True
     if handled_setup_key:
-        return True
+        return not state.pending_run_command
     if lowered == "b":
         _go_back(state)
     elif lowered == "t":
@@ -638,7 +648,7 @@ def _activate(state):
         state.message = f"Action failed: {exc}"
 
     _refresh_state(state)
-    return True
+    return not state.pending_run_command
 
 
 def _activate_tweaks_source(state):
@@ -676,6 +686,8 @@ def _activate_setup_detail(state):
     setup_id = str(option.value) if option.value else _current_setup_id_for_action(state)
     if option.kind == "setup-action-new":
         _start_setup_create(state)
+    elif option.kind == "setup-action-run" and setup_id:
+        _queue_setup_run(state, setup_id)
     elif option.kind == "setup-action-health" and setup_id:
         _run_setup_health(state, setup_id, show_result=True)
     elif option.kind == "setup-action-upgrade":
@@ -775,6 +787,39 @@ def _copy_setup_config(state):
         return
     state.last_action_log = [f"Copied setup config path: {config_path}"]
     state.message = f"Copied setup config path for setup {variant.variant_id}."
+
+
+def _queue_setup_run(state, setup_id):
+    variant = next((item for item in state.variants if item.variant_id == setup_id), None)
+    if variant is None:
+        state.message = f"Setup {setup_id} not found."
+        return
+    wrapper = ((variant.manifest or {}).get("paths") or {}).get("wrapper") or ""
+    if not wrapper:
+        state.message = f"Setup {setup_id} has no command path."
+        return
+    wrapper_path = Path(wrapper)
+    if not wrapper_path.is_file():
+        state.message = f"Setup command is missing: {wrapper_path}"
+        return
+    state.selected_setup_id = setup_id
+    state.pending_run_setup_id = setup_id
+    state.pending_run_command = [str(wrapper_path)]
+    state.last_action_log = [f"Queued setup run: {wrapper_path}"]
+    state.message = f"Running setup {setup_id} after setup manager exits."
+
+
+def _run_pending_setup(state):
+    command = list(state.pending_run_command or [])
+    if not command:
+        return 0
+    setup_id = state.pending_run_setup_id or Path(command[0]).name
+    print(f"Running setup {setup_id}: {command[0]}")
+    try:
+        result = subprocess.run(command, check=False)
+    except KeyboardInterrupt:
+        return 130
+    return result.returncode
 
 
 def _copy_logs(state):

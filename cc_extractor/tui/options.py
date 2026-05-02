@@ -231,6 +231,7 @@ def setup_detail_options(state):
     if setup_id is None:
         return [MenuOption("setup-action-new", "Create new setup")]
     return [
+        MenuOption("setup-action-run", "Run Claude", setup_id),
         MenuOption("setup-action-health", "Run health check", setup_id),
         MenuOption("setup-action-upgrade", "Upgrade Claude Code", setup_id),
         MenuOption("setup-action-tweaks", "Edit tweaks", setup_id),

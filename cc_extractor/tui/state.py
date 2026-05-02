@@ -64,6 +64,8 @@ class TuiState:
     help_return_mode: str = "setup-manager"
     delete_confirm_text: str = ""
     setup_upgrade_target: str = "latest"
+    pending_run_setup_id: Optional[str] = None
+    pending_run_command: List[str] = field(default_factory=list)
     last_action_summary: List[str] = field(default_factory=list)
     last_action_log: List[str] = field(default_factory=list)
     tweaks_variant_id: Optional[str] = None

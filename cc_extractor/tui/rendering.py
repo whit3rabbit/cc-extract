@@ -268,6 +268,7 @@ def help_labels():
         "P: cycle provider filter",
         "S: cycle sort",
         "N: new setup",
+        "X: run selected setup",
         "U: upgrade selected setup",
         "T: edit tweaks for selected setup",
         "H: run health check",
@@ -530,7 +531,7 @@ def context_hint(state):
     if state.mode == "setup-manager":
         if getattr(state, "setup_search_active", False):
             return "Type to search setups. Enter or Esc keeps the current filter."
-        return "Pick a setup or use a lifecycle action."
+        return "Pick a setup, run it, or use a lifecycle action."
     if state.mode == "delete-confirm":
         return "Type the exact setup id, then press Enter."
     if state.mode == "upgrade-preview":
@@ -597,9 +598,9 @@ def _variant_key_line(state):
 
 def key_line(state):
     if state.mode == "setup-manager":
-        return "Keys: Up/Down move | Enter manage | / search | P provider | S sort | ? help | N new | U upgrade | T tweaks | H health | D delete | R refresh | Q quit"
+        return "Keys: Up/Down move | Enter manage | X run | / search | P provider | S sort | ? help | N new | U upgrade | T tweaks | H health | D delete | R refresh | Q quit"
     if state.mode == "setup-detail":
-        return "Keys: Enter select | Esc back | H health | U upgrade | T tweaks | D delete | C command | G config | L logs | ? help | Q quit"
+        return "Keys: Enter select | X run | Esc back | H health | U upgrade | T tweaks | D delete | C command | G config | L logs | ? help | Q quit"
     if state.mode == "delete-confirm":
         return "Keys: Type setup name | Enter delete | Esc cancel"
     if state.mode == "upgrade-preview":

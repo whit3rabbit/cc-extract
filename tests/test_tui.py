@@ -784,6 +784,61 @@ def test_setup_manager_lists_rows_and_opens_detail():
     assert state.selected_setup_id == "deepseek-main"
 
 
+def test_setup_detail_run_action_queues_command(tmp_path):
+    wrapper = tmp_path / "deepseek-main"
+    wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    wrapper.chmod(0o755)
+    variant = _variant("deepseek-main")
+    variant.manifest["paths"]["wrapper"] = str(wrapper)
+    state = tui.TuiState(
+        mode="setup-detail",
+        variants=[variant],
+        selected_setup_id="deepseek-main",
+    )
+
+    options = tui.options.setup_detail_options(state)
+    assert options[0].kind == "setup-action-run"
+    assert "Run Claude" in tui._screen_text(state)
+
+    tui._activate_setup_detail(state)
+
+    assert state.pending_run_setup_id == "deepseek-main"
+    assert state.pending_run_command == [str(wrapper)]
+    assert state.message == "Running setup deepseek-main after setup manager exits."
+
+
+def test_setup_manager_run_shortcut_requires_row_then_queues(tmp_path):
+    wrapper = tmp_path / "deepseek-main"
+    wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    wrapper.chmod(0o755)
+    variant = _variant("deepseek-main")
+    variant.manifest["paths"]["wrapper"] = str(wrapper)
+    state = tui.TuiState(mode="setup-manager", variants=[variant], selected_index=0)
+
+    assert tui._handle_char_key(state, "x") is True
+    assert state.pending_run_command == []
+    assert state.message == "Select a setup first."
+
+    state.selected_index = 1
+    assert tui._handle_char_key(state, "x") is False
+    assert state.pending_run_setup_id == "deepseek-main"
+    assert state.pending_run_command == [str(wrapper)]
+
+
+def test_run_pending_setup_executes_wrapper(tmp_path):
+    output = tmp_path / "ran.txt"
+    wrapper = tmp_path / "deepseek-main"
+    wrapper.write_text(f"#!/bin/sh\necho ran > {output}\n", encoding="utf-8")
+    wrapper.chmod(0o755)
+    state = tui.TuiState(
+        pending_run_setup_id="deepseek-main",
+        pending_run_command=[str(wrapper)],
+    )
+
+    assert tui._run_pending_setup(state) == 0
+    assert output.read_text(encoding="utf-8") == "ran\n"
+
+
 def test_setup_manager_search_filters_rows_and_keeps_create_action():
     deepseek = _variant("deepseek-main")
     openrouter = _variant("openrouter-dev")
