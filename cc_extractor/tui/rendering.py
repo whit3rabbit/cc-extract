@@ -56,6 +56,7 @@ def active_tab(state):
         "delete-confirm",
         "health-result",
         "logs",
+        "help",
         "error",
         "variants",
         "tweaks-source",
@@ -121,6 +122,8 @@ def current_labels(state):
         return "Setup result", state.last_action_summary or ["No result available."]
     if state.mode == "logs":
         return "Logs", state.last_action_log or ["No logs available."]
+    if state.mode == "help":
+        return "Shortcuts", help_labels()
     if state.mode == "error":
         return "Error", state.last_action_summary or [state.message or "Unknown error."]
     if state.mode == "dashboard":
@@ -241,6 +244,37 @@ def delete_confirm_labels(state):
         f"Command: {paths.get('wrapper') or '(no command)'}",
         "",
         "Shared downloads and caches are not removed.",
+    ]
+
+
+def help_labels():
+    return [
+        "Global",
+        "Up/Down: move",
+        "Enter: select or confirm current screen",
+        "Esc/B: back",
+        "Q: quit",
+        "?: shortcuts",
+        "T: cycle theme outside setup manager/detail",
+        "",
+        "Setup manager",
+        "/: search setups",
+        "P: cycle provider filter",
+        "S: cycle sort",
+        "N: new setup",
+        "U: upgrade selected setup",
+        "T: edit tweaks for selected setup",
+        "H: run health check",
+        "D: delete selected setup",
+        "R: refresh setups",
+        "",
+        "Setup detail and results",
+        "C: copy command path",
+        "G: copy setup config path",
+        "L: view logs",
+        "",
+        "Logs",
+        "C: copy log text",
     ]
 
 
@@ -439,6 +473,8 @@ def context_line(state):
         return f"Home > {state.selected_setup_id or 'setup'} > Delete"
     if state.mode == "health-result":
         return f"Home > {state.selected_setup_id or 'setup'} > Result"
+    if state.mode == "help":
+        return f"Help | Return {state.help_return_mode or 'setup-manager'}"
     if state.mode == "first-run-setup":
         provider = selected_variant_provider(state)
         name = state.variant_name or (provider.get("defaultVariantName") if provider else "")
@@ -550,9 +586,9 @@ def _variant_key_line(state):
 
 def key_line(state):
     if state.mode == "setup-manager":
-        return "Keys: Up/Down move | Enter manage | / search | P provider | S sort | N new | U upgrade | T tweaks | H health | D delete | R refresh | Q quit"
+        return "Keys: Up/Down move | Enter manage | / search | P provider | S sort | ? help | N new | U upgrade | T tweaks | H health | D delete | R refresh | Q quit"
     if state.mode == "setup-detail":
-        return "Keys: Enter select | Esc back | H health | U upgrade | T tweaks | D delete | C copy | L logs | Q quit"
+        return "Keys: Enter select | Esc back | H health | U upgrade | T tweaks | D delete | C command | G config | L logs | ? help | Q quit"
     if state.mode == "delete-confirm":
         return "Keys: Type setup name | Enter delete | Esc cancel"
     if state.mode == "upgrade-preview":
@@ -560,8 +596,10 @@ def key_line(state):
     if state.mode == "create-preview":
         return "Keys: Y create | N/Esc cancel"
     if state.mode == "health-result":
-        return "Keys: Esc back | Enter manage | L logs | Q quit"
+        return "Keys: Esc back | Enter manage | C copy logs | L logs | ? help | Q quit"
     if state.mode == "logs":
+        return "Keys: C copy logs | Esc back | ? help | Q quit"
+    if state.mode == "help":
         return "Keys: Esc back | Q quit"
     if state.mode == "first-run-setup":
         return _variant_key_line(state)

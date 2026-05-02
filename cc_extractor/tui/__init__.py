@@ -59,7 +59,7 @@ __all__ = [
     "_set_variant_provider_defaults", "_toggle_variant_tweak",
     "_variant_credential_env_for_create", "_variant_model_overrides_for_create",
     "_run_setup_health", "_run_setup_upgrade", "_run_setup_delete", "_route_startup",
-    "_copy_text_to_clipboard", "_open_logs", "_open_variant_create_preview",
+    "_copy_logs", "_copy_setup_config", "_copy_text_to_clipboard", "_open_help", "_open_logs", "_open_variant_create_preview",
     "_screen_text", "_style", "_render_frame",
     "run_tui",
 ]
@@ -349,6 +349,43 @@ def _stage_log_lines(*stages):
     return lines or ["No backend output captured."]
 
 
+def _build_stage_lines(stages):
+    lines = []
+    for stage in stages or []:
+        name = getattr(stage, "name", None) or str(getattr(stage, "get", lambda _key, default=None: default)("name", "stage"))
+        status = getattr(stage, "status", None) or str(getattr(stage, "get", lambda _key, default=None: default)("status", "unknown"))
+        detail = getattr(stage, "detail", None) or getattr(stage, "get", lambda _key, default=None: default)("detail", "")
+        line = f"{name}: {status}"
+        if detail:
+            line = f"{line} ({detail})"
+        lines.append(line)
+    return lines
+
+
+def _exception_stage_lines(exc):
+    return _build_stage_lines(getattr(exc, "stages", []))
+
+
+def _result_stage_lines(results):
+    lines = []
+    for result in results or []:
+        lines.extend(_build_stage_lines(getattr(result, "stages", [])))
+    return lines
+
+
+def _append_backend_stages(summary, stage_lines):
+    if stage_lines:
+        summary.extend(["", "Backend stages:", *stage_lines])
+    return summary
+
+
+def _stage_lines_from_log(log_lines):
+    if "[Build stages]" not in (log_lines or []):
+        return []
+    index = log_lines.index("[Build stages]")
+    return list(log_lines[index + 1:])
+
+
 def _copy_text_to_clipboard(text):
     subprocess.run(["pbcopy"], input=str(text), text=True, check=True)
 
@@ -398,6 +435,9 @@ def _handle_char_key(state, char):
     lowered = char.lower()
     if lowered == "q":
         return False
+    if char == "?":
+        _open_help(state)
+        return True
     if state.mode == "upgrade-preview":
         if lowered == "y":
             _run_setup_upgrade(state)
@@ -453,6 +493,12 @@ def _handle_char_key(state, char):
         handled_setup_key = True
     elif lowered == "c" and state.mode == "setup-detail":
         _copy_setup_command(state)
+        handled_setup_key = True
+    elif lowered == "g" and state.mode == "setup-detail":
+        _copy_setup_config(state)
+        handled_setup_key = True
+    elif lowered == "c" and state.mode in {"health-result", "logs"}:
+        _copy_logs(state)
         handled_setup_key = True
     elif lowered == "l" and state.mode in {"setup-detail", "health-result"}:
         _open_logs(state)
@@ -667,10 +713,40 @@ def _copy_setup_command(state):
     state.message = f"Copied command path for setup {variant.variant_id}."
 
 
+def _copy_setup_config(state):
+    variant = _selected_setup_variant(state)
+    if variant is None:
+        state.message = "Select a setup first."
+        return
+    config_path = variant.path / "variant.json"
+    try:
+        _copy_text_to_clipboard(str(config_path))
+    except Exception as exc:
+        state.message = f"Copy failed: {exc}"
+        return
+    state.last_action_log = [f"Copied setup config path: {config_path}"]
+    state.message = f"Copied setup config path for setup {variant.variant_id}."
+
+
+def _copy_logs(state):
+    text = "\n".join(state.last_action_log or state.last_action_summary or ["No logs available."])
+    try:
+        _copy_text_to_clipboard(text)
+    except Exception as exc:
+        state.message = f"Copy failed: {exc}"
+        return
+    state.message = "Copied log text."
+
+
 def _open_logs(state):
     if not state.last_action_log:
         state.last_action_log = ["No logs available."]
     _set_mode(state, "logs")
+
+
+def _open_help(state):
+    state.help_return_mode = state.mode if state.mode != "help" else (state.help_return_mode or "setup-manager")
+    _set_mode(state, "help")
 
 
 def _health_status_from_report(report):
@@ -851,9 +927,12 @@ def _run_setup_upgrade(state):
         refreshed = _selected_setup_variant(state)
         new_version = ((refreshed.manifest or {}).get("source") or {}).get("version") if refreshed else "?"
         health = _run_setup_health(state, setup_id, show_result=False)
+        stage_lines = _result_stage_lines(results)
         state.last_action_log = _stage_log_lines(
             "Upgrade",
             update_output,
+            "Build stages",
+            "\n".join(stage_lines),
             "Health",
             health.get("output", ""),
         )
@@ -863,13 +942,13 @@ def _run_setup_upgrade(state):
         if not wrapper and refreshed is not None:
             wrapper = str(((refreshed.manifest or {}).get("paths") or {}).get("wrapper") or "")
         status = health.get("status", "unknown")
-        state.last_action_summary = [
+        state.last_action_summary = _append_backend_stages([
             f"Setup upgraded: {setup_id}",
             f"Claude Code: {old_version} -> {new_version or target}",
             "Tweaks reapplied: yes",
             f"Command rebuilt path: {wrapper or '(unknown)'}",
             f"Health: {status}",
-        ]
+        ], stage_lines)
         state.message = f"Upgrade complete for setup {setup_id}: {status}"
     except Exception as exc:
         refresh_message = ""
@@ -882,15 +961,21 @@ def _run_setup_upgrade(state):
         base_status = _base_download_status(state, target_version, cached_before)
         command_replaced = _command_replaced_status(before["wrapper"], after["wrapper"])
         active = "unknown" if post_variant is None else _active_setup_status(after)
-        state.last_action_log = _stage_log_lines("Upgrade failure", str(exc))
-        state.last_action_summary = [
+        stage_lines = _exception_stage_lines(exc)
+        state.last_action_log = _stage_log_lines(
+            "Upgrade failure",
+            str(exc),
+            "Build stages",
+            "\n".join(stage_lines),
+        )
+        state.last_action_summary = _append_backend_stages([
             f"Upgrade failed: {setup_id}",
             f"Claude Code: {old_version} -> {target}",
             f"Base download succeeded: {base_status}",
             f"Command replaced: {command_replaced}",
             f"Previous setup remains active: {active}",
             f"Failed stage: update/rebuild: {exc}",
-        ]
+        ], stage_lines)
         if refresh_message:
             state.last_action_summary.append(refresh_message.strip())
         state.message = f"Upgrade failed: {exc}"
@@ -971,7 +1056,7 @@ def _run_tweak_apply(state):
     _apply_tweaks(state)
     rebuild_log = list(state.last_action_log)
     if not state.message.startswith("Applied tweaks"):
-        state.last_action_summary = [state.message]
+        state.last_action_summary = _append_backend_stages([state.message], _stage_lines_from_log(rebuild_log))
         message = state.message
         _set_mode(state, "health-result")
         state.message = message
@@ -989,13 +1074,13 @@ def _run_tweak_apply(state):
         "removed": removed,
         "health": health.get("status", "unknown"),
     }
-    state.last_action_summary = [
+    state.last_action_summary = _append_backend_stages([
         "Tweaks updated:",
         f"Added: {', '.join(added) if added else 'none'}",
         f"Removed: {', '.join(removed) if removed else 'none'}",
         "Rebuild: successful",
         f"Health: {health.get('status', 'unknown')}",
-    ]
+    ], _stage_lines_from_log(rebuild_log))
     state.message = f"Tweaks updated for setup {setup_id}: {health.get('status', 'unknown')}"
     message = state.message
     _set_mode(state, "health-result")
@@ -1231,6 +1316,7 @@ def _run_variant_create(state):
             force=False,
         )
         state.last_action_log = _stage_log_lines("Create setup", output)
+        stage_lines = _build_stage_lines(getattr(result, "stages", []))
         setup_id = getattr(getattr(result, "variant", None), "variant_id", None) or variant_id_from_name(name)
         wrapper_path = getattr(result, "wrapper_path", None)
         config_path = workspace_root() / "variants" / setup_id / "variant.json"
@@ -1239,10 +1325,12 @@ def _run_variant_create(state):
         state.last_action_log = _stage_log_lines(
             "Create setup",
             output,
+            "Build stages",
+            "\n".join(stage_lines),
             "Health",
             health.get("output", ""),
         )
-        state.last_action_summary = [
+        state.last_action_summary = _append_backend_stages([
             "Setup created.",
             "",
             "Run it with:",
@@ -1255,15 +1343,24 @@ def _run_variant_create(state):
             f"  {config_path}",
             "",
             f"Health: {health.get('status', 'unknown')}",
-        ]
+        ], stage_lines)
         state.message = f"Setup created: {wrapper_path or setup_id}"
         _reset_variant(state)
         message = state.message
         _set_mode(state, "health-result")
         state.message = message
     except Exception as exc:
-        state.last_action_log = _stage_log_lines("Create failure", str(exc))
-        state.last_action_summary = _create_failure_summary(expected_setup_id, before, exc)
+        stage_lines = _exception_stage_lines(exc)
+        state.last_action_log = _stage_log_lines(
+            "Create failure",
+            str(exc),
+            "Build stages",
+            "\n".join(stage_lines),
+        )
+        state.last_action_summary = _append_backend_stages(
+            _create_failure_summary(expected_setup_id, before, exc),
+            stage_lines,
+        )
         state.message = f"Setup create failed: {exc}"
         message = state.message
         _set_mode(state, "error")

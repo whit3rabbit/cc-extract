@@ -1,6 +1,6 @@
 """Dataclasses and small helpers for the variants subsystem (no I/O)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -17,6 +17,22 @@ class Variant:
 
 
 @dataclass
+class VariantBuildStage:
+    name: str
+    status: str
+    detail: str = ""
+
+
+class VariantBuildError(RuntimeError):
+    def __init__(self, variant_id: str, stage: str, cause: Exception, stages: List[VariantBuildStage]):
+        self.variant_id = variant_id
+        self.stage = stage
+        self.cause = cause
+        self.stages = list(stages)
+        super().__init__(f"{stage} failed for {variant_id}: {cause}")
+
+
+@dataclass
 class VariantBuildResult:
     variant: Variant
     binary_path: Path
@@ -25,6 +41,7 @@ class VariantBuildResult:
     applied_tweaks: List[str]
     skipped_tweaks: List[str]
     missing_prompt_keys: List[str]
+    stages: List[VariantBuildStage] = dataclass_field(default_factory=list)
 
 
 @dataclass

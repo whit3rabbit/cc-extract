@@ -909,6 +909,41 @@ def test_setup_detail_copies_command_and_logs(monkeypatch):
     assert "Copied command path: /tmp/bin/deepseek-main" in tui._screen_text(state)
 
 
+def test_help_panel_opens_and_returns_to_context():
+    state = tui.TuiState(mode="setup-manager", variants=[_variant("deepseek-main")])
+
+    assert tui._handle_char_key(state, "?") is True
+
+    assert state.mode == "help"
+    screen = tui._screen_text(state, height=48)
+    assert "Shortcuts" in screen
+    assert "/: search setups" in screen
+    assert "C: copy log text" in screen
+
+    tui._go_back(state)
+
+    assert state.mode == "setup-manager"
+
+
+def test_setup_detail_copies_config_and_log_text(monkeypatch):
+    copied = []
+    variant = _variant("deepseek-main")
+    state = tui.TuiState(mode="setup-detail", variants=[variant], selected_setup_id="deepseek-main")
+
+    monkeypatch.setattr(tui, "_copy_text_to_clipboard", copied.append)
+
+    tui._handle_char_key(state, "g")
+    assert copied == ["/tmp/deepseek-main/variant.json"]
+    assert state.message == "Copied setup config path for setup deepseek-main."
+
+    state.mode = "logs"
+    state.last_action_log = ["line one", "line two"]
+    tui._handle_char_key(state, "c")
+
+    assert copied[-1] == "line one\nline two"
+    assert state.message == "Copied log text."
+
+
 def test_upgrade_preview_applies_update_and_health(monkeypatch, tmp_path):
     variant = _variant("deepseek-main", version="2.1.122")
     calls = []
@@ -942,6 +977,8 @@ def test_upgrade_preview_applies_update_and_health(monkeypatch, tmp_path):
 
 
 def test_upgrade_failure_summary_reports_verified_state(monkeypatch, tmp_path):
+    from cc_extractor.variants.model import VariantBuildError, VariantBuildStage
+
     variant = _variant("deepseek-main", version="2.1.122")
     variant.path = tmp_path / "deepseek-main"
     variant.path.mkdir()
@@ -963,7 +1000,11 @@ def test_upgrade_failure_summary_reports_verified_state(monkeypatch, tmp_path):
     def fake_update(name, *, claude_version=None):
         assert name == "deepseek-main"
         assert claude_version == "latest"
-        raise RuntimeError("patch stage broke")
+        stages = [
+            VariantBuildStage("prepare directories", "ok", "/tmp/deepseek-main"),
+            VariantBuildStage("patch binary", "failed", "anchor missing"),
+        ]
+        raise VariantBuildError("deepseek-main", "patch binary", RuntimeError("patch stage broke"), stages)
 
     def fake_refresh(state_arg):
         state_arg.variants = [variant]
@@ -988,7 +1029,9 @@ def test_upgrade_failure_summary_reports_verified_state(monkeypatch, tmp_path):
     assert "Base download succeeded: verified" in summary
     assert "Command replaced: no" in summary
     assert "Previous setup remains active: yes" in summary
-    assert "Failed stage: update/rebuild: patch stage broke" in summary
+    assert "Failed stage: update/rebuild: patch binary failed for deepseek-main: patch stage broke" in summary
+    assert "Backend stages:" in summary
+    assert "patch binary: failed (anchor missing)" in summary
     assert "rollback" not in summary.lower()
 
 

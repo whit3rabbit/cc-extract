@@ -27,6 +27,14 @@ def variant_result_payload(result):
         "appliedTweaks": result.applied_tweaks,
         "skippedTweaks": result.skipped_tweaks,
         "missingPromptKeys": result.missing_prompt_keys,
+        "stages": [
+            {
+                "name": stage.name,
+                "status": stage.status,
+                "detail": stage.detail,
+            }
+            for stage in getattr(result, "stages", [])
+        ],
     }
     return payload
 

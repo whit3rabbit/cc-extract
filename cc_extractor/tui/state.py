@@ -61,6 +61,7 @@ class TuiState:
     setup_search_active: bool = False
     setup_provider_filter: str = "all"
     setup_sort_key: str = "name"
+    help_return_mode: str = "setup-manager"
     delete_confirm_text: str = ""
     setup_upgrade_target: str = "latest"
     last_action_summary: List[str] = field(default_factory=list)
@@ -149,7 +150,7 @@ class TuiState:
             return len(setup_manager_options(self))
         if self.mode == "setup-detail":
             return len(setup_detail_options(self))
-        if self.mode in {"loading", "create-preview", "upgrade-preview", "delete-confirm", "health-result", "logs", "error"}:
+        if self.mode in {"loading", "create-preview", "upgrade-preview", "delete-confirm", "health-result", "logs", "help", "error"}:
             return 1
         if self.mode == "dashboard":
             return len(dashboard_options(self))

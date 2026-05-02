@@ -112,10 +112,18 @@ T      Edit tweaks
 H      Run health check
 D      Delete setup
 R      Refresh
+?      Shortcuts
 Q      Quit
 ```
 
-Setup detail keeps the selected setup in context and exposes the same lifecycle actions plus copy/log helpers.
+Setup detail keeps the selected setup in context and exposes the same lifecycle actions plus copy/log helpers:
+
+- `C`: copy command path.
+- `G`: copy setup config path.
+- `L`: view logs.
+- `?`: open shortcut panel.
+
+Logs and result screens support `C` to copy log text.
 
 ## First-Run Setup
 
@@ -160,6 +168,7 @@ On failure, the result reports only verified state:
 - Whether the command path changed.
 - Whether the previous setup still appears active, based on loadable setup config plus command/binary presence.
 - Failed stage text from the backend exception.
+- Backend build stages when `VariantBuildError` provides them.
 
 The TUI does not claim rollback unless a future backend result explicitly verifies rollback.
 
@@ -247,6 +256,11 @@ Do not merge these flows unless the product model changes.
 - Upgrade shows preview before applying.
 - Tweak editor shows added/removed diff before rebuild.
 - Setup list search/filter/sort are implemented.
+- `?` opens a shortcut/help panel.
+- Setup detail can copy command and setup config paths.
+- Logs/result screens can copy log text.
+- Variant build results include backend stage telemetry.
+- Create, upgrade, and tweak rebuild summaries surface backend build stages when available.
 - Failure summaries avoid unverified rollback claims.
 - Existing theme system still controls all colors.
 - Existing text fallback works for tests.
@@ -255,12 +269,10 @@ Do not merge these flows unless the product model changes.
 
 The main lifecycle layer is implemented. Remaining work is narrower:
 
-- Add `?` shortcut/help panel.
-- Add richer backend-provided stage telemetry for create/upgrade/rebuild beyond the TUI's current filesystem verification.
-- Add optional copy actions for setup config paths and logs, beyond the current command copy and logs view.
 - Consider persisted setup list search/filter/sort preferences only if users need them.
 - Tweak list search remains out of scope for setup list search/filter/sort.
 - High contrast mode can be added as a theme later.
+- More granular sub-stage telemetry inside the extract/repack path can be added later if users need per-substep progress.
 
 ## Refresh Rules
 
@@ -288,10 +300,11 @@ Focused TUI verification:
 
 ```bash
 rtk .venv/bin/python -m pytest -q tests/test_tui.py
+rtk .venv/bin/python -m pytest -q tests/test_variants.py
 ```
 
 Flow doc marker verification:
 
 ```bash
-rtk rg -n "Implemented Flow|Remaining P2|update_variants|remove_variant|search|sort" docs/TUI_FLOW.md
+rtk rg -n "Implemented Flow|Remaining P2|update_variants|remove_variant|search|sort|Shortcuts|backend stage" docs/TUI_FLOW.md
 ```

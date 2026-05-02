@@ -37,6 +37,8 @@ def go_back(state) -> None:
         state.message = "Search filter kept."
     elif state.mode == "setup-detail":
         set_mode(state, "setup-manager")
+    elif state.mode == "help":
+        set_mode(state, state.help_return_mode or "setup-manager")
     elif state.mode in {"upgrade-preview", "delete-confirm", "logs", "error"}:
         set_mode(state, "setup-detail" if state.selected_setup_id else "setup-manager")
     elif state.mode == "create-preview":
@@ -227,10 +229,17 @@ def apply_tweaks(state) -> None:
 
     claude_version = (manifest.get("source") or {}).get("version")
     try:
-        _result, output = run_quiet(variants_module.apply_variant, variant_id, claude_version=claude_version)
-        state.last_action_log = output.splitlines() if output else ["No rebuild output captured."]
+        result, output = run_quiet(variants_module.apply_variant, variant_id, claude_version=claude_version)
+        log_lines = output.splitlines() if output else ["No rebuild output captured."]
+        stage_lines = _build_stage_lines(getattr(result, "stages", []))
+        if stage_lines:
+            log_lines.extend(["[Build stages]", *stage_lines])
+        state.last_action_log = log_lines
     except Exception as exc:
+        stage_lines = _build_stage_lines(getattr(exc, "stages", []))
         state.last_action_log = [f"Apply failed: {exc}"]
+        if stage_lines:
+            state.last_action_log.extend(["[Build stages]", *stage_lines])
         state.message = f"Apply failed: {exc}"
         return
 
@@ -258,3 +267,21 @@ def _refresh_tweaks_pending_message(state) -> None:
             f"{len(diff)} pending change{'s' if len(diff) != 1 else ''} - "
             "press 'a' to apply, 'b' to discard"
         )
+
+
+def _build_stage_lines(stages):
+    lines = []
+    for stage in stages or []:
+        if isinstance(stage, dict):
+            name = stage.get("name", "stage")
+            status = stage.get("status", "unknown")
+            detail = stage.get("detail", "")
+        else:
+            name = getattr(stage, "name", "stage")
+            status = getattr(stage, "status", "unknown")
+            detail = getattr(stage, "detail", "")
+        line = f"{name}: {status}"
+        if detail:
+            line = f"{line} ({detail})"
+        lines.append(line)
+    return lines

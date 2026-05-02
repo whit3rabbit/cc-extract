@@ -7,6 +7,7 @@ import pytest
 
 from cc_extractor.bun_extract import parse_bun_binary
 from cc_extractor.variants import (
+    VariantBuildError,
     apply_variant,
     create_variant,
     doctor_variant,
@@ -107,6 +108,11 @@ def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
     assert "${Z_AI_API_KEY:?Set Z_AI_API_KEY for variant zai-test}" in wrapper
     assert "ANTHROPIC_API_KEY=\"${Z_AI_API_KEY}\"" in wrapper
     assert scan_variants(root)[0].variant_id == "zai-test"
+    stage_names = [stage.name for stage in result.stages]
+    assert "prepare directories" in stage_names
+    assert {"patch binary", "extract patch repack"} & set(stage_names)
+    assert "write setup config" in stage_names
+    assert all(stage.status == "ok" for stage in result.stages)
 
     settings = json.loads((root / "variants" / "zai-test" / "config" / "settings.json").read_text(encoding="utf-8"))
     claude_config = json.loads((root / "variants" / "zai-test" / "config" / ".claude.json").read_text(encoding="utf-8"))
@@ -175,6 +181,40 @@ def test_macos_grow_skip_uses_unpacked_node_runtime(tmp_path, monkeypatch):
         "prompt-overlays",
         "patches-applied-indication",
     ]
+
+
+def test_create_variant_build_error_includes_stages(tmp_path, monkeypatch):
+    import cc_extractor.variants as variants_module
+
+    root = tmp_path / ".cc-extractor"
+    artifact = write_macho_source_artifact(tmp_path)
+
+    def fake_apply_patches(_inputs):
+        return SimpleNamespace(
+            ok=False,
+            reason="failed",
+            detail="anchor missing",
+            missing_prompt_keys=[],
+            resigned=False,
+        )
+
+    monkeypatch.setattr(variants_module, "apply_patches", fake_apply_patches)
+
+    with pytest.raises(VariantBuildError) as exc_info:
+        create_variant(
+            name="Broken Zai",
+            provider_key="zai",
+            credential_env="Z_AI_API_KEY",
+            root=root,
+            source_artifact=artifact,
+            force=True,
+        )
+
+    err = exc_info.value
+    assert err.stage == "patch binary"
+    assert [stage.name for stage in err.stages] == ["prepare directories", "patch binary"]
+    assert err.stages[-1].status == "failed"
+    assert "anchor missing" in err.stages[-1].detail
 
 
 def test_create_variant_stored_secret_is_not_in_metadata(tmp_path):
