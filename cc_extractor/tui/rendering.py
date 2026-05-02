@@ -427,10 +427,122 @@ def gauge_widget(title, ratio, label, Gauge, Style, Color, theme):
     return gauge
 
 
-def render_frame(term, state, width, height, Paragraph, Style, Color, DrawCmd, Tabs, TuiList, Gauge):
-    from ratatui_py.layout import split_v as _split_v
-    width = max(1, width - 1)
-    height = max(1, height - 1)
+_BOX_TOP_LEFT = "\u250c"
+_BOX_TOP_RIGHT = "\u2510"
+_BOX_BOTTOM_LEFT = "\u2514"
+_BOX_BOTTOM_RIGHT = "\u2518"
+_BOX_HORIZONTAL = "\u2500"
+_BOX_VERTICAL = "\u2502"
+
+
+def _fit_text(text, width):
+    if width <= 0:
+        return ""
+    text = str(text).replace("\n", " ")
+    if len(text) > width:
+        return text[:width]
+    return text + (" " * (width - len(text)))
+
+
+def _box_top(title, width):
+    if width <= 1:
+        return _fit_text(title, width)
+    inner_width = width - 2
+    label = str(title)[:inner_width]
+    return _BOX_TOP_LEFT + label + (_BOX_HORIZONTAL * (inner_width - len(label))) + _BOX_TOP_RIGHT
+
+
+def _box_middle(text, width):
+    if width <= 1:
+        return _fit_text(text, width)
+    return _BOX_VERTICAL + _fit_text(text, width - 2) + _BOX_VERTICAL
+
+
+def _box_bottom(width):
+    if width <= 1:
+        return _BOX_HORIZONTAL[:width]
+    return _BOX_BOTTOM_LEFT + (_BOX_HORIZONTAL * (width - 2)) + _BOX_BOTTOM_RIGHT
+
+
+def _single_role_row(text, role):
+    return [(text, role)]
+
+
+def _box_rows(title, content_rows, width, height, role):
+    if height <= 0:
+        return []
+    if height == 1:
+        return [_single_role_row(_fit_text(title, width), role)]
+
+    rows = [_single_role_row(_box_top(title, width), role)]
+    if height > 2:
+        visible_rows = list(content_rows)[:height - 2]
+        while len(visible_rows) < height - 2:
+            visible_rows.append(("", role))
+        for row in visible_rows:
+            if isinstance(row, tuple):
+                text, row_role = row
+            else:
+                text, row_role = row, role
+            rows.append(_single_role_row(_box_middle(text, width), row_role))
+    rows.append(_single_role_row(_box_bottom(width), role))
+    return rows[:height]
+
+
+def _body_content_rows(state, height):
+    _, labels = current_labels(state)
+    cursor = selected_label_index(state)
+    visible = visible_items(labels, cursor, max(1, height))
+    if not visible:
+        return [(f"  {empty_text(state)}", "body")]
+
+    rows = []
+    start_index, visible_labels = visible
+    for offset, label in enumerate(visible_labels):
+        index = start_index + offset
+        selected = index == cursor
+        prefix = "> " if selected else "  "
+        rows.append((prefix + label, "highlight" if selected else "body"))
+    return rows
+
+
+def _body_box_rows(state, width, height):
+    title, _ = current_labels(state)
+    return _box_rows(title, _body_content_rows(state, max(1, height - 2)), width, height, "body")
+
+
+def _tweaks_detail_box_rows(state, width, height):
+    detail_rows = [(line, "body") for line in tweaks_detail_text(state).splitlines()]
+    return _box_rows("Patch details", detail_rows, width, height, "body")
+
+
+def _combine_segment_rows(left_rows, right_rows, gap_width):
+    gap = " " * max(0, gap_width)
+    rows = []
+    for left, right in zip(left_rows, right_rows):
+        rows.append(left + [(gap, "body")] + right)
+    return rows
+
+
+def _tweaks_two_pane_rows(state, width, height):
+    if width <= 1:
+        return _body_box_rows(state, width, height)
+    gap = 1
+    left_width = max(1, int((width - gap) * 0.45))
+    right_width = max(1, width - gap - left_width)
+    left_rows = _body_box_rows(state, left_width, height)
+    right_rows = _tweaks_detail_box_rows(state, right_width, height)
+    return _combine_segment_rows(left_rows, right_rows, gap)
+
+
+def _progress_box_rows(title, ratio, label, width):
+    progress_width = max(4, min(24, width - len(title) - len(label) - 8))
+    return _box_rows(title, [ascii_progress(title, ratio, label, width=progress_width)], width, 3, "gauge")
+
+
+def _frame_rows(state, width, height):
+    width = max(1, width)
+    height = max(1, height)
     theme = active_theme(state)
     header_lines = [
         f"Workspace: {workspace_root()}",
@@ -452,46 +564,45 @@ def render_frame(term, state, width, height, Paragraph, Style, Color, DrawCmd, T
     footer_height = min(6, max(1, height - header_height - tabs_height - progress_height))
     body_height = max(1, height - header_height - tabs_height - progress_height - footer_height)
 
-    header = Paragraph.from_text("\n".join(header_lines))
-    header.set_block_title("cc-extractor", True)
-    header.set_style(style(Style, Color, theme.header_fg, theme.header_bg, bold=True))
-    header.set_wrap(True)
-
-    tabs = tabs_widget(state, Tabs, Style, Color, theme)
-    body = list_widget(state, body_height, TuiList, Style, Color, theme)
-
-    footer = Paragraph.from_text("\n".join(footer_lines(state)))
-    footer.set_block_title("Status", True)
-    footer.set_style(status_style(state, Style, Color))
-    footer.set_wrap(True)
-
-    commands = [DrawCmd.paragraph(header, (0, 0, width, header_height))]
-    top = header_height
+    rows = _box_rows("cc-extractor", header_lines, width, header_height, "header")
     if tabs_height:
-        commands.append(DrawCmd.tabs(tabs, (0, top, width, tabs_height)))
-        top += tabs_height
+        rows.extend(_box_rows("Tabs", [tab_bar(state)], width, tabs_height, "tabs"))
     for index, (title, ratio, label) in enumerate(progress):
-        if top + 2 >= height:
+        if (index + 1) * 3 > progress_height:
             break
-        commands.append(
-            DrawCmd.gauge(
-                gauge_widget(title, ratio, label, Gauge, Style, Color, theme),
-                (0, top, width, 3),
-            )
-        )
-        top += 3
-        if (index + 1) * 3 >= progress_height:
-            break
-
+        rows.extend(_progress_box_rows(title, ratio, label, width))
     if state.mode == "tweaks-edit" and width > 60:
-        left_rect, right_rect = _split_v((0, top, width, body_height), 0.45, 0.55, gap=1)
-        detail = tweaks_detail_widget(state, Paragraph, Style, Color, theme)
-        commands.append(DrawCmd.list(body, left_rect))
-        commands.append(DrawCmd.paragraph(detail, right_rect))
+        rows.extend(_tweaks_two_pane_rows(state, width, body_height))
     else:
-        commands.append(DrawCmd.list(body, (0, top, width, body_height)))
-    footer_top = top + body_height
-    commands.append(
-        DrawCmd.paragraph(footer, (0, footer_top, width, max(1, height - footer_top)))
-    )
-    term.draw_frame(commands)
+        rows.extend(_body_box_rows(state, width, body_height))
+    rows.extend(_box_rows("Status", footer_lines(state), width, footer_height, "footer"))
+
+    if len(rows) < height:
+        rows.extend(_single_role_row(_fit_text("", width), "body") for _ in range(height - len(rows)))
+    return rows[:height]
+
+
+def _frame_styles(state, Style, Color, theme):
+    return {
+        "header": style(Style, Color, theme.header_fg, theme.header_bg, bold=True),
+        "tabs": style(Style, Color, theme.tab_fg, theme.tab_bg),
+        "body": style(Style, Color, theme.body_fg, theme.body_bg),
+        "highlight": style(Style, Color, theme.highlight_fg, theme.highlight_bg, bold=True),
+        "gauge": style(Style, Color, theme.gauge_fg, theme.gauge_bg),
+        "footer": status_style(state, Style, Color),
+    }
+
+
+def render_frame(term, state, width, height, Paragraph, Style, Color, DrawCmd, Tabs, TuiList, Gauge):
+    width = max(1, width)
+    height = max(1, height)
+    theme = active_theme(state)
+    frame = Paragraph.new_empty()
+    styles = _frame_styles(state, Style, Color, theme)
+    for row_index, row in enumerate(_frame_rows(state, width, height)):
+        if row_index:
+            frame.line_break()
+        for text, role in row:
+            frame.append_span(text, styles[role])
+    frame.set_wrap(False)
+    term.draw_frame([DrawCmd.paragraph(frame, (0, 0, width, height))])

@@ -206,6 +206,30 @@ def test_gauge_widget_renders_with_headless_ratatui():
     assert "2/4 Patches" in screen
 
 
+def test_render_frame_themes_full_surface():
+    from ratatui_py import Color, DrawCmd, Gauge, List as TuiList, Paragraph, Style, Tabs, headless_render_frame_cells
+
+    state = tui.TuiState(theme_id="light")
+
+    class FakeTerm:
+        def __init__(self):
+            self.commands = None
+
+        def draw_frame(self, commands):
+            self.commands = commands
+
+    term = FakeTerm()
+    tui._render_frame(
+        term, state, 80, 24,
+        Paragraph, Style, Color, DrawCmd, Tabs, TuiList, Gauge,
+    )
+
+    cells = headless_render_frame_cells(80, 24, term.commands)
+
+    assert cells
+    assert all(cell["fg"] != int(Color.Reset) or cell["bg"] != int(Color.Reset) for cell in cells)
+
+
 def test_dashboard_selects_specific_version_without_downloading():
     state = tui.TuiState(
         mode="dashboard",

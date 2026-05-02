@@ -145,4 +145,10 @@ prompts/*.json               -> Generated prompt catalogs keyed by Claude Code v
 - Variant manifest stubs for TUI tests need only: schemaVersion=1, id (kebab-case), name, provider.key, source.version, paths (dict), createdAt, updatedAt. No real binary required - list/edit flows only validate the manifest.
 - Do not stage or commit submodule changes, including `vendor/tweakcc`, unless explicitly requested.
 - Patch test tiers: L1 (anchor) + L2 (`node --check`) run by default under `pytest -q tests/patches/`. L3 (boot smoke) gated by `CC_EXTRACTOR_REAL_BINARY=1`. L4 (TUI MCP behavioral) gated by `CC_EXTRACTOR_TUI_MCP=1`. See `docs/patches.md`.
+- Expected skips on a clean `pytest -q` run: ~14 total, all environment-gated, none are failures. Breakdown:
+  - ~10 L2 parse tests under `tests/patches/` skip because the unpatched 2.1.123 `cli.js` does not parse under `node --check` (Bun-only `bun:` imports). This is the documented L2 pre-check, not a regression.
+  - 2 L3 boot smoke tests in `tests/patches_smoke/test_variant_smoke.py` gated on `CC_EXTRACTOR_REAL_BINARY=1` (needs a real Claude Code binary).
+  - 1 L4 TUI MCP snapshot test (`tests/patches_behavioral/test_hide_startup_banner_snapshot.py`) gated on `CC_EXTRACTOR_TUI_MCP=1`.
+  - 1 real-binary integration test (`tests/test_integration_real_binary.py`) gated on `CC_EXTRACTOR_RUN_REAL_BINARY_TEST=1` (downloads, patches, and executes a real binary; distinct from `CC_EXTRACTOR_REAL_BINARY`).
+  - Use `pytest -q -rs` to print skip reasons when verifying.
 - Worktree convention: `.worktrees/<branch-name>` (gitignored).
