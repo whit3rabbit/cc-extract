@@ -41,6 +41,24 @@ def _profile(
     )
 
 
+def _render_screen(state, width=80, height=24):
+    from ratatui_py import Color, DrawCmd, Gauge, List as TuiList, Paragraph, Style, Tabs, headless_render_frame
+
+    class FakeTerm:
+        def __init__(self):
+            self.commands = None
+
+        def draw_frame(self, commands):
+            self.commands = commands
+
+    term = FakeTerm()
+    tui._render_frame(
+        term, state, width, height,
+        Paragraph, Style, Color, DrawCmd, Tabs, TuiList, Gauge,
+    )
+    return headless_render_frame(width, height, term.commands)
+
+
 def test_screen_text_contains_dashboard_first_tab():
     state = tui.TuiState(
         counts="Native: 0  NPM: 0  Extractions: 0  Patch packages: 0  Profiles: 0",
@@ -51,8 +69,8 @@ def test_screen_text_contains_dashboard_first_tab():
     screen = tui._screen_text(state)
 
     assert "Workspace:" in screen
-    assert "Tabs: [Dashboard]" in screen
-    assert "Steps: [Source] > Patches > Profiles > Review" in screen
+    assert "cc-extractor | [Dashboard] Inspect Extract Patch Variants Tweaks" in screen
+    assert "Dashboard Source | Step 1/4" in screen
     assert "Latest native binary" in screen
     assert "Native 2.1.121" in screen
     assert "Inspect" in screen
@@ -123,7 +141,7 @@ def test_variant_name_text_accepts_lowercase_t(tmp_path, monkeypatch):
     assert state.theme_id == "hacker-bbs"
 
 
-def test_screen_text_includes_theme_and_progress():
+def test_screen_text_includes_theme_and_compact_progress():
     state = tui.TuiState(
         counts="Native: 0  NPM: 0  Extractions: 0  Patch packages: 2  Profiles: 0",
         dashboard_step=1,
@@ -134,17 +152,16 @@ def test_screen_text_includes_theme_and_progress():
     screen = tui._screen_text(state)
 
     assert "Theme: Hacker BBS" in screen
-    assert "Wizard: [" in screen
-    assert "2/4 Patches" in screen
-    assert "Patches: [" in screen
-    assert "1/2 selected" in screen
-    assert "T theme" in screen
+    assert "Dashboard Patches | Step 2/4" in screen
+    assert "Patches 1" in screen
+    assert "Wizard: [" not in screen
+    assert "Theme T" in screen
 
 
 def test_footer_keys_match_dashboard_step():
     state = tui.TuiState(mode="dashboard", dashboard_step=0)
     footer = tui._footer_text(state)
-    assert "R refresh" in footer
+    assert "Refresh R" in footer
     assert "Space toggle" not in footer
 
     state.dashboard_step = 1
@@ -228,6 +245,45 @@ def test_render_frame_themes_full_surface():
 
     assert cells
     assert all(cell["fg"] != int(Color.Reset) or cell["bg"] != int(Color.Reset) for cell in cells)
+
+
+def test_render_frame_puts_theme_only_in_bottom_banner():
+    state = tui.TuiState(theme_id="hacker-bbs")
+
+    screen = _render_screen(state, 80, 24)
+    lines = screen.splitlines()
+
+    assert screen.count("Theme: Hacker BBS") == 1
+    assert all("Theme:" not in line for line in lines[:4])
+    assert "Theme: Hacker BBS" in "\n".join(lines[-5:])
+
+
+def test_render_frame_uses_stable_chrome_for_dashboard_and_inspect():
+    dashboard = tui.TuiState(mode="dashboard")
+    inspect = tui.TuiState(mode="inspect")
+
+    assert tui.rendering.layout_heights(24) == (4, 5)
+
+    dashboard_lines = _render_screen(dashboard, 80, 24).splitlines()
+    inspect_lines = _render_screen(inspect, 80, 24).splitlines()
+
+    assert "Dashboard: Source" in dashboard_lines[4]
+    assert "Inspect" in inspect_lines[4]
+    assert "Status" in dashboard_lines[-5]
+    assert "Status" in inspect_lines[-5]
+
+
+def test_render_frame_keeps_body_and_footer_at_short_height():
+    state = tui.TuiState(
+        download_index={"binary": {"latest": "2.1.122"}},
+        download_versions=["2.1.122", "2.1.121"],
+    )
+
+    screen = _render_screen(state, 80, 18)
+
+    assert "Latest native binary" in screen
+    assert "Status: Ready" in screen
+    assert "Theme: Hacker BBS" in screen
 
 
 def test_dashboard_selects_specific_version_without_downloading():
@@ -415,6 +471,15 @@ def test_move_tab_cycles_from_dashboard_to_inspect():
     assert state.mode == "inspect"
 
 
+def test_move_tab_clears_stale_status():
+    state = tui.TuiState(mode="dashboard", message="Select at least one patch package.")
+
+    tui._move_tab(state, 1)
+
+    assert state.mode == "inspect"
+    assert state.message == ""
+
+
 def test_variants_tab_lists_providers_and_progress():
     state = tui.TuiState(
         mode="variants",
@@ -431,7 +496,7 @@ def test_variants_tab_lists_providers_and_progress():
     screen = tui._screen_text(state)
 
     assert "[Variants]" in screen
-    assert "Variant steps: [Provider]" in screen
+    assert "Variants Provider | Step 1/6" in screen
     assert "mirror  Mirror Claude" in screen
 
 

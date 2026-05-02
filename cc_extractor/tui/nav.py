@@ -18,6 +18,8 @@ from .rendering import active_tab
 
 
 def set_mode(state, mode: str) -> None:
+    if state.mode != mode:
+        state.message = ""
     state.mode = mode
     state.selected_index = 0
 

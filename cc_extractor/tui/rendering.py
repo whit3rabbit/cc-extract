@@ -11,21 +11,20 @@ from ..workspace import workspace_root
 from ._const import DASHBOARD_STEPS, TABS, TAB_MODES, VARIANT_STEPS
 from .options import (
     dashboard_options,
-    dashboard_steps,
-    dashboard_summary,
+    dashboard_source_label,
     dashboard_title,
     format_native_artifact,
+    loaded_profile,
     selected_dashboard_packages,
+    selected_variant_provider,
     selected_tweaks_edit_patch,
     tweaks_edit_groups,
     tweaks_edit_options,
     tweaks_source_options,
     variant_options,
-    variant_steps,
-    variant_summary,
     variant_title,
 )
-from .themes import active_theme, normalize_theme_id, theme_name
+from .themes import active_theme, theme_name
 
 
 # -- Tab + status bar ---------------------------------------------------------
@@ -54,6 +53,11 @@ def tab_bar(state):
         else:
             parts.append(f" {tab} ")
     return "  ".join(parts)
+
+
+def compact_tab_bar(state):
+    active = active_tab(state)
+    return " ".join(f"[{tab}]" if tab == active else tab for tab in TABS)
 
 
 # -- Body labels and progress -------------------------------------------------
@@ -216,47 +220,74 @@ def _patch_progress_spec(state):
     return ("Patches", ratio, f"{selected}/{total} selected")
 
 
-# -- Footer / key hints -------------------------------------------------------
+# -- Compact chrome / key hints -----------------------------------------------
+
+def top_chrome_lines(state):
+    return [
+        f"cc-extractor | {compact_tab_bar(state)}",
+        context_line(state),
+    ]
+
+
+def context_line(state):
+    if state.mode == "dashboard":
+        step = DASHBOARD_STEPS[state.dashboard_step]
+        profile = loaded_profile(state)
+        profile_label = profile.name if profile else "none"
+        return (
+            f"Dashboard {step} | Step {state.dashboard_step + 1}/{len(DASHBOARD_STEPS)} | "
+            f"Source {dashboard_source_label(state)} | "
+            f"Patches {len(selected_dashboard_packages(state))} | Profile {profile_label}"
+        )
+    if state.mode == "variants":
+        provider = selected_variant_provider(state)
+        name = state.variant_name or (provider.get("defaultVariantName") if provider else "")
+        credential = state.variant_credential_env or "none"
+        return (
+            f"Variants {VARIANT_STEPS[state.variant_step]} | "
+            f"Step {state.variant_step + 1}/{len(VARIANT_STEPS)} | "
+            f"Provider {provider.get('key') if provider else 'none'} | "
+            f"Name {name or 'none'} | Credential {credential}"
+        )
+    if state.mode == "patch-package":
+        selected = len(selected_dashboard_packages(state))
+        total = len(state.patch_packages)
+        return f"Patch packages | Patches {selected}/{total} selected"
+    if state.mode == "tweaks-source":
+        return f"Tweaks | Variants {len(state.variants)}"
+    if state.mode == "tweaks-edit":
+        pending = len(set(state.tweaks_pending) ^ set(state.tweaks_baseline))
+        return f"Tweaks edit | Variant {state.tweaks_variant_id or 'none'} | Pending changes {pending}"
+    if state.mode in {"inspect", "extract", "patch-source"}:
+        return f"{active_tab(state)} | Native artifacts {len(state.native_artifacts)}"
+    return active_tab(state)
+
+
+def context_hint(state):
+    if state.mode == "dashboard" and state.dashboard_step == 2:
+        return "Profile names: select Name, then type or Backspace."
+    if state.mode == "variants":
+        if state.variant_step == 1:
+            return "Variant names: select Name, then type or Backspace."
+        if state.variant_step == 2:
+            return "Credential env: select row, then type or Backspace. Raw API keys are not accepted."
+        if state.variant_step == 3:
+            return "Model aliases: select row, then type or Backspace. Empty rows use provider defaults."
+    return "Ready"
+
+
+def status_line(state):
+    message = state.message.strip() if state.message else context_hint(state)
+    return f"Status: {message}"
+
+
+def meta_line(state):
+    counts = f" | {state.counts}" if state.counts else ""
+    return f"Theme: {theme_name(state.theme_id)} | Workspace: {workspace_root()}{counts}"
+
 
 def footer_lines(state):
-    line = f"Theme: {theme_name(state.theme_id)} ({normalize_theme_id(state.theme_id)})."
-    if state.mode == "dashboard":
-        lines = [state.message, line, _dashboard_key_line(state)]
-        if state.dashboard_step == 2:
-            lines.append("Profile names: select the Name row, then type or Backspace.")
-        return lines
-    if state.mode == "patch-package":
-        return [
-            state.message,
-            line,
-            "Keys: Left/Right/Tab tabs, Up/Down select, Space toggle, Enter apply, B/Esc back, T theme, Q quit.",
-        ]
-    if state.mode == "variants":
-        lines = [state.message, line, _variant_key_line(state)]
-        if state.variant_step == 1:
-            lines.append("Variant names: select the Name row, then type or Backspace.")
-        if state.variant_step == 2:
-            lines.append("Credential env: select the row, then type or Backspace. Raw API keys are not accepted here.")
-        if state.variant_step == 3:
-            lines.append("Model aliases: select a row, then type or Backspace. Empty rows use provider defaults.")
-        return lines
-    if state.mode == "tweaks-source":
-        return [
-            state.message,
-            line,
-            "Keys: Left/Right/Tab tabs, Up/Down select, Enter pick variant, B/Esc back, T theme, Q quit.",
-        ]
-    if state.mode == "tweaks-edit":
-        return [
-            state.message,
-            line,
-            "Keys: Up/Down select, Space toggle, A apply, B/Esc discard or back, T theme, Q quit.",
-        ]
-    return [
-        state.message,
-        line,
-        "Keys: Left/Right/Tab tabs, Up/Down select, Enter run, T theme, Q quit.",
-    ]
+    return [status_line(state), key_line(state), meta_line(state)]
 
 
 def footer_text(state):
@@ -265,51 +296,53 @@ def footer_text(state):
 
 def _dashboard_key_line(state):
     if state.dashboard_step == 0:
-        action = "Enter choose, R refresh"
+        action = "Enter choose | Refresh R"
     elif state.dashboard_step == 1:
-        action = "Space toggle, Enter choose"
+        action = "Space toggle | Enter choose"
     elif state.dashboard_step == 3:
         action = "Enter run"
     else:
         action = "Enter choose"
-    return f"Keys: Left/Right/Tab tabs, Up/Down select, {action}, B/Esc back, T theme, Q quit."
+    return f"Keys: Tabs Left/Right/Tab | Move Up/Down | {action} | Back B/Esc | Theme T | Quit Q"
 
 
 def _variant_key_line(state):
     if state.variant_step == 4:
-        action = "Space toggle tweak, Enter choose"
+        action = "Space toggle tweak | Enter choose"
     elif state.variant_step == 5:
         action = "Enter choose"
     elif state.variant_step in {1, 2, 3}:
-        action = "Type text, Enter choose"
+        action = "Type text | Enter choose"
     else:
         action = "Enter choose"
-    return f"Keys: Left/Right/Tab tabs, Up/Down select, {action}, B/Esc back, T theme, Q quit."
+    return f"Keys: Tabs Left/Right/Tab | Move Up/Down | {action} | Back B/Esc | Theme T | Quit Q"
+
+
+def key_line(state):
+    if state.mode == "dashboard":
+        return _dashboard_key_line(state)
+    if state.mode == "patch-package":
+        return "Keys: Tabs Left/Right/Tab | Move Up/Down | Space toggle | Enter apply | Back B/Esc | Theme T | Quit Q"
+    if state.mode == "variants":
+        return _variant_key_line(state)
+    if state.mode == "tweaks-source":
+        return "Keys: Tabs Left/Right/Tab | Move Up/Down | Enter pick variant | Back B/Esc | Theme T | Quit Q"
+    if state.mode == "tweaks-edit":
+        return "Keys: Move Up/Down | Space toggle | Apply A | Back B/Esc | Theme T | Quit Q"
+    return "Keys: Tabs Left/Right/Tab | Move Up/Down | Enter run | Theme T | Quit Q"
 
 
 # -- Text fallback (for headless) ---------------------------------------------
 
 def screen_text(state, height=24):
-    lines = [
-        f"Workspace: {workspace_root()}",
-        state.counts,
-        f"Theme: {theme_name(state.theme_id)}",
-        f"Tabs: {tab_bar(state)}",
-        "",
-    ]
-
-    if state.mode == "dashboard":
-        lines.extend([dashboard_steps(state), dashboard_summary(state)])
-    if state.mode == "variants":
-        lines.extend([variant_steps(state), variant_summary(state)])
-    for title, ratio, label in progress_specs(state):
-        lines.append(ascii_progress(title, ratio, label))
-    lines.append("")
+    top_height, footer_height = layout_heights(height)
+    body_height = max(3, height - top_height - footer_height)
+    lines = top_chrome_lines(state) + [""]
 
     title, labels = current_labels(state)
     lines.append(title)
     cursor = selected_label_index(state)
-    visible = visible_items(labels, cursor, max(3, height - 16))
+    visible = visible_items(labels, cursor, max(1, body_height - 2))
     if visible:
         start_index, visible_labels = visible
         for offset, label in enumerate(visible_labels):
@@ -325,7 +358,7 @@ def screen_text(state, height=24):
         for line in tweaks_detail_text(state).splitlines():
             lines.append("  " + line)
 
-    lines.extend(["", state.message, ""])
+    lines.append("")
     lines.extend(footer_lines(state))
     return "\n".join(lines)
 
@@ -540,37 +573,45 @@ def _progress_box_rows(title, ratio, label, width):
     return _box_rows(title, [ascii_progress(title, ratio, label, width=progress_width)], width, 3, "gauge")
 
 
+def layout_heights(height):
+    height = max(1, height)
+    if height >= 16:
+        return 4, 5
+    if height >= 12:
+        return 3, 4
+    top_height = 1
+    footer_height = min(2, max(0, height - top_height - 1))
+    return top_height, footer_height
+
+
+def _plain_rows(lines, width, role):
+    return [_single_role_row(_fit_text(line, width), role) for line in lines]
+
+
+def _minimal_frame_rows(state, width, height):
+    rows = _plain_rows([top_chrome_lines(state)[0]], width, "header")
+    footer_candidates = [status_line(state), key_line(state)]
+    footer_height = min(len(footer_candidates), max(0, height - len(rows) - 1))
+    body_height = max(1, height - len(rows) - footer_height)
+    body_rows = body_text(state, body_height).splitlines()[:body_height]
+    rows.extend(_plain_rows(body_rows, width, "body"))
+    rows.extend(_plain_rows(footer_candidates[:footer_height], width, "footer"))
+    return rows[:height]
+
+
 def _frame_rows(state, width, height):
     width = max(1, width)
     height = max(1, height)
-    theme = active_theme(state)
-    header_lines = [
-        f"Workspace: {workspace_root()}",
-        state.counts,
-        f"Theme: {theme.name}",
-    ]
-    if state.mode == "dashboard":
-        header_lines.extend([dashboard_steps(state), dashboard_summary(state)])
-    if state.mode == "variants":
-        header_lines.extend([variant_steps(state), variant_summary(state)])
+    if height < 12:
+        rows = _minimal_frame_rows(state, width, height)
+        if len(rows) < height:
+            rows.extend(_single_role_row(_fit_text("", width), "body") for _ in range(height - len(rows)))
+        return rows[:height]
 
-    header_height = min(max(4, len(header_lines) + 2), height)
-    tabs_height = 3 if height - header_height > 3 else 0
-    progress = progress_specs(state)
-    progress_height = min(
-        len(progress) * 3,
-        max(0, height - header_height - tabs_height - 2),
-    )
-    footer_height = min(6, max(1, height - header_height - tabs_height - progress_height))
-    body_height = max(1, height - header_height - tabs_height - progress_height - footer_height)
+    top_height, footer_height = layout_heights(height)
+    body_height = max(1, height - top_height - footer_height)
 
-    rows = _box_rows("cc-extractor", header_lines, width, header_height, "header")
-    if tabs_height:
-        rows.extend(_box_rows("Tabs", [tab_bar(state)], width, tabs_height, "tabs"))
-    for index, (title, ratio, label) in enumerate(progress):
-        if (index + 1) * 3 > progress_height:
-            break
-        rows.extend(_progress_box_rows(title, ratio, label, width))
+    rows = _box_rows("", top_chrome_lines(state), width, top_height, "header")
     if state.mode == "tweaks-edit" and width > 60:
         rows.extend(_tweaks_two_pane_rows(state, width, body_height))
     else:
