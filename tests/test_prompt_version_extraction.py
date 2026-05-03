@@ -165,6 +165,148 @@ def test_extract_version_prompts_uses_nearest_local_catalog_as_seed(tmp_path, mo
     assert result.unnamed_count == 0
 
 
+def test_force_prompts_prefers_exact_vendor_catalog_over_existing_output(
+    tmp_path,
+    monkeypatch,
+):
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    output_path = prompts_dir / "2.1.10.json"
+    bad_prompt = build_prompt(version="2.1.10", name="", prompt_id="")
+    output_path.write_text(
+        json.dumps({"version": "2.1.10", "prompts": [bad_prompt]}),
+        encoding="utf-8",
+    )
+
+    catalog_dir = tmp_path / "vendor"
+    catalog_dir.mkdir()
+    vendor_prompt = build_prompt(
+        version="2.1.10",
+        name="Vendor Prompt",
+        prompt_id="vendor-prompt",
+    )
+    vendor_path = catalog_dir / "prompts-2.1.10.json"
+    vendor_path.write_text(
+        json.dumps({"version": "2.1.10", "prompts": [vendor_prompt]}),
+        encoding="utf-8",
+    )
+
+    binary_path = tmp_path / "downloads" / "2.1.10" / "claude"
+    cli_path = tmp_path / "work" / "2.1.10" / "extracted" / "cli.js"
+    captured = {}
+
+    def fake_download_binary(version, download_dir):
+        binary_path.parent.mkdir(parents=True, exist_ok=True)
+        binary_path.write_text("binary", encoding="utf-8")
+        return str(binary_path)
+
+    def fake_extract_binary(binary, extract_dir, version, force=False):
+        cli_path.parent.mkdir(parents=True, exist_ok=True)
+        cli_path.write_text("prompt source", encoding="utf-8")
+        return cli_path
+
+    def fake_extract_prompts(input_path, version=None, existing_prompts=None):
+        captured["existing_prompts"] = existing_prompts
+        return {
+            "version": version,
+            "prompts": [build_prompt(version=version, name="Result", prompt_id="result")],
+        }
+
+    monkeypatch.setattr(extract_prompt_versions, "download_binary", fake_download_binary)
+    monkeypatch.setattr(extract_prompt_versions, "extract_binary", fake_extract_binary)
+    monkeypatch.setattr(extract_prompt_versions, "extract_prompts", fake_extract_prompts)
+
+    result = extract_prompt_versions.extract_version_prompts(
+        "2.1.10",
+        prompts_dir,
+        tmp_path / "downloads",
+        tmp_path / "work",
+        catalog_dir_value=catalog_dir,
+        force_prompts=True,
+    )
+
+    assert captured["existing_prompts"] == [vendor_prompt]
+    assert result.seed_path == vendor_path
+
+
+def test_force_prompts_without_exact_catalog_prefers_nearest_named_vendor_seed(
+    tmp_path,
+    monkeypatch,
+):
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    output_path = prompts_dir / "2.1.123.json"
+    output_path.write_text(
+        json.dumps(
+            {
+                "version": "2.1.123",
+                "prompts": [build_prompt(version="2.1.123", name="", prompt_id="")],
+            }
+        ),
+        encoding="utf-8",
+    )
+    local_seed = prompts_dir / "2.1.122.json"
+    local_seed.write_text(
+        json.dumps(
+            {
+                "version": "2.1.122",
+                "prompts": [build_prompt(version="2.1.122", name="", prompt_id="")],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    catalog_dir = tmp_path / "vendor"
+    catalog_dir.mkdir()
+    vendor_prompt = build_prompt(
+        version="2.1.122",
+        name="Nearest Vendor Prompt",
+        prompt_id="nearest-vendor-prompt",
+    )
+    vendor_seed = catalog_dir / "prompts-2.1.122.json"
+    vendor_seed.write_text(
+        json.dumps({"version": "2.1.122", "prompts": [vendor_prompt]}),
+        encoding="utf-8",
+    )
+
+    binary_path = tmp_path / "downloads" / "2.1.123" / "claude"
+    cli_path = tmp_path / "work" / "2.1.123" / "extracted" / "cli.js"
+    captured = {}
+
+    def fake_download_binary(version, download_dir):
+        binary_path.parent.mkdir(parents=True, exist_ok=True)
+        binary_path.write_text("binary", encoding="utf-8")
+        return str(binary_path)
+
+    def fake_extract_binary(binary, extract_dir, version, force=False):
+        cli_path.parent.mkdir(parents=True, exist_ok=True)
+        cli_path.write_text("prompt source", encoding="utf-8")
+        return cli_path
+
+    def fake_extract_prompts(input_path, version=None, existing_prompts=None):
+        captured["existing_prompts"] = existing_prompts
+        return {
+            "version": version,
+            "prompts": [build_prompt(version=version, name="Result", prompt_id="result")],
+        }
+
+    monkeypatch.setattr(extract_prompt_versions, "download_binary", fake_download_binary)
+    monkeypatch.setattr(extract_prompt_versions, "extract_binary", fake_extract_binary)
+    monkeypatch.setattr(extract_prompt_versions, "extract_prompts", fake_extract_prompts)
+
+    result = extract_prompt_versions.extract_version_prompts(
+        "2.1.123",
+        prompts_dir,
+        tmp_path / "downloads",
+        tmp_path / "work",
+        catalog_dir_value=catalog_dir,
+        force_prompts=True,
+    )
+
+    assert captured["existing_prompts"] == [vendor_prompt]
+    assert result.seed_path == vendor_seed
+
+
 def test_prompt_summary_counts_unnamed_prompts():
     named = build_prompt()
     unnamed = build_prompt(name="", prompt_id="")

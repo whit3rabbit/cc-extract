@@ -74,6 +74,30 @@ def load_existing_prompts(path: Optional[Path]) -> List[Dict[str, Any]]:
     return data.get("prompts", [])
 
 
+def seed_named_count(path: Optional[Path]) -> int:
+    if path is None or not path.exists():
+        return 0
+    try:
+        return prompt_summary(json.loads(path.read_text(encoding="utf-8")))["named"]
+    except (OSError, json.JSONDecodeError, TypeError, KeyError):
+        return 0
+
+
+def best_named_prompt_path(paths: Sequence[Optional[Path]]) -> Optional[Path]:
+    best_path = None
+    best_named = -1
+
+    for path in paths:
+        if path is None or not path.exists():
+            continue
+        named = seed_named_count(path)
+        if best_path is None or named > best_named:
+            best_path = path
+            best_named = named
+
+    return best_path
+
+
 def prompt_summary(data: PromptData) -> Dict[str, int]:
     prompts = data.get("prompts", [])
     named = sum(1 for prompt in prompts if prompt.get("id") and prompt.get("name"))
@@ -214,11 +238,12 @@ def extract_version_prompts(
 
     extract_dir = work_dir / version / "extracted"
     cli_path = extract_binary(binary_path, extract_dir, version, force=force_extract)
-    existing_path = (
-        output_path
-        if output_path.exists()
-        else catalog_path(catalog_dir_value, version)
-        or nearest_existing_prompt_path(prompts_dir, version)
+    existing_path = prompt_seed_path(
+        prompts_dir,
+        catalog_dir_value,
+        version,
+        output_path,
+        force_prompts,
     )
     data = extract_prompts(
         str(cli_path),
@@ -314,6 +339,58 @@ def nearest_existing_prompt_path(prompts_dir: Path, version: str) -> Optional[Pa
         return None
 
     return max(candidates, key=lambda item: item[0])[1]
+
+
+def nearest_catalog_prompt_path(catalog_dir: Optional[Path], version: str) -> Optional[Path]:
+    if catalog_dir is None:
+        return None
+
+    candidates = []
+    target = version_tuple(version)
+
+    for path in catalog_dir.glob("prompts-*.json"):
+        candidate_version = path.stem[len("prompts-") :]
+        if not is_version(candidate_version):
+            continue
+        candidate_tuple = version_tuple(candidate_version)
+        if candidate_tuple < target:
+            candidates.append((candidate_tuple, path))
+
+    if not candidates:
+        return None
+
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def prompt_seed_path(
+    prompts_dir: Path,
+    catalog_dir_value: Optional[Path],
+    version: str,
+    output_path: Path,
+    force_prompts: bool,
+) -> Optional[Path]:
+    exact_catalog = catalog_path(catalog_dir_value, version)
+    if force_prompts:
+        if exact_catalog is not None:
+            return exact_catalog
+        return best_named_prompt_path(
+            [
+                output_path if output_path.exists() else None,
+                nearest_catalog_prompt_path(catalog_dir_value, version),
+                nearest_existing_prompt_path(prompts_dir, version),
+            ]
+        )
+
+    if output_path.exists():
+        return output_path
+    if exact_catalog is not None:
+        return exact_catalog
+    return best_named_prompt_path(
+        [
+            nearest_catalog_prompt_path(catalog_dir_value, version),
+            nearest_existing_prompt_path(prompts_dir, version),
+        ]
+    )
 
 
 def resolve_versions(args: argparse.Namespace) -> List[str]:

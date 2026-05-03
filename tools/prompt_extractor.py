@@ -18,6 +18,8 @@ except ImportError:  # pragma: no cover - exercised only without dev deps.
 
 Prompt = Dict[str, Any]
 IdentifierRange = Tuple[str, int, int]
+PromptMatchKey = Tuple[str, Tuple[int, ...]]
+PromptMatchIndex = Dict[PromptMatchKey, List[Prompt]]
 
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 _JS_KEYWORDS = {
@@ -731,6 +733,129 @@ def _joined(prompt: Prompt) -> str:
     return "".join(prompt.get("pieces", []))
 
 
+def _hex_digits(value: str) -> bool:
+    return bool(value) and all(char in "0123456789abcdefABCDEF" for char in value)
+
+
+def _decode_js_escapes_for_match(value: str) -> str:
+    result: List[str] = []
+    cursor = 0
+
+    while cursor < len(value):
+        char = value[cursor]
+        if char != "\\":
+            result.append(char)
+            cursor += 1
+            continue
+
+        escape_start = cursor
+        cursor += 1
+        if cursor >= len(value):
+            result.append("\\")
+            break
+
+        escaped = value[cursor]
+        cursor += 1
+
+        if escaped in ("'", '"', "\\", "`", "$"):
+            result.append(escaped)
+        elif escaped == "n":
+            result.append("\n")
+        elif escaped == "r":
+            result.append("\r")
+        elif escaped == "t":
+            result.append("\t")
+        elif escaped == "b":
+            result.append("\b")
+        elif escaped == "f":
+            result.append("\f")
+        elif escaped == "v":
+            result.append("\v")
+        elif escaped == "0":
+            result.append("\0")
+        elif escaped == "\n":
+            continue
+        elif escaped == "\r":
+            if cursor < len(value) and value[cursor] == "\n":
+                cursor += 1
+        elif escaped == "x":
+            token = value[cursor : cursor + 2]
+            if len(token) == 2 and _hex_digits(token):
+                result.append(chr(int(token, 16)))
+                cursor += 2
+            else:
+                result.append(value[escape_start:cursor])
+        elif escaped == "u" and cursor < len(value) and value[cursor] == "{":
+            end = value.find("}", cursor + 1)
+            token = value[cursor + 1 : end] if end != -1 else ""
+            if end != -1 and _hex_digits(token):
+                result.append(chr(int(token, 16)))
+                cursor = end + 1
+            else:
+                result.append(value[escape_start:cursor])
+        elif escaped == "u":
+            token = value[cursor : cursor + 4]
+            if len(token) == 4 and _hex_digits(token):
+                code_point = int(token, 16)
+                cursor += 4
+                if (
+                    0xD800 <= code_point <= 0xDBFF
+                    and cursor + 6 <= len(value)
+                    and value[cursor : cursor + 2] == "\\u"
+                    and _hex_digits(value[cursor + 2 : cursor + 6])
+                ):
+                    low_surrogate = int(value[cursor + 2 : cursor + 6], 16)
+                    if 0xDC00 <= low_surrogate <= 0xDFFF:
+                        code_point = 0x10000 + ((code_point - 0xD800) << 10)
+                        code_point += low_surrogate - 0xDC00
+                        cursor += 6
+                result.append(chr(code_point))
+            else:
+                result.append(value[escape_start:cursor])
+        else:
+            result.append(value[escape_start:cursor])
+
+    return "".join(result)
+
+
+def _prompt_match_key(prompt: Prompt, *, normalize: bool = False) -> PromptMatchKey:
+    content = _joined(prompt)
+    if normalize:
+        content = _decode_js_escapes_for_match(content)
+    return content, tuple(prompt.get("identifiers", []))
+
+
+def _prompt_match_keys(prompt: Prompt) -> List[PromptMatchKey]:
+    exact_key = _prompt_match_key(prompt)
+    normalized_key = _prompt_match_key(prompt, normalize=True)
+    if normalized_key == exact_key:
+        return [exact_key]
+    return [exact_key, normalized_key]
+
+
+def _add_prompt_match(index: PromptMatchIndex, key: PromptMatchKey, prompt: Prompt) -> None:
+    prompts = index.setdefault(key, [])
+    if not any(existing is prompt for existing in prompts):
+        prompts.append(prompt)
+
+
+def _prompt_match_indexes(prompts: Sequence[Prompt]) -> Tuple[PromptMatchIndex, PromptMatchIndex]:
+    exact_index: PromptMatchIndex = {}
+    fallback_index: PromptMatchIndex = {}
+
+    for prompt in prompts:
+        _add_prompt_match(exact_index, _prompt_match_key(prompt), prompt)
+        for key in _prompt_match_keys(prompt):
+            _add_prompt_match(fallback_index, key, prompt)
+
+    return exact_index, fallback_index
+
+
+def _single_prompt_match(index: PromptMatchIndex, key: PromptMatchKey) -> Optional[Prompt]:
+    matches = index.get(key, [])
+    return matches[0] if len(matches) == 1 else None
+
+
 def _find_pieces_in_source(
     pieces: Sequence[str],
     source_text: str,
@@ -797,6 +922,41 @@ def _find_pieces_in_source(
         search_from = pivot_start + 1
 
 
+def _find_existing_prompt_range(
+    existing: Prompt,
+    source_text: str,
+) -> Optional[Tuple[int, int]]:
+    content = _joined(existing)
+    if content:
+        offset = source_text.find(content)
+        if offset != -1:
+            return offset, offset + len(content)
+
+    match_range = _find_pieces_in_source(existing.get("pieces", []), source_text)
+    if match_range:
+        return match_range
+
+    normalized_source = _decode_js_escapes_for_match(source_text)
+    normalized_content = _decode_js_escapes_for_match(content)
+    normalized_pieces = [
+        _decode_js_escapes_for_match(piece)
+        for piece in existing.get("pieces", [])
+    ]
+    if (
+        normalized_source == source_text
+        and normalized_content == content
+        and normalized_pieces == existing.get("pieces", [])
+    ):
+        return None
+
+    if normalized_content:
+        offset = normalized_source.find(normalized_content)
+        if offset != -1:
+            return offset, offset + len(normalized_content)
+
+    return _find_pieces_in_source(normalized_pieces, normalized_source)
+
+
 def _recover_existing_prompts(
     existing_prompts: Sequence[Prompt],
     source_text: str,
@@ -804,39 +964,28 @@ def _recover_existing_prompts(
     current_version: Optional[str],
 ) -> List[Prompt]:
     already_keys = {
-        (_joined(prompt), tuple(prompt.get("identifiers", [])))
+        key
         for prompt in already_prompts
+        for key in _prompt_match_keys(prompt)
     }
     recovered: List[Prompt] = []
 
     for existing in existing_prompts:
-        existing_key = (_joined(existing), tuple(existing.get("identifiers", [])))
-        if existing_key in already_keys:
+        existing_keys = set(_prompt_match_keys(existing))
+        if existing_keys & already_keys:
             continue
 
-        start = None
-        end = None
-        content = _joined(existing)
-        if content:
-            offset = source_text.find(content)
-            if offset != -1:
-                start = offset
-                end = offset + len(content)
-
-        if start is None:
-            match_range = _find_pieces_in_source(existing.get("pieces", []), source_text)
-            if match_range:
-                start, end = match_range
-
-        if start is None or end is None:
+        match_range = _find_existing_prompt_range(existing, source_text)
+        if match_range is None:
             continue
+        start, end = match_range
 
         item = dict(existing)
         item["start"] = start
         item["end"] = end
         item["version"] = item.get("version") or current_version
         recovered.append(item)
-        already_keys.add(existing_key)
+        already_keys.update(existing_keys)
 
     return recovered
 
@@ -855,17 +1004,17 @@ def merge_with_existing(
             merged.append(item)
         return merged
 
+    exact_index, fallback_index = _prompt_match_indexes(old_prompts)
+
     for new_prompt in new_prompts:
         item = dict(new_prompt)
-        match = None
+        exact_key = _prompt_match_key(item)
+        match = _single_prompt_match(exact_index, exact_key)
 
-        for old_prompt in old_prompts:
-            if (
-                _joined(item) == _joined(old_prompt)
-                and item.get("identifiers") == old_prompt.get("identifiers")
-            ):
-                match = old_prompt
-                break
+        if match is None:
+            normalized_key = _prompt_match_key(item, normalize=True)
+            if normalized_key != exact_key:
+                match = _single_prompt_match(fallback_index, normalized_key)
 
         if match:
             item["name"] = match.get("name", "")

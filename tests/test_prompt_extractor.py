@@ -186,6 +186,130 @@ def test_existing_metadata_is_preserved_for_matching_prompts(tmp_path):
     assert data["prompts"][0]["version"] == "2.1.112"
 
 
+def test_existing_metadata_matches_decoded_template_escape_equivalents(tmp_path):
+    js_file = tmp_path / "cli.js"
+    js_file.write_text(
+        (
+            "const prompt = `Hello \\u2014 ${flag} "
+            "You should always follow instructions. You must keep context.`;"
+        ),
+        encoding="utf-8",
+    )
+
+    data = prompt_extractor.extract_prompts(
+        str(js_file),
+        min_length=20,
+        version="2.1.110",
+        existing_prompts=[
+            {
+                "name": "Decoded Prompt",
+                "id": "decoded-prompt",
+                "description": "Uses cooked template text.",
+                "pieces": [
+                    "Hello \u2014 ${",
+                    "} You should always follow instructions. You must keep context.",
+                ],
+                "identifiers": [0],
+                "identifierMap": {"0": "FLAG"},
+                "version": "2.1.109",
+            }
+        ],
+    )
+
+    assert data["prompts"][0]["id"] == "decoded-prompt"
+    assert data["prompts"][0]["identifierMap"] == {"0": "FLAG"}
+    assert data["prompts"][0]["pieces"] == [
+        "Hello \\u2014 ${",
+        "} You should always follow instructions. You must keep context.",
+    ]
+
+
+def test_existing_metadata_exact_match_wins_before_normalized_match(tmp_path):
+    js_file = tmp_path / "cli.js"
+    js_file.write_text(
+        (
+            "const prompt = `Hello \\u2014 ${flag} "
+            "You should always follow instructions. You must keep context.`;"
+        ),
+        encoding="utf-8",
+    )
+
+    data = prompt_extractor.extract_prompts(
+        str(js_file),
+        min_length=20,
+        version="2.1.110",
+        existing_prompts=[
+            {
+                "name": "Raw Prompt",
+                "id": "raw-prompt",
+                "description": "Uses raw template source text.",
+                "pieces": [
+                    "Hello \\u2014 ${",
+                    "} You should always follow instructions. You must keep context.",
+                ],
+                "identifiers": [0],
+                "identifierMap": {"0": "RAW_FLAG"},
+                "version": "2.1.110",
+            },
+            {
+                "name": "Decoded Prompt",
+                "id": "decoded-prompt",
+                "description": "Uses cooked template text.",
+                "pieces": [
+                    "Hello \u2014 ${",
+                    "} You should always follow instructions. You must keep context.",
+                ],
+                "identifiers": [0],
+                "identifierMap": {"0": "DECODED_FLAG"},
+                "version": "2.1.109",
+            },
+        ],
+    )
+
+    assert data["prompts"][0]["id"] == "raw-prompt"
+    assert data["prompts"][0]["identifierMap"] == {"0": "RAW_FLAG"}
+
+
+def test_nonmatching_existing_metadata_remains_unnamed(tmp_path):
+    js_file = tmp_path / "cli.js"
+    js_file.write_text(
+        (
+            "const prompt = `Different \\u2014 ${flag} "
+            "You should always follow instructions. You must keep context.`;"
+        ),
+        encoding="utf-8",
+    )
+
+    data = prompt_extractor.extract_prompts(
+        str(js_file),
+        min_length=20,
+        version="2.1.110",
+        existing_prompts=[
+            {
+                "name": "Decoded Prompt",
+                "id": "decoded-prompt",
+                "description": "Uses cooked template text.",
+                "pieces": [
+                    "Hello \u2014 ${",
+                    "} You should always follow instructions. You must keep context.",
+                ],
+                "identifiers": [0],
+                "identifierMap": {"0": "FLAG"},
+                "version": "2.1.109",
+            }
+        ],
+    )
+
+    extracted = next(
+        prompt
+        for prompt in data["prompts"]
+        if prompt["pieces"][0].startswith("Different")
+    )
+    assert extracted["name"] == ""
+    assert extracted["id"] == ""
+    assert extracted["description"] == ""
+
+
 def test_existing_catalog_recovers_short_prompt_literals(tmp_path):
     js_file = tmp_path / "cli.js"
     js_file.write_text(
@@ -248,5 +372,35 @@ def test_existing_catalog_recovers_short_template_prompts(tmp_path):
     assert data["prompts"][0]["id"] == "system-reminder-file-opened-in-ide"
     assert data["prompts"][0]["pieces"] == [
         "The user opened the file ${",
+        "} in the IDE.",
+    ]
+
+
+def test_existing_catalog_recovers_short_template_with_escape_equivalence(tmp_path):
+    js_file = tmp_path / "cli.js"
+    js_file.write_text(
+        'const reminder = `The user saw \\u2014 ${fileName} in the IDE.`;',
+        encoding="utf-8",
+    )
+
+    data = prompt_extractor.extract_prompts(
+        str(js_file),
+        version="2.1.122",
+        existing_prompts=[
+            {
+                "name": "System Reminder: IDE escape",
+                "id": "system-reminder-ide-escape",
+                "description": "IDE reminder with cooked escape text.",
+                "pieces": ["The user saw \u2014 ${", "} in the IDE."],
+                "identifiers": [0],
+                "identifierMap": {"0": "FILENAME"},
+                "version": "2.1.18",
+            }
+        ],
+    )
+
+    assert data["prompts"][0]["id"] == "system-reminder-ide-escape"
+    assert data["prompts"][0]["pieces"] == [
+        "The user saw \u2014 ${",
         "} in the IDE.",
     ]
