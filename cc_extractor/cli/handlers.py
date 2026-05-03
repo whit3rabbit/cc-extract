@@ -4,6 +4,7 @@ import json
 import sys
 from pathlib import Path
 
+from .._utils import atomic_write_bytes_no_symlink
 from ..binary_patcher import PatchInputs, apply_patches, replace_entry_js
 from ..bun_extract import parse_bun_binary
 from ..bundler import pack_bundle
@@ -98,8 +99,8 @@ def cmd_replace_entry(args):
     result = replace_entry_js(data, info, new_content)
     out_path = Path(args.out)
     try:
-        out_path.write_bytes(result.buf)
-    except OSError as exc:
+        atomic_write_bytes_no_symlink(out_path, result.buf, mode=0o755)
+    except (OSError, ValueError) as exc:
         print(f"Error writing output: {exc}", file=sys.stderr)
         sys.exit(1)
     print(json.dumps(

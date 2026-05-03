@@ -5,8 +5,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-from .._utils import safe_child_path, safe_relative_path
+from .._utils import atomic_write_bytes_no_symlink, atomic_write_text_no_symlink, safe_child_path, safe_relative_path
 from .types import BunFormatError
+
+MAX_EXTRACT_FILES = 100_000
+MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
+MAX_EXTRACT_SINGLE_FILE_BYTES = 512 * 1024 * 1024
 
 
 @dataclass
@@ -22,6 +26,8 @@ def extract_all(data, info, out_dir, write_sourcemaps=False, manifest=True):
     written = []
 
     manifest_data = _build_manifest(info)
+    emitted_files = 0
+    emitted_bytes = 0
 
     for module in info.modules:
         rel_path = _sanitize_rel_path(module.name)
@@ -31,7 +37,16 @@ def extract_all(data, info, out_dir, write_sourcemaps=False, manifest=True):
         if module.cont_len > 0:
             out_path = _safe_extract_path(out_root, rel_path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_bytes(data[info.data_start + module.cont_off : info.data_start + module.cont_off + module.cont_len])
+            emitted_files, emitted_bytes = _account_emitted(
+                emitted_files,
+                emitted_bytes,
+                module.cont_len,
+                rel_path,
+            )
+            atomic_write_bytes_no_symlink(
+                out_path,
+                data[info.data_start + module.cont_off : info.data_start + module.cont_off + module.cont_len],
+            )
             module_info["sourceFile"] = rel_path
             written.append(str(out_path))
 
@@ -39,7 +54,14 @@ def extract_all(data, info, out_dir, write_sourcemaps=False, manifest=True):
             smap_rel = rel_path + ".map"
             smap_path = _safe_extract_path(out_root, smap_rel)
             smap_path.parent.mkdir(parents=True, exist_ok=True)
-            smap_path.write_bytes(
+            emitted_files, emitted_bytes = _account_emitted(
+                emitted_files,
+                emitted_bytes,
+                module.smap_len,
+                smap_rel,
+            )
+            atomic_write_bytes_no_symlink(
+                smap_path,
                 data[info.data_start + module.smap_off : info.data_start + module.smap_off + module.smap_len]
             )
             module_info["sourcemapFile"] = smap_rel
@@ -49,14 +71,23 @@ def extract_all(data, info, out_dir, write_sourcemaps=False, manifest=True):
             bc_rel = rel_path + ".bc"
             bc_path = _safe_extract_path(out_root, bc_rel)
             bc_path.parent.mkdir(parents=True, exist_ok=True)
-            bc_path.write_bytes(data[info.data_start + module.bc_off : info.data_start + module.bc_off + module.bc_len])
+            emitted_files, emitted_bytes = _account_emitted(
+                emitted_files,
+                emitted_bytes,
+                module.bc_len,
+                bc_rel,
+            )
+            atomic_write_bytes_no_symlink(
+                bc_path,
+                data[info.data_start + module.bc_off : info.data_start + module.bc_off + module.bc_len],
+            )
             module_info["bytecodeFile"] = bc_rel
             written.append(str(bc_path))
 
     manifest_path = None
     if manifest:
         manifest_path = out_root / ".bundle_manifest.json"
-        manifest_path.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
+        atomic_write_text_no_symlink(manifest_path, json.dumps(manifest_data, indent=2) + "\n")
 
     return ExtractAllResult(
         written=written,
@@ -114,3 +145,15 @@ def _safe_extract_path(out_root: Path, rel_path: str) -> Path:
         return safe_child_path(out_root, rel_path, label="module path")
     except ValueError as exc:
         raise BunFormatError(f"Refusing to extract module with unsafe path: {rel_path}") from exc
+
+
+def _account_emitted(file_count: int, byte_count: int, size: int, rel_path: str):
+    if size > MAX_EXTRACT_SINGLE_FILE_BYTES:
+        raise BunFormatError(f"Refusing to extract oversized module: {rel_path} ({size} bytes)")
+    next_file_count = file_count + 1
+    if next_file_count > MAX_EXTRACT_FILES:
+        raise BunFormatError(f"Refusing to extract too many files: {next_file_count}")
+    next_byte_count = byte_count + size
+    if next_byte_count > MAX_EXTRACTED_BYTES:
+        raise BunFormatError(f"Refusing to extract too many bytes: {next_byte_count}")
+    return next_file_count, next_byte_count

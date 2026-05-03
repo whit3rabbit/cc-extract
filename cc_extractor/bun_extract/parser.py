@@ -17,6 +17,9 @@ from .macho import find_bun_section, is_macho, macho_data_start
 from .pe import find_bun_pe_section, is_pe, pe_data_start
 from .types import BunBinaryInfo, BunFormatError, BunModule
 
+MAX_BUNDLE_BYTES = 2 * 1024 * 1024 * 1024
+MAX_MODULES = 100_000
+
 
 def parse_bun_binary(data):
     """Parse a Bun standalone binary and return structured metadata."""
@@ -37,6 +40,11 @@ def parse_bun_binary(data):
     entry_point_id = struct.unpack_from("<I", data, offsets_start + 16)[0]
     flags = struct.unpack_from("<I", data, offsets_start + 28)[0]
 
+    if byte_count > MAX_BUNDLE_BYTES:
+        raise BunFormatError(f"byteCount too large: {byte_count}")
+    if modules_off > byte_count or modules_len > byte_count or modules_off + modules_len > byte_count:
+        raise BunFormatError("module table extends past byteCount")
+
     platform, data_start, section_offset, section_size, has_code_signature = _locate_payload(
         data,
         trailer_offset,
@@ -54,6 +62,10 @@ def parse_bun_binary(data):
     for module_size in MODULE_SIZES:
         if modules_len % module_size != 0:
             errors.append(f"size={module_size}: modulesLen={modules_len} not divisible")
+            continue
+        module_count = modules_len // module_size
+        if module_count > MAX_MODULES:
+            errors.append(f"size={module_size}: too many modules: {module_count}")
             continue
         try:
             modules = _read_module_table(
@@ -132,6 +144,8 @@ def _find_trailer(data):
 
 def _read_module_table(data, data_start, modules_off, modules_len, module_size, entry_point_id, byte_count):
     module_count = modules_len // module_size
+    if module_count > MAX_MODULES:
+        raise ValueError(f"too many modules: {module_count}")
     flags_base = FLAG_OFFSETS_BY_SIZE[module_size]
     modules = []
 

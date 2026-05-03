@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 
 import pytest
 
@@ -28,6 +29,7 @@ from cc_extractor.workspace import (
     store_npm_download,
     validate_dashboard_tweak_profile_manifest,
     validate_patch_profile_manifest,
+    write_json,
     workspace_root,
 )
 from tests.helpers.bun_fixture import build_bun_fixture
@@ -82,6 +84,19 @@ def test_tui_settings_roundtrip_uses_workspace_json(tmp_path):
     assert load_tui_settings(root)["themeId"] == "unicorn"
     settings_path = root / TUI_SETTINGS
     assert json.loads(settings_path.read_text(encoding="utf-8")) == saved
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink not supported")
+def test_write_json_refuses_symlink_target(tmp_path):
+    target = tmp_path / "target.json"
+    target.write_text('{"keep": true}\n', encoding="utf-8")
+    link = tmp_path / "settings.json"
+    os.symlink(target, link)
+
+    with pytest.raises(ValueError, match="symlink"):
+        write_json(link, {"keep": False})
+
+    assert json.loads(target.read_text(encoding="utf-8")) == {"keep": True}
 
 
 def test_tui_settings_roundtrip_includes_setup_list(tmp_path):

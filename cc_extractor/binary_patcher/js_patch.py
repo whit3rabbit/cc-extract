@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from .._utils import safe_child_path
+from .._utils import atomic_write_text_no_symlink, safe_child_path
 from .prompts import apply_prompts
 from .strip_bun_wrapper import strip_bun_wrapper
 from .theme import apply_theme, themes_from_config as _themes_from_config
@@ -71,7 +71,7 @@ def patch_unpacked_entry(unpacked_dir, config, overlays=None):
         prompt_replaced = prompt_result.replaced_targets
         prompt_missing = prompt_result.missing
 
-    entry_path.write_text(js, encoding="latin1")
+    atomic_write_text_no_symlink(entry_path, js, encoding="latin1")
     return PatchUnpackedResult(
         entry_path=str(entry_path),
         theme_replaced=themed.replaced,

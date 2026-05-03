@@ -187,3 +187,81 @@ def test_unpack_and_patch_refuses_empty_directory_without_sentinel(tmp_path):
         )
 
     assert unpacked_dir.exists()
+
+
+def test_unpack_and_patch_refuses_to_auto_clean_generated_dir_without_managed_root(tmp_path, monkeypatch):
+    binary_path = write_binary(tmp_path)
+    unpacked_dir = tmp_path / "unpacked"
+
+    monkeypatch.setattr(
+        unpack_and_patch_module.subprocess,
+        "run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, stdout="", stderr=""),
+    )
+    unpack_and_patch(
+        pristine_binary_path=str(binary_path),
+        unpacked_dir=str(unpacked_dir),
+        config={"settings": {"themes": THEMES}},
+    )
+
+    with pytest.raises(UnpackAndPatchError, match="managed root"):
+        unpack_and_patch(
+            pristine_binary_path=str(binary_path),
+            unpacked_dir=str(unpacked_dir),
+            config={"settings": {"themes": THEMES}},
+        )
+
+
+def test_unpack_and_patch_cleans_matching_generated_dir_inside_managed_root(tmp_path, monkeypatch):
+    binary_path = write_binary(tmp_path)
+    managed_root = tmp_path / "variant"
+    unpacked_dir = managed_root / "unpacked"
+
+    monkeypatch.setattr(
+        unpack_and_patch_module.subprocess,
+        "run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, stdout="", stderr=""),
+    )
+    unpack_and_patch(
+        pristine_binary_path=str(binary_path),
+        unpacked_dir=str(unpacked_dir),
+        managed_root=str(managed_root),
+        config={"settings": {"themes": THEMES}},
+    )
+    stale = unpacked_dir / "stale-user-data.txt"
+    stale.write_text("remove only because metadata matches", encoding="utf-8")
+
+    unpack_and_patch(
+        pristine_binary_path=str(binary_path),
+        unpacked_dir=str(unpacked_dir),
+        managed_root=str(managed_root),
+        config={"settings": {"themes": THEMES}},
+    )
+
+    assert not stale.exists()
+    assert (unpacked_dir / ".cc-extractor-unpacked").exists()
+
+
+def test_unpack_and_patch_refuses_mismatched_generated_metadata(tmp_path):
+    unpacked_dir = tmp_path / "variant" / "unpacked"
+    unpacked_dir.mkdir(parents=True)
+    (unpacked_dir / ".cc-extractor-unpacked").write_text(
+        json.dumps({
+            "tool": "cc-extractor",
+            "kind": "unpacked-node-runtime",
+            "path": str(tmp_path / "other"),
+        }),
+        encoding="utf-8",
+    )
+    user_file = unpacked_dir / "user-file.txt"
+    user_file.write_text("keep me", encoding="utf-8")
+
+    with pytest.raises(UnpackAndPatchError, match="metadata does not match"):
+        unpack_and_patch(
+            pristine_binary_path=str(tmp_path / "missing"),
+            unpacked_dir=str(unpacked_dir),
+            managed_root=str(unpacked_dir.parent),
+            config={"settings": {"themes": THEMES}},
+        )
+
+    assert user_file.read_text(encoding="utf-8") == "keep me"

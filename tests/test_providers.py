@@ -12,6 +12,7 @@ from cc_extractor.providers import (
     provider_prompt_overlays,
 )
 from cc_extractor.providers.schema import ProviderSchemaError, provider_from_json
+from cc_extractor.variants.splash import has_style
 
 
 def _minimal_provider_payload(mcp_servers):
@@ -208,6 +209,13 @@ def test_provider_patch_assets_are_safe_and_prompt_pack_skips_mirror():
     assert provider_prompt_overlays("mirror") == {}
     assert provider_prompt_overlays("deepseek") == {}
     assert "webfetch" in provider_prompt_overlays("zai")
+
+
+def test_provider_splash_metadata_matches_art_registry():
+    for provider in list_providers():
+        assert provider.env["CC_EXTRACTOR_SPLASH"] == "1"
+        assert provider.env["CC_EXTRACTOR_PROVIDER_LABEL"] == provider.label
+        assert has_style(provider.env["CC_EXTRACTOR_SPLASH_STYLE"])
 
 
 def test_ported_provider_defaults_match_cc_mirror_update():

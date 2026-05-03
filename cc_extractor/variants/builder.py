@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .._utils import safe_child_path, safe_read_json as _safe_read_json
+from .._utils import atomic_write_text_no_symlink, safe_child_path, safe_read_json as _safe_read_json
 from ..patcher import apply_patch
 from ..providers import (
     get_provider,
@@ -28,7 +28,13 @@ from ..workspace import (
 from .tweaks import ENV_TWEAK_IDS, apply_variant_tweaks
 
 
-IN_PLACE_TWEAK_IDS = {"themes", "prompt-overlays", *ENV_TWEAK_IDS}
+IN_PLACE_TWEAK_IDS = {
+    "themes",
+    "prompt-overlays",
+    "hide-startup-banner",
+    "hide-startup-clawd",
+    *ENV_TWEAK_IDS,
+}
 
 
 def resolve_source_version(version: str, root=None) -> str:
@@ -96,7 +102,7 @@ def patch_entry_js(extract_dir: Path, manifest_data: Dict, *, provider_key: str,
         provider_label=provider.label,
         claude_version=claude_version,
     )
-    entry_path.write_text(result.js, encoding="utf-8")
+    atomic_write_text_no_symlink(entry_path, result.js)
     return result
 
 

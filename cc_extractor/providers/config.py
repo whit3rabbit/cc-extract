@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
 
+from .._utils import atomic_write_text_no_symlink
 from .loader import get_provider
 from .mcp_catalog import optional_mcp_servers
 
@@ -127,4 +128,4 @@ def read_json_default(path: Path):
 def write_json_default(path: Path, payload) -> None:
     import json
 
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    atomic_write_text_no_symlink(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")

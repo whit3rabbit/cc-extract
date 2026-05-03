@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from .._utils import atomic_write_text_no_symlink
 
 WORKSPACE_DIR_NAME = ".cc-extractor"
 ARTIFACT_METADATA = "artifact.json"
@@ -32,7 +33,7 @@ def ensure_workspace(root: Optional[os.PathLike] = None) -> Path:
     root_path.mkdir(parents=True, exist_ok=True)
     gitignore_path = root_path / ".gitignore"
     if not gitignore_path.exists():
-        gitignore_path.write_text("*\n", encoding="utf-8")
+        atomic_write_text_no_symlink(gitignore_path, "*\n")
     for rel_path in (
         "downloads/native",
         "downloads/npm",
@@ -66,8 +67,7 @@ def short_sha(value: str) -> str:
 
 def write_json(path: os.PathLike, payload: Dict) -> None:
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    atomic_write_text_no_symlink(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def read_json(path: os.PathLike) -> Dict:

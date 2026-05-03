@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-from .._utils import safe_read_json as _safe_read_json, utc_now as _utc_now
+from .._utils import atomic_write_text_no_symlink, safe_read_json as _safe_read_json, utc_now as _utc_now
 from ..binary_patcher import PatchInputs, apply_patches
 from ..binary_patcher.codesign import try_adhoc_sign
 from ..binary_patcher.unpack_and_patch import unpack_and_patch
@@ -69,6 +69,7 @@ from .tweaks import (
 from .wrapper import (
     SECRETS_FILE,
     SECRETS_FILE_MODE,
+    validate_secret_file as _validate_secret_file,
     write_secrets as _write_secrets,
     write_variant_config as _write_variant_config,
     write_wrapper as _write_wrapper,
@@ -77,7 +78,8 @@ from .wrapper import (
 VARIANT_METADATA = "variant.json"
 
 _THEME_PROMPT_TWEAKS = ("themes", "prompt-overlays")
-_IN_PLACE_TWEAKS = (*_THEME_PROMPT_TWEAKS, *ENV_TWEAK_IDS)
+_NATIVE_REGEX_TWEAKS = ("hide-startup-banner", "hide-startup-clawd")
+_IN_PLACE_TWEAKS = (*_THEME_PROMPT_TWEAKS, *_NATIVE_REGEX_TWEAKS, *ENV_TWEAK_IDS)
 
 
 class _BuildStageRecorder:
@@ -316,11 +318,22 @@ def doctor_variant(name: Optional[str] = None, *, all_variants: bool = False, ro
             )
         else:
             checks.append({"name": "binary", "ok": binary.is_file(), "path": str(binary)})
-        if variant.manifest.get("credential", {}).get("mode") == "stored":
-            checks.append({"name": "secrets", "ok": secrets_path.is_file(), "path": str(secrets_path)})
-            if secrets_path.exists() and os.name != "nt":
+        credential = variant.manifest.get("credential", {})
+        if credential.get("mode") == "stored":
+            secrets_path = Path(credential.get("secretsPath") or secrets_path)
+            checks.append({"name": "secrets", "ok": secrets_path.is_file() and not secrets_path.is_symlink(), "path": str(secrets_path)})
+            if secrets_path.exists() and not secrets_path.is_symlink() and os.name != "nt":
                 mode_ok = (secrets_path.stat().st_mode & 0o777) == SECRETS_FILE_MODE
                 checks.append({"name": "secrets-mode", "ok": mode_ok, "path": str(secrets_path)})
+            if secrets_path.exists():
+                try:
+                    _validate_secret_file(secrets_path)
+                    secret_safe = True
+                    secret_detail = ""
+                except ValueError as exc:
+                    secret_safe = False
+                    secret_detail = str(exc)
+                checks.append({"name": "secrets-safe", "ok": secret_safe, "path": str(secrets_path), "detail": secret_detail})
         ok = all(check["ok"] for check in checks)
         reports.append({"id": variant.variant_id, "name": variant.name, "ok": ok, "checks": checks})
     return reports
@@ -514,8 +527,19 @@ def _copy_patch_or_unpack_variant_binary(
 
     config = provider_patch_config(provider_key) if "themes" in tweak_ids else {}
     overlays = provider_prompt_overlays(provider_key) if "prompt-overlays" in tweak_ids else None
-    result = apply_patches(PatchInputs(binary_path=str(output_binary), config=config, overlays=overlays))
-    if result.ok and result.skipped_reason == "macho-grow-not-supported" and (config or overlays):
+    native_regex_tweaks = [tweak_id for tweak_id in tweak_ids if tweak_id in _NATIVE_REGEX_TWEAKS]
+    provider = get_provider(provider_key)
+    result = apply_patches(
+        PatchInputs(
+            binary_path=str(output_binary),
+            config=config,
+            overlays=overlays,
+            regex_tweaks=native_regex_tweaks,
+            provider_label=provider.label,
+            claude_version=source_artifact.version,
+        )
+    )
+    if result.ok and result.skipped_reason == "macho-grow-not-supported" and (config or overlays or native_regex_tweaks):
         return _unpack_node_runtime_variant(
             source_artifact,
             output_binary,
@@ -537,9 +561,13 @@ def _copy_patch_or_unpack_variant_binary(
             theme_done=bool(config),
             prompt_done=bool(overlays),
         )
+        applied.extend(getattr(result, "curated_applied", []) or [])
+        skipped.extend(getattr(result, "curated_skipped", []) or [])
     skipped.extend(
         tweak_id for tweak_id in tweak_ids
-        if tweak_id not in _THEME_PROMPT_TWEAKS and tweak_id not in skipped
+        if tweak_id not in _THEME_PROMPT_TWEAKS
+        and tweak_id not in _NATIVE_REGEX_TWEAKS
+        and tweak_id not in skipped
     )
     sign_result = try_adhoc_sign(str(output_binary)) if not result.resigned else _AlreadySigned()
     return _RuntimePatchResult(
@@ -597,6 +625,7 @@ def _unpack_node_runtime_variant(
     result = unpack_and_patch(
         pristine_binary_path=str(source_artifact.path),
         unpacked_dir=str(unpacked_dir),
+        managed_root=str(unpacked_dir.parent),
         config=config,
         overlays=overlays,
     )
@@ -619,7 +648,7 @@ def _unpack_node_runtime_variant(
             provider_label=provider.label,
             claude_version=source_artifact.version,
         )
-        entry_path.write_text(extra.js, encoding="latin1")
+        atomic_write_text_no_symlink(entry_path, extra.js, encoding="latin1")
         applied.extend(extra.applied)
         skipped.extend(extra.skipped)
         missing.extend(extra.missing)

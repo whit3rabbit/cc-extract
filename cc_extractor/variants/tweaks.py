@@ -8,7 +8,12 @@ from ..patches._registry import REGISTRY as _PATCH_REGISTRY
 from ..patches.model_customizations import CUSTOM_MODELS  # noqa: F401 (legacy re-export)
 
 
-DEFAULT_TWEAK_IDS = ["themes", "prompt-overlays", "patches-applied-indication"]
+DEFAULT_TWEAK_IDS = [
+    "themes",
+    "prompt-overlays",
+    "hide-startup-banner",
+    "hide-startup-clawd",
+]
 ENV_TWEAK_IDS = ["context-limit", "file-read-limit", "subagent-model"]
 CURATED_TWEAK_IDS = [
     "themes",

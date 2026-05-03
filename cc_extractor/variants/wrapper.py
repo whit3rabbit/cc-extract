@@ -2,16 +2,18 @@
 
 import os
 import shlex
+import stat
 from pathlib import Path
 from typing import Dict, Optional
 
-from .._utils import require_env_name, utc_now as _utc_now
+from .._utils import atomic_write_text_no_symlink, require_env_name, utc_now as _utc_now
 from ..providers import (
     apply_provider_claude_config,
     get_provider,
     provider_patch_config,
 )
 from ..workspace import read_json, write_json
+from .splash import shell_splash_lines
 
 SECRETS_FILE = "secrets.env"
 SECRETS_FILE_MODE = 0o600
@@ -54,6 +56,7 @@ def stored_credential_value(manifest: Dict) -> Optional[str]:
 def read_secret_exports(path: Path) -> Dict[str, str]:
     if not path.exists():
         return {}
+    validate_secret_file(path)
     result = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -72,6 +75,27 @@ def read_secret_exports(path: Path) -> Dict[str, str]:
             except ValueError:
                 continue
     return result
+
+
+def validate_secret_file(path: Path) -> None:
+    path = Path(path)
+    try:
+        file_stat = os.lstat(path)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise ValueError(f"Cannot inspect secrets file: {path}: {exc}") from exc
+
+    if stat.S_ISLNK(file_stat.st_mode):
+        raise ValueError(f"Refusing to load symlink secrets file: {path}")
+    if not stat.S_ISREG(file_stat.st_mode):
+        raise ValueError(f"Refusing to load non-regular secrets file: {path}")
+    if os.name != "nt":
+        mode = file_stat.st_mode & 0o777
+        if mode != SECRETS_FILE_MODE:
+            raise ValueError(f"Refusing to load secrets file with mode {oct(mode)}: {path}")
+        if hasattr(os, "getuid") and file_stat.st_uid != os.getuid():
+            raise ValueError(f"Refusing to load secrets file owned by another user: {path}")
 
 
 def write_wrapper(manifest: Dict) -> Path:
@@ -93,13 +117,33 @@ def write_wrapper(manifest: Dict) -> Path:
         lines.append(f"export {env_key}={shlex.quote(str(value))}")
     credential = manifest.get("credential", {})
     if credential.get("mode") == "stored":
-        lines.append('if [ -f "$VARIANT_ROOT/secrets.env" ]; then . "$VARIANT_ROOT/secrets.env"; fi')
+        lines.extend(
+            [
+                'SECRET_FILE="$VARIANT_ROOT/secrets.env"',
+                'if [ -e "$SECRET_FILE" ]; then',
+                '  if [ -L "$SECRET_FILE" ] || [ ! -f "$SECRET_FILE" ]; then',
+                '    echo "Refusing unsafe secrets file: $SECRET_FILE" >&2',
+                "    exit 126",
+                "  fi",
+                '  secret_mode="$(stat -f %Lp "$SECRET_FILE" 2>/dev/null || stat -c %a "$SECRET_FILE" 2>/dev/null || true)"',
+                '  secret_owner="$(stat -f %u "$SECRET_FILE" 2>/dev/null || stat -c %u "$SECRET_FILE" 2>/dev/null || true)"',
+                '  current_uid="$(id -u 2>/dev/null || true)"',
+                '  case "$secret_mode" in 600|0600) ;; *) echo "Refusing secrets file with unsafe mode: $SECRET_FILE" >&2; exit 126 ;; esac',
+                '  if [ -z "$secret_owner" ] || [ -z "$current_uid" ] || [ "$secret_owner" != "$current_uid" ]; then',
+                '    echo "Refusing secrets file with unsafe owner: $SECRET_FILE" >&2',
+                "    exit 126",
+                "  fi",
+                '  . "$SECRET_FILE"',
+                "fi",
+            ]
+        )
     elif credential.get("mode") == "env":
         source = require_env_name(credential.get("source"), label="credential source")
         targets = [require_env_name(target, label="credential target") for target in credential.get("targets", [])]
         lines.append(f": ${{{source}:?Set {source} for variant {manifest['id']}}}")
         for target in targets:
             lines.append(f"export {target}=\"${{{source}}}\"")
+    lines.extend(shell_splash_lines())
     if manifest.get("runtime", "native") == "node":
         lines.extend(
             [
@@ -126,10 +170,7 @@ def write_wrapper(manifest: Dict) -> Path:
         )
     else:
         lines.append(f"exec {shlex.quote(paths['binary'])} \"$@\"")
-    wrapper_path.parent.mkdir(parents=True, exist_ok=True)
-    wrapper_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    if os.name != "nt":
-        os.chmod(wrapper_path, 0o755)
+    atomic_write_text_no_symlink(wrapper_path, "\n".join(lines) + "\n", mode=0o755)
     return wrapper_path
 
 
@@ -138,19 +179,4 @@ def write_secrets(path: Path, secret_env: Dict[str, str]) -> None:
         f"export {require_env_name(key, label='secret env key')}={shlex.quote(str(value))}"
         for key, value in sorted(secret_env.items())
     ]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    fd = os.open(path, flags, SECRETS_FILE_MODE)
-    try:
-        if os.name != "nt" and hasattr(os, "fchmod"):
-            os.fchmod(fd, SECRETS_FILE_MODE)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            fd = None
-            handle.write("\n".join(lines) + "\n")
-    finally:
-        if fd is not None:
-            os.close(fd)
-    if os.name != "nt":
-        os.chmod(path, SECRETS_FILE_MODE)
+    atomic_write_text_no_symlink(path, "\n".join(lines) + "\n", mode=SECRETS_FILE_MODE)

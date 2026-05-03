@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
-from ._utils import safe_child_path, utc_now as _utc_now
+from ._utils import atomic_write_text_no_symlink, safe_child_path, utc_now as _utc_now
 from .bundler import pack_bundle
 from .extractor import extract_all
 from .patcher import apply_patch
@@ -142,7 +142,7 @@ def apply_dashboard_tweaks_to_native(
             provider_label="cc-extractor",
             claude_version=source_artifact.version,
         )
-        entry_path.write_text(tweak_result.js, encoding="utf-8")
+        atomic_write_text_no_symlink(entry_path, tweak_result.js)
 
         pack_bundle(str(extract_dir), str(staged_output), str(source_artifact.path))
         output_sha256 = file_sha256(staged_output)

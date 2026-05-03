@@ -131,6 +131,7 @@ def provider_from_json(payload: Dict[str, object]) -> ProviderTemplate:
     _require_keys(variant, VARIANT_KEYS, f"{key}.variant")
     splash_style = _string(variant, "splashStyle")
     if splash_style:
+        env.setdefault("CC_EXTRACTOR_SPLASH", "1")
         env.setdefault("CC_EXTRACTOR_SPLASH_STYLE", splash_style)
     env.setdefault("CC_EXTRACTOR_PROVIDER_LABEL", label)
 

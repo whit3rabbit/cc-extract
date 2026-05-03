@@ -1540,10 +1540,11 @@ def test_tweaks_toggle_updates_pending():
     state = tui.TuiState(mode="tweaks-source", variants=[variant])
     tui._activate(state)  # enter edit mode
     state.selected_index = 0
+    selected_tweak = tui.options.tweaks_edit_options(state)[state.selected_index].value
 
     tui._toggle_tweak(state)
 
-    assert "patches-applied-indication" in state.tweaks_pending
+    assert selected_tweak in state.tweaks_pending
     assert "1 pending change" in state.message
 
 

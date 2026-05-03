@@ -1,6 +1,9 @@
 import pytest
 
+from cc_extractor.binary_patcher.index import PatchInputs, apply_patches as apply_binary_patches
+from cc_extractor.bun_extract import parse_bun_binary
 from cc_extractor.binary_patcher.theme import ThemeAnchorNotFound, apply_theme
+from tests.helpers.bun_fixture import build_bun_fixture
 
 
 THEMES = [
@@ -62,3 +65,62 @@ def test_apply_theme_throws_anchor_not_found(broken, anchor):
         apply_theme(broken, THEMES)
 
     assert exc.value.anchor == anchor
+
+
+def test_binary_patcher_applies_native_startup_hide_tweaks(tmp_path):
+    js = "\n".join(
+        [
+            ',R.createElement(B,{isBeforeFirstMessage:!1}),',
+            'function banner(){return"Welcome to Claude Code"}',
+            'function inner(){return"\\u259B\\u2588\\u2588\\u2588\\u259C"}function wrapper(){return R.createElement(inner,{})}',
+        ]
+    )
+    fixture = build_bun_fixture(
+        platform="macho",
+        module_struct_size=52,
+        modules=[{"name": "src/cli.js", "content": js}],
+        entry_point_id=0,
+    )
+    binary = tmp_path / "claude"
+    binary.write_bytes(fixture["buf"])
+
+    result = apply_binary_patches(
+        PatchInputs(
+            binary_path=str(binary),
+            config={},
+            regex_tweaks=["hide-startup-banner", "hide-startup-clawd"],
+            provider_label="Zai Cloud",
+        )
+    )
+
+    assert result.ok is True
+    assert result.curated_applied == ["hide-startup-banner", "hide-startup-clawd"]
+    data = binary.read_bytes()
+    info = parse_bun_binary(data)
+    entry = info.modules[info.entry_point_id]
+    entry_js = data[info.data_start + entry.cont_off : info.data_start + entry.cont_off + entry.cont_len].decode("utf-8")
+    assert "isBeforeFirstMessage" not in entry_js
+    assert "return null;" in entry_js
+
+
+def test_binary_patcher_rejects_unsupported_native_regex_tweak(tmp_path):
+    fixture = build_bun_fixture(
+        platform="macho",
+        module_struct_size=52,
+        modules=[{"name": "src/cli.js", "content": "const version='x';"}],
+        entry_point_id=0,
+    )
+    binary = tmp_path / "claude"
+    binary.write_bytes(fixture["buf"])
+
+    result = apply_binary_patches(
+        PatchInputs(
+            binary_path=str(binary),
+            config={},
+            regex_tweaks=["patches-applied-indication"],
+        )
+    )
+
+    assert result.ok is False
+    assert result.reason == "tweak-failed"
+    assert "unsupported native regex tweak" in result.detail

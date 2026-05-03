@@ -1,5 +1,7 @@
 import hashlib
 import json
+import os
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,7 +21,6 @@ from cc_extractor.variants import (
 )
 from cc_extractor.variants.builder import patch_entry_js
 from cc_extractor.variants.wrapper import write_wrapper
-import cc_extractor.variants.wrapper as wrapper_module
 from cc_extractor.variants.wrapper import write_secrets
 from cc_extractor.workspace import NativeArtifact
 from tests.helpers.bun_fixture import build_bun_fixture
@@ -33,6 +34,7 @@ ENTRY_JS = "\n".join(
         'let WEBFETCH=`Fetches URLs.\\n- For GitHub URLs, prefer using the gh CLI via Bash instead (e.g., gh pr view, gh issue view, gh api).`;',
         'const version=`${pkg.VERSION} (Claude Code)`;',
         ',R.createElement(B,{isBeforeFirstMessage:!1}),',
+        'function inner(){return"\\u259B\\u2588\\u2588\\u2588\\u259C"}function wrapper(){return R.createElement(inner,{})}',
     ]
 )
 
@@ -82,6 +84,67 @@ def read_entry(binary_path):
     return data[info.data_start + entry.cont_off : info.data_start + entry.cont_off + entry.cont_len].decode("utf-8")
 
 
+def run_in_pty(command):
+    if os.name == "nt":
+        pytest.skip("PTY capture is POSIX-only")
+    import pty
+    import select
+
+    master_fd, slave_fd = pty.openpty()
+    proc = subprocess.Popen(
+        command,
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        close_fds=True,
+    )
+    os.close(slave_fd)
+    chunks = []
+    try:
+        while True:
+            ready, _, _ = select.select([master_fd], [], [], 0.1)
+            if ready:
+                try:
+                    data = os.read(master_fd, 4096)
+                except OSError:
+                    break
+                if not data:
+                    break
+                chunks.append(data)
+            if proc.poll() is not None and not ready:
+                break
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            proc.wait(timeout=2)
+        os.close(master_fd)
+    proc.wait(timeout=2)
+    return b"".join(chunks).decode("utf-8", "replace")
+
+
+def wrapper_manifest(tmp_path, env):
+    variant_root = tmp_path / "variant"
+    binary = variant_root / "native" / "claude"
+    wrapper = tmp_path / "bin" / "sample"
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_text("#!/bin/sh\nprintf 'RUN:%s\\n' \"$*\"\n", encoding="utf-8")
+    os.chmod(binary, 0o755)
+    return {
+        "id": "sample",
+        "provider": {"key": "mirror"},
+        "env": env,
+        "credential": {"mode": "none", "targets": []},
+        "paths": {
+            "root": str(variant_root),
+            "wrapper": str(wrapper),
+            "configDir": str(variant_root / "config"),
+            "tweakccDir": str(variant_root / "tweakcc"),
+            "tmpDir": str(variant_root / "tmp"),
+            "binary": str(binary),
+        },
+    }
+
+
 def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
     root = tmp_path / ".cc-extractor"
     artifact = write_source_artifact(tmp_path)
@@ -106,14 +169,23 @@ def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
     assert doctor_variant("zai-test", root=root)[0]["ok"] is True
 
     entry_js = read_entry(result.binary_path)
-    assert "Zai Cloud variant" in entry_js
     assert "cc-mirror:provider-overlay start" in entry_js
     assert 'case"zai-variant"' in entry_js
+    assert "isBeforeFirstMessage" not in entry_js
 
     wrapper = result.wrapper_path.read_text(encoding="utf-8")
     assert "CLAUDE_CONFIG_DIR" in wrapper
     assert "${Z_AI_API_KEY:?Set Z_AI_API_KEY for variant zai-test}" in wrapper
     assert "ANTHROPIC_API_KEY=\"${Z_AI_API_KEY}\"" in wrapper
+    assert "ZAI CLOUD" in wrapper
+    assert result.variant.manifest["env"]["CC_EXTRACTOR_SPLASH"] == "1"
+    assert result.variant.manifest["env"]["CC_EXTRACTOR_SPLASH_STYLE"] == "zai"
+    assert result.variant.manifest["tweaks"] == [
+        "themes",
+        "prompt-overlays",
+        "hide-startup-banner",
+        "hide-startup-clawd",
+    ]
     assert scan_variants(root)[0].variant_id == "zai-test"
     stage_names = [stage.name for stage in result.stages]
     assert "prepare directories" in stage_names
@@ -224,7 +296,103 @@ def test_macos_grow_skip_uses_unpacked_node_runtime(tmp_path, monkeypatch):
     ]
 
 
-def test_macos_regex_tweak_uses_unpacked_node_runtime_not_in_place_binary_patch(tmp_path, monkeypatch):
+def test_macos_startup_regex_tweaks_use_in_place_binary_patch(tmp_path, monkeypatch):
+    import cc_extractor.variants as variants_module
+
+    root = tmp_path / ".cc-extractor"
+    artifact = write_macho_source_artifact(tmp_path)
+    patch_calls = []
+
+    def fake_apply_patches(inputs):
+        patch_calls.append(inputs)
+        return SimpleNamespace(
+            ok=True,
+            skipped_reason=None,
+            missing_prompt_keys=[],
+            resigned=False,
+            curated_applied=["hide-startup-banner", "hide-startup-clawd"],
+            curated_skipped=[],
+            curated_missed=[],
+        )
+
+    def fail_unpack_and_patch(**_kwargs):
+        raise AssertionError("native-safe startup tweaks should not unpack")
+
+    monkeypatch.setattr(variants_module, "apply_patches", fake_apply_patches)
+    monkeypatch.setattr(variants_module, "unpack_and_patch", fail_unpack_and_patch)
+
+    result = create_variant(
+        name="Mac Banner",
+        provider_key="ccrouter",
+        tweaks=["hide-startup-banner", "hide-startup-clawd"],
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+
+    stage_names = [stage.name for stage in result.stages]
+
+    assert result.variant.manifest["runtime"] == "native"
+    assert "patch binary" in stage_names
+    assert "unpack node runtime" not in stage_names
+    assert patch_calls[0].regex_tweaks == ["hide-startup-banner", "hide-startup-clawd"]
+    assert result.variant.manifest["patchResults"]["appliedTweaks"] == [
+        "hide-startup-banner",
+        "hide-startup-clawd",
+    ]
+
+
+def test_macos_default_startup_tweaks_do_not_force_node_runtime(tmp_path, monkeypatch):
+    import cc_extractor.variants as variants_module
+
+    root = tmp_path / ".cc-extractor"
+    artifact = write_macho_source_artifact(tmp_path)
+    patch_calls = []
+
+    def fake_apply_patches(inputs):
+        patch_calls.append(inputs)
+        return SimpleNamespace(
+            ok=True,
+            skipped_reason=None,
+            missing_prompt_keys=[],
+            resigned=False,
+            curated_applied=["hide-startup-banner", "hide-startup-clawd"],
+            curated_skipped=[],
+            curated_missed=[],
+        )
+
+    def fail_unpack_and_patch(**_kwargs):
+        raise AssertionError("default native-safe tweaks should not unpack")
+
+    monkeypatch.setattr(variants_module, "apply_patches", fake_apply_patches)
+    monkeypatch.setattr(variants_module, "unpack_and_patch", fail_unpack_and_patch)
+
+    result = create_variant(
+        name="Mac Default",
+        provider_key="zai",
+        credential_env="Z_AI_API_KEY",
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+
+    assert result.variant.manifest["runtime"] == "native"
+    assert result.variant.manifest["tweaks"] == [
+        "themes",
+        "prompt-overlays",
+        "hide-startup-banner",
+        "hide-startup-clawd",
+    ]
+    assert patch_calls[0].regex_tweaks == ["hide-startup-banner", "hide-startup-clawd"]
+    assert result.variant.manifest["patchResults"]["appliedTweaks"] == [
+        "themes",
+        "prompt-overlays",
+        "hide-startup-banner",
+        "hide-startup-clawd",
+    ]
+
+
+def test_macos_non_native_regex_tweak_uses_unpacked_node_runtime_not_in_place_binary_patch(tmp_path, monkeypatch):
     import cc_extractor.variants as variants_module
 
     root = tmp_path / ".cc-extractor"
@@ -255,9 +423,9 @@ def test_macos_regex_tweak_uses_unpacked_node_runtime_not_in_place_binary_patch(
     monkeypatch.setattr(variants_module, "unpack_and_patch", fake_unpack_and_patch)
 
     result = create_variant(
-        name="Mac Banner",
+        name="Mac Patches Indication",
         provider_key="ccrouter",
-        tweaks=["hide-startup-banner"],
+        tweaks=["patches-applied-indication"],
         root=root,
         source_artifact=artifact,
         force=True,
@@ -271,8 +439,8 @@ def test_macos_regex_tweak_uses_unpacked_node_runtime_not_in_place_binary_patch(
     assert "unpack node runtime" in stage_names
     assert "patch binary" not in stage_names
     assert unpack_calls[0]["pristine_binary_path"] == str(artifact.path)
-    assert "isBeforeFirstMessage" not in entry_js
-    assert result.variant.manifest["patchResults"]["appliedTweaks"] == ["hide-startup-banner"]
+    assert "(Claude Code, CC Router variant)" in entry_js
+    assert result.variant.manifest["patchResults"]["appliedTweaks"] == ["patches-applied-indication"]
 
 
 def test_create_variant_build_error_includes_stages(tmp_path, monkeypatch):
@@ -336,27 +504,86 @@ def test_create_variant_stored_secret_is_not_in_metadata(tmp_path):
     assert "${Z_AI_API_KEY}" in claude_config_text
     assert "super-secret" in secrets_path.read_text(encoding="utf-8")
     assert oct(secrets_path.stat().st_mode & 0o777) == "0o600"
+    wrapper = result.wrapper_path.read_text(encoding="utf-8")
+    assert 'SECRET_FILE="$VARIANT_ROOT/secrets.env"' in wrapper
+    assert 'stat -f %Lp "$SECRET_FILE"' in wrapper
     assert result.variant.manifest["credential"]["mode"] == "stored"
 
 
-def test_write_secrets_fchmods_existing_file_before_write(tmp_path, monkeypatch):
+def test_write_secrets_rewrites_existing_file_with_private_mode(tmp_path):
     secrets_path = tmp_path / "secrets.env"
     secrets_path.write_text("old\n", encoding="utf-8")
     secrets_path.chmod(0o644)
-    calls = []
-    real_fchmod = wrapper_module.os.fchmod
-
-    def tracked_fchmod(fd, mode):
-        calls.append(mode)
-        return real_fchmod(fd, mode)
-
-    monkeypatch.setattr(wrapper_module.os, "fchmod", tracked_fchmod)
 
     write_secrets(secrets_path, {"ANTHROPIC_API_KEY": "secret"})
 
-    assert calls == [0o600]
     assert oct(secrets_path.stat().st_mode & 0o777) == "0o600"
     assert "secret" in secrets_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink not supported")
+def test_write_secrets_refuses_symlink_target(tmp_path):
+    target = tmp_path / "target.env"
+    target.write_text("keep me\n", encoding="utf-8")
+    secrets_path = tmp_path / "secrets.env"
+    os.symlink(target, secrets_path)
+
+    with pytest.raises(ValueError, match="symlink"):
+        write_secrets(secrets_path, {"ANTHROPIC_API_KEY": "secret"})
+
+    assert target.read_text(encoding="utf-8") == "keep me\n"
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink not supported")
+def test_write_wrapper_refuses_symlink_target(tmp_path):
+    target = tmp_path / "target-wrapper"
+    target.write_text("keep me\n", encoding="utf-8")
+    wrapper_path = tmp_path / "bin" / "unsafe"
+    wrapper_path.parent.mkdir()
+    os.symlink(target, wrapper_path)
+    manifest = {
+        "id": "unsafe",
+        "provider": {"key": "mirror"},
+        "env": {},
+        "credential": {"mode": "none", "targets": []},
+        "paths": {
+            "root": str(tmp_path / "variant"),
+            "wrapper": str(wrapper_path),
+            "configDir": str(tmp_path / "variant" / "config"),
+            "tweakccDir": str(tmp_path / "variant" / "tweakcc"),
+            "tmpDir": str(tmp_path / "variant" / "tmp"),
+            "binary": str(tmp_path / "variant" / "native" / "claude"),
+        },
+    }
+
+    with pytest.raises(ValueError, match="symlink"):
+        write_wrapper(manifest)
+
+    assert target.read_text(encoding="utf-8") == "keep me\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode check")
+def test_doctor_variant_fails_stored_secret_with_unsafe_mode(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+    create_variant(
+        name="Secret Zai",
+        provider_key="zai",
+        api_key="super-secret",
+        store_secret=True,
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+    secrets_path = root / "variants" / "secret-zai" / "secrets.env"
+    secrets_path.chmod(0o644)
+
+    report = doctor_variant("secret-zai", root=root)[0]
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is False
+    assert checks["secrets-mode"]["ok"] is False
+    assert checks["secrets-safe"]["ok"] is False
 
 
 def test_write_wrapper_rejects_unsafe_env_key(tmp_path):
@@ -377,6 +604,58 @@ def test_write_wrapper_rejects_unsafe_env_key(tmp_path):
 
     with pytest.raises(ValueError, match="wrapper env key"):
         write_wrapper(manifest)
+
+
+def test_write_wrapper_splash_tty_and_machine_output_controls(tmp_path):
+    manifest = wrapper_manifest(
+        tmp_path,
+        {
+            "CC_EXTRACTOR_SPLASH": "1",
+            "CC_EXTRACTOR_SPLASH_STYLE": "zai",
+            "CC_EXTRACTOR_PROVIDER_LABEL": "Zai Cloud",
+        },
+    )
+    wrapper = write_wrapper(manifest)
+
+    non_tty = subprocess.run([str(wrapper)], capture_output=True, text=True, check=False)
+    assert non_tty.returncode == 0
+    assert "ZAI CLOUD" not in non_tty.stdout
+    assert "RUN:" in non_tty.stdout
+
+    tty_output = run_in_pty([str(wrapper)])
+    assert "ZAI CLOUD" in tty_output
+    assert "RUN:" in tty_output
+
+    machine_output = run_in_pty([str(wrapper), "--output-format", "json"])
+    assert "ZAI CLOUD" not in machine_output
+    assert "RUN:--output-format json" in machine_output
+
+
+def test_write_wrapper_splash_disable_and_fallback_style(tmp_path):
+    disabled = wrapper_manifest(
+        tmp_path / "disabled",
+        {
+            "CC_EXTRACTOR_SPLASH": "0",
+            "CC_EXTRACTOR_SPLASH_STYLE": "zai",
+            "CC_EXTRACTOR_PROVIDER_LABEL": "Zai Cloud",
+        },
+    )
+    disabled_output = run_in_pty([str(write_wrapper(disabled))])
+    assert "ZAI CLOUD" not in disabled_output
+    assert "RUN:" in disabled_output
+
+    fallback = wrapper_manifest(
+        tmp_path / "fallback",
+        {
+            "CC_EXTRACTOR_SPLASH": "1",
+            "CC_EXTRACTOR_SPLASH_STYLE": "unknown",
+            "CC_EXTRACTOR_PROVIDER_LABEL": "Mystery Provider",
+        },
+    )
+    fallback_output = run_in_pty([str(write_wrapper(fallback))])
+    assert "CC EXTRACTOR" in fallback_output
+    assert "Mystery Provider" in fallback_output
+    assert "RUN:" in fallback_output
 
 
 def test_apply_variant_rebuilds_from_saved_metadata(tmp_path, monkeypatch):
@@ -405,7 +684,7 @@ def test_apply_variant_rebuilds_from_saved_metadata(tmp_path, monkeypatch):
     assert rebuilt.binary_path.read_bytes() != b"broken"
     assert rebuilt.wrapper_path == root / "bin" / "zai-test"
     assert not (evil_bin / "zai-test").exists()
-    assert "Zai Cloud variant" in read_entry(rebuilt.binary_path)
+    assert 'case"zai-variant"' in read_entry(rebuilt.binary_path)
 
 
 def test_patch_entry_js_rejects_tampered_entrypoint(tmp_path):

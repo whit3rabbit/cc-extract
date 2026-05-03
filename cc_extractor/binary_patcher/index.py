@@ -1,12 +1,18 @@
 """Structured apply_patches API for native binaries."""
-
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from cc_extractor._utils import atomic_write_bytes_no_symlink
 from cc_extractor.bun_extract import parse_bun_binary, replace_module
 from cc_extractor.bun_extract.types import BunFormatError
+from cc_extractor.patches import (
+    PatchAnchorMissError,
+    PatchBlacklistedError,
+    PatchContext,
+    PatchUnsupportedVersionError,
+    apply_patches as apply_regex_patches,
+)
 
 from .codesign import try_adhoc_sign
 from .pe_resize import PeNotLastSectionError
@@ -18,8 +24,12 @@ from .theme import ThemeAnchorNotFound, apply_theme, themes_from_config as _them
 @dataclass
 class PatchInputs:
     binary_path: str
-    config: dict
+    config: dict = None
     overlays: dict = None
+    regex_tweaks: list = None
+    provider_label: str = "cc-extractor"
+    claude_version: str = None
+    force: bool = False
 
 
 @dataclass
@@ -30,13 +40,19 @@ class PatchSuccess:
     missing_prompt_keys: list
     codesign_skipped: bool
     skipped_reason: str = None
+    curated_applied: list = None
+    curated_skipped: list = None
+    curated_missed: list = None
 
 
 @dataclass
 class PatchFailure:
     ok: Literal[False]
-    reason: Literal["anchor-not-found", "resize-bound-exceeded", "io-error"]
+    reason: Literal["anchor-not-found", "resize-bound-exceeded", "io-error", "tweak-failed"]
     detail: str
+
+
+NATIVE_REGEX_TWEAK_IDS = {"hide-startup-banner", "hide-startup-clawd"}
 
 
 def apply_patches(inputs):
@@ -63,7 +79,7 @@ def apply_patches(inputs):
     old_js = data[info.data_start + entry.cont_off : info.data_start + entry.cont_off + old_entry_len].decode("utf-8")
 
     try:
-        theme_result = apply_theme(old_js, _themes_from_config(inputs.config))
+        theme_result = apply_theme(old_js, _themes_from_config(inputs.config or {}))
         new_js = theme_result.js
     except ThemeAnchorNotFound as exc:
         return PatchFailure(ok=False, reason="anchor-not-found", detail=str(exc))
@@ -75,6 +91,37 @@ def apply_patches(inputs):
         prompt_result = apply_prompts(new_js, inputs.overlays)
         new_js = prompt_result.js
         missing_prompt_keys = prompt_result.missing
+
+    curated_applied = []
+    curated_skipped = []
+    curated_missed = []
+    regex_tweaks = list(inputs.regex_tweaks or [])
+    unsupported = [tweak_id for tweak_id in regex_tweaks if tweak_id not in NATIVE_REGEX_TWEAK_IDS]
+    if unsupported:
+        return PatchFailure(
+            ok=False,
+            reason="tweak-failed",
+            detail=f"unsupported native regex tweak(s): {', '.join(unsupported)}",
+        )
+    if regex_tweaks:
+        try:
+            regex_result = apply_regex_patches(
+                new_js,
+                regex_tweaks,
+                PatchContext(
+                    claude_version=inputs.claude_version,
+                    provider_label=inputs.provider_label,
+                    config=inputs.config or {},
+                    overlays=inputs.overlays or {},
+                    force=inputs.force,
+                ),
+            )
+        except (PatchAnchorMissError, PatchUnsupportedVersionError, PatchBlacklistedError, KeyError, ValueError) as exc:
+            return PatchFailure(ok=False, reason="tweak-failed", detail=str(exc))
+        new_js = regex_result.js
+        curated_applied = list(regex_result.applied)
+        curated_skipped = list(regex_result.skipped)
+        curated_missed = list(regex_result.missed)
 
     bytes_changed = 0
     write_data = None
@@ -108,10 +155,10 @@ def apply_patches(inputs):
     codesign_skipped = False
     if write_data is not None:
         try:
-            binary_path.write_bytes(write_data)
-            if os.name != "nt":
-                os.chmod(binary_path, 0o755)
+            atomic_write_bytes_no_symlink(binary_path, write_data, mode=0o755)
         except OSError as exc:
+            return PatchFailure(ok=False, reason="io-error", detail=f"write {binary_path}: {exc}")
+        except ValueError as exc:
             return PatchFailure(ok=False, reason="io-error", detail=f"write {binary_path}: {exc}")
 
         if info.platform == "macho" and info.has_code_signature:
@@ -128,4 +175,7 @@ def apply_patches(inputs):
         missing_prompt_keys=missing_prompt_keys,
         codesign_skipped=codesign_skipped,
         skipped_reason=skipped_reason,
+        curated_applied=curated_applied,
+        curated_skipped=curated_skipped,
+        curated_missed=curated_missed,
     )

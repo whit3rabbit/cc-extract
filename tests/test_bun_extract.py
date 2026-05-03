@@ -1,13 +1,17 @@
 import json
 import struct
+import importlib
 
 import pytest
 
 from cc_extractor.bun_extract import BunFormatError, extract_all, parse_bun_binary
 from cc_extractor.bun_extract.constants import MACHO_MAGIC_64, OFFSETS_SIZE, PE_DOS_MAGIC, TRAILER
+from cc_extractor.bun_extract.parser import MAX_MODULES
 from cc_extractor.__main__ import inspect_binary
 from cc_extractor.extractor import extract_all as extract_binary
 from tests.helpers.bun_fixture import build_bun_fixture
+
+extract_module = importlib.import_module("cc_extractor.bun_extract.extract")
 
 
 SAMPLE_MODULES = [
@@ -131,6 +135,33 @@ def test_invalid_trailer_throws_bun_format_error():
         parse_bun_binary(bytes(broken))
 
 
+def test_parse_rejects_module_table_past_byte_count():
+    fixture = build_bun_fixture(platform="elf", module_struct_size=52, modules=SAMPLE_MODULES)
+    broken = bytearray(fixture["buf"])
+    offsets_start = len(broken) - len(TRAILER) - OFFSETS_SIZE
+    byte_count = struct.unpack_from("<Q", broken, offsets_start)[0]
+    struct.pack_into("<I", broken, offsets_start + 8, byte_count + 1)
+
+    with pytest.raises(BunFormatError, match="module table extends past byteCount"):
+        parse_bun_binary(bytes(broken))
+
+
+def test_parse_rejects_excessive_module_count_before_iterating():
+    module_size = 36
+    byte_count = module_size * (MAX_MODULES + 1)
+    header = bytearray(64)
+    header[:4] = b"\x7fELF"
+    offsets = bytearray(OFFSETS_SIZE)
+    struct.pack_into("<Q", offsets, 0, byte_count)
+    struct.pack_into("<I", offsets, 8, 0)
+    struct.pack_into("<I", offsets, 12, byte_count)
+
+    data = bytes(header) + (b"\0" * byte_count) + bytes(offsets) + TRAILER
+
+    with pytest.raises(BunFormatError, match="too many modules"):
+        parse_bun_binary(data)
+
+
 def test_path_prefixes_are_stripped():
     fixture = build_bun_fixture(
         platform="elf",
@@ -160,6 +191,28 @@ def test_extract_all_writes_files_and_manifest(tmp_path):
     assert manifest["moduleSize"] == 52
     assert manifest["entryPoint"] == "src/entrypoints/cli.js"
     assert manifest["byteCount"] == info.byte_count
+
+
+def test_extract_all_enforces_file_count_limit(tmp_path, monkeypatch):
+    fixture = build_bun_fixture(platform="elf", module_struct_size=52, modules=SAMPLE_MODULES)
+    info = parse_bun_binary(fixture["buf"])
+    monkeypatch.setattr(extract_module, "MAX_EXTRACT_FILES", 1)
+
+    with pytest.raises(BunFormatError, match="too many files"):
+        extract_all(fixture["buf"], info, str(tmp_path))
+
+
+def test_extract_all_enforces_single_file_size_limit(tmp_path, monkeypatch):
+    fixture = build_bun_fixture(
+        platform="elf",
+        module_struct_size=52,
+        modules=[{"name": "src/large.js", "content": "ab"}],
+    )
+    info = parse_bun_binary(fixture["buf"])
+    monkeypatch.setattr(extract_module, "MAX_EXTRACT_SINGLE_FILE_BYTES", 1)
+
+    with pytest.raises(BunFormatError, match="oversized module"):
+        extract_all(fixture["buf"], info, str(tmp_path))
 
 
 def test_extract_all_refuses_path_traversal(tmp_path):

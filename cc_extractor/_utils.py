@@ -33,6 +33,67 @@ def safe_read_json(path: Path) -> Dict:
         return {}
 
 
+def atomic_write_text_no_symlink(
+    path: Path,
+    text: str,
+    *,
+    mode: int = 0o644,
+    encoding: str = "utf-8",
+) -> None:
+    """Atomically write text without following an existing target symlink."""
+    atomic_write_bytes_no_symlink(path, text.encode(encoding), mode=mode)
+
+
+def atomic_write_bytes_no_symlink(path: Path, data: bytes, *, mode: int = 0o644) -> None:
+    """Atomically write bytes without following an existing target symlink."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise ValueError(f"Refusing to overwrite symlink: {path}")
+
+    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+
+    fd = os.open(tmp, flags, mode)
+    replaced = False
+    try:
+        if os.name != "nt" and hasattr(os, "fchmod"):
+            os.fchmod(fd, mode)
+        with os.fdopen(fd, "wb") as handle:
+            fd = None
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+        replaced = True
+        _fsync_directory(path.parent)
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if not replaced:
+            try:
+                tmp.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def _fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        return
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
 def version_sort_key(version: Any) -> Tuple[int, int, int, int]:
     """Sort key for dotted version strings (best-effort, padded to 4 ints)."""
     parts = []
