@@ -147,6 +147,44 @@ Matching rules:
 - Unmatched strings stay unnamed. Do not invent names, IDs, descriptions, or
   identifier labels.
 
+## Metadata Candidate Reports
+
+Use `tools/suggest_prompt_metadata.py` when a generated catalog has unnamed
+prompts and no exact seed catalog is available. The tool builds a historical
+index from local `prompts/` and vendored `vendor/tweakcc/data/prompts/`, then
+writes a review report without changing `prompts/<version>.json`.
+
+```bash
+.venv/bin/python tools/suggest_prompt_metadata.py \
+  --target prompts/2.1.123.json \
+  --history-dir prompts \
+  --catalog-dir vendor/tweakcc/data/prompts \
+  --out tmp/prompt-metadata-candidates-2.1.123.json
+```
+
+The report classifies unnamed prompts as `auto_applicable`, `review_only`, or
+`no_candidate`. Exact normalized matches and very high-confidence fuzzy matches
+can become auto-applicable only when the identifier sequence matches and no
+competing historical prompt ID exists. Ambiguous exact matches, competing fuzzy
+matches, and low-confidence matches stay review-only.
+
+To write a reviewed seed-shaped catalog, pass `--write-seed`:
+
+```bash
+.venv/bin/python tools/suggest_prompt_metadata.py \
+  --target prompts/2.1.123.json \
+  --out tmp/prompt-metadata-candidates-2.1.123.json \
+  --write-seed tmp/prompt-seed-2.1.123.json
+```
+
+Seed output copies metadata only for `auto_applicable` candidates. It preserves
+the target prompt `pieces`, and leaves every review-only or unresolved prompt
+unnamed.
+
+The scheduled prompt-update CI runs this suggestion pass for prompt catalogs
+changed by extraction and uses `--update-target` to write only auto-applicable
+metadata back to those changed catalogs before committing.
+
 ## Bun-Specific Issues
 
 Bun standalone binaries store a `StandaloneModuleGraph` in a platform-specific

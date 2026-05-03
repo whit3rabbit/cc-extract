@@ -36,9 +36,31 @@ jobs:
         run: |
           .venv/bin/python tools/extract_prompt_versions.py --since-existing-latest
 
+      - name: Apply suggested prompt metadata
+        run: |
+          mkdir -p tmp/prompt-metadata-candidates
+
+          changed=0
+          while IFS= read -r -d '' path; do
+            changed=1
+            version="$(basename "$path" .json)"
+            .venv/bin/python tools/suggest_prompt_metadata.py \
+              --target "$path" \
+              --history-dir prompts \
+              --catalog-dir vendor/tweakcc/data/prompts \
+              --out "tmp/prompt-metadata-candidates/${version}.json" \
+              --update-target
+          done < <(git diff --name-only -z -- 'prompts/*.json')
+
+          if [ "$changed" -eq 0 ]; then
+            echo "No changed prompt catalogs need suggested metadata."
+          fi
+
       - name: Validate prompt tooling
         run: |
-          .venv/bin/python -m pytest -q tests/test_prompt_version_extraction.py
+          .venv/bin/python -m pytest -q \
+            tests/test_prompt_version_extraction.py \
+            tests/test_suggest_prompt_metadata.py
 
       - name: Commit prompt catalog updates
         run: |
