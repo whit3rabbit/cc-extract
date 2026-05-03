@@ -209,6 +209,36 @@ def scan_native_downloads(root: Optional[os.PathLike] = None) -> List[NativeArti
     )
 
 
+def delete_native_download(
+    artifact: NativeArtifact,
+    root: Optional[os.PathLike] = None,
+) -> bool:
+    path = Path(artifact.path)
+    try:
+        base = (workspace_root(root) / "downloads" / "native").resolve()
+        target = path.resolve()
+        rel_parts = target.relative_to(base).parts
+    except (OSError, ValueError) as exc:
+        raise ValueError("native artifact path is outside workspace downloads") from exc
+
+    if len(rel_parts) != 4 or target.name not in {"claude", "claude.exe"}:
+        raise ValueError("not a native download artifact")
+
+    artifact_dir = target.parent
+    if not artifact_dir.exists():
+        return False
+
+    shutil.rmtree(artifact_dir)
+    parent = artifact_dir.parent
+    while parent != base:
+        try:
+            parent.rmdir()
+        except OSError:
+            break
+        parent = parent.parent
+    return True
+
+
 def native_artifact_from_path(
     binary_path: os.PathLike,
     root: Optional[os.PathLike] = None,

@@ -9,7 +9,7 @@ import os
 from typing import Optional
 
 from ..variants.model import default_bin_dir, variant_id_from_name
-from ..workspace import workspace_root
+from ..workspace import short_sha, workspace_root
 from ._const import DASHBOARD_STEPS, TABS, TAB_MODES, VARIANT_MODEL_FIELDS, VARIANT_STEPS
 from .options import (
     dashboard_options,
@@ -48,6 +48,8 @@ from .themes import active_theme, theme_name
 def active_tab(state):
     if state.mode == "patch-package":
         return "Patch"
+    if state.mode == "inspect-delete-confirm":
+        return "Inspect"
     if state.mode in {
         "loading",
         "busy",
@@ -93,6 +95,10 @@ def compact_tab_bar(state):
     return " ".join(f"[{tab}]" if tab == active else tab for tab in TABS)
 
 
+def panel_title(state, title):
+    return f"{title} | {compact_tab_bar(state)}"
+
+
 # -- Body labels and progress -------------------------------------------------
 
 def current_labels(state):
@@ -123,6 +129,8 @@ def current_labels(state):
         return "Upgrade preview", upgrade_preview_labels(state)
     if state.mode == "delete-confirm":
         return "Delete setup", delete_confirm_labels(state)
+    if state.mode == "inspect-delete-confirm":
+        return "Delete native download", inspect_delete_confirm_labels(state)
     if state.mode == "health-result":
         return "Setup result", state.last_action_summary or ["No result available."]
     if state.mode == "logs":
@@ -271,13 +279,35 @@ def delete_confirm_labels(state):
     ]
 
 
+def inspect_delete_confirm_labels(state):
+    artifact = next(
+        (item for item in state.native_artifacts if str(item.path) == state.inspect_delete_confirm_path),
+        None,
+    )
+    if artifact is None:
+        return [
+            "Selected native artifact is no longer available.",
+            "",
+            "Press n or Esc to return to Inspect.",
+        ]
+    return [
+        "Delete this downloaded native artifact?",
+        f"Version: {artifact.version}",
+        f"Platform: {artifact.platform}",
+        f"SHA: {short_sha(artifact.sha256)}",
+        f"Path: {artifact.path}",
+        "",
+        "Proceed? y/N",
+    ]
+
+
 def help_labels():
     return [
         "Global",
         "Up/Down: move",
         "Enter: select or confirm current screen",
         "Esc/B: back",
-        "Q: quit",
+        "Q or Ctrl+C: quit",
         "?: shortcuts",
         "T: cycle theme outside setup manager/detail",
         "",
@@ -300,6 +330,28 @@ def help_labels():
         "",
         "Logs",
         "C: copy log text",
+        "",
+        "Inspect",
+        "Enter: inspect selected native download",
+        "D: delete selected native download",
+        "",
+        "Dashboard",
+        "R: refresh source list",
+        "Space: toggle tweak or package selections",
+        "A: apply tweak profile changes when shown",
+        "D: delete or discard profile changes when shown",
+        "V: view selection details when shown",
+        "",
+        "Setup creation",
+        "Space: toggle MCP servers or tweaks",
+        "V: view tweak details",
+        "",
+        "Tweaks editor",
+        "/: search tweaks",
+        "Space: toggle selected tweak",
+        "A: apply pending changes",
+        "D: discard pending changes",
+        "V: view tweak details",
     ]
 
 
@@ -493,10 +545,7 @@ def _dashboard_tweak_progress_spec(state):
 # -- Compact chrome / key hints -----------------------------------------------
 
 def top_chrome_lines(state):
-    return [
-        f"cc-extractor | {compact_tab_bar(state)}",
-        context_line(state),
-    ]
+    return [context_line(state)]
 
 
 def context_line(state):
@@ -514,6 +563,8 @@ def context_line(state):
         return "Create setup > Preview"
     if state.mode == "delete-confirm":
         return f"Home > {state.selected_setup_id or 'setup'} > Delete"
+    if state.mode == "inspect-delete-confirm":
+        return "Inspect > Delete native download"
     if state.mode == "health-result":
         return f"Home > {state.selected_setup_id or 'setup'} > Result"
     if state.mode == "help":
@@ -572,6 +623,8 @@ def context_hint(state):
         return "Pick a setup, run it, or use a lifecycle action."
     if state.mode == "delete-confirm":
         return "Type the exact setup id, then press Enter."
+    if state.mode == "inspect-delete-confirm":
+        return "Confirm with y, or cancel with n/Esc."
     if state.mode == "upgrade-preview":
         return "Press y to proceed or n to cancel."
     if state.mode == "create-preview":
@@ -599,13 +652,17 @@ def status_line(state):
     return f"Status: {message}"
 
 
-def meta_line(state):
+def theme_line(state):
     counts = f" | {state.counts}" if state.counts else ""
-    return f"Theme: {theme_name(state.theme_id)} | Workspace: {workspace_root()}{counts}"
+    return f"Theme: {theme_name(state.theme_id)}{counts}"
+
+
+def workspace_line(_state):
+    return f"Workspace: {workspace_root()}"
 
 
 def footer_lines(state):
-    return [status_line(state), key_line(state), meta_line(state)]
+    return [status_line(state), key_line(state), theme_line(state), workspace_line(state)]
 
 
 def footer_text(state):
@@ -614,47 +671,49 @@ def footer_text(state):
 
 def _dashboard_key_line(state):
     if state.dashboard_step == 0:
-        action = "Enter choose | Refresh R"
+        action = "Enter | R refresh"
     elif state.dashboard_step == 1:
-        action = "Space toggle | Enter choose"
+        action = "Space toggle"
     elif state.dashboard_step == 3:
         action = "Enter run"
     else:
-        action = "Enter choose"
-    return f"Keys: Tabs Left/Right/Tab | Move Up/Down | {action} | Back B/Esc | Theme T | Quit Q"
+        action = "Enter"
+    return f"Keys: Q quit | Up/Down | {action} | Theme T | ? more"
 
 
 def _variant_key_line(state):
     if state.variant_step == 3:
-        action = "Space toggle MCP | Enter choose"
+        action = "Space MCP"
     elif state.variant_step == 5:
-        action = "Space toggle tweak | V view | Enter choose"
+        action = "Space tweak | V view"
     elif state.variant_step == 6:
-        action = "Enter choose"
+        action = "Enter"
     elif state.variant_step in {1, 2, 4}:
         action = "Type text | Enter choose"
     else:
-        action = "Enter choose"
-    return f"Keys: Tabs Left/Right/Tab | Move Up/Down | {action} | Back B/Esc | Theme T | Quit Q"
+        action = "Enter"
+    return f"Keys: Q quit | Up/Down | {action} | B/Esc | ? more"
 
 
 def key_line(state):
     if state.mode == "busy":
         return "Keys: input locked while this runs"
     if state.mode == "setup-manager":
-        return "Keys: Q/Ctrl+C quit | Up/Down move | Enter manage | X run | / search | P provider | S sort | N new | U upgrade | T tweaks | H health | D delete | R refresh | ? help"
+        return "Keys: Q/Ctrl+C quit | Enter manage | Up/Down | X run | ? more"
     if state.mode == "setup-detail":
-        return "Keys: Enter select | X run | Esc back | H health | U upgrade | T tweaks | D delete | C command | G config | L logs | ? help | Q quit"
+        return "Keys: Q/Ctrl+C quit | Enter select | Esc | Up/Down | ? more"
     if state.mode == "delete-confirm":
         return "Keys: Type setup name | Enter delete | Esc cancel"
+    if state.mode == "inspect-delete-confirm":
+        return "Keys: Y delete | N/Esc cancel"
     if state.mode == "upgrade-preview":
         return "Keys: Y proceed | N/Esc cancel"
     if state.mode == "create-preview":
         return "Keys: Y create | N/Esc cancel"
     if state.mode == "health-result":
-        return "Keys: Esc back | Enter manage | C copy logs | L logs | ? help | Q quit"
+        return "Keys: Q quit | Esc back | Enter manage | C copy logs | ? more"
     if state.mode == "logs":
-        return "Keys: C copy logs | Esc back | ? help | Q quit"
+        return "Keys: Q quit | C copy logs | Esc back | ? more"
     if state.mode == "help":
         return "Keys: Esc back | Q quit"
     if state.mode == "first-run-setup":
@@ -662,16 +721,18 @@ def key_line(state):
     if state.mode == "dashboard":
         return _dashboard_key_line(state)
     if state.mode == "patch-package":
-        return "Keys: Tabs Left/Right/Tab | Move Up/Down | Space toggle | Enter apply | Back B/Esc | Theme T | Quit Q"
+        return "Keys: Q quit | Space toggle | Enter apply | B/Esc | ? more"
     if state.mode == "variants":
         return _variant_key_line(state)
     if state.mode == "tweaks-source":
-        return "Keys: Tabs Left/Right/Tab | Move Up/Down | Enter pick setup | Back B/Esc | Theme T | Quit Q"
+        return "Keys: Q quit | Enter pick setup | Up/Down | B/Esc | ? more"
     if state.mode in {"tweaks-edit", "tweak-editor"}:
         if state.tweak_apply_preview:
             return "Keys: Y proceed | N/Esc cancel"
-        return "Keys: / search | Space toggle | A apply | D discard | V view | Esc back"
-    return "Keys: Tabs Left/Right/Tab | Move Up/Down | Enter run | Theme T | Quit Q"
+        return "Keys: Q quit | Space toggle | A apply | D discard | / search | ? more"
+    if state.mode == "inspect":
+        return "Keys: Q quit | Up/Down | Enter inspect | D delete | Tab tabs | ? more"
+    return "Keys: Q quit | Up/Down | Enter run | Tab tabs | ? more"
 
 
 # -- Text fallback (for headless) ---------------------------------------------
@@ -679,12 +740,11 @@ def key_line(state):
 def screen_text(state, height=24):
     top_height, footer_height = layout_heights(height)
     body_height = max(3, height - top_height - footer_height)
-    lines = top_chrome_lines(state) + [""]
 
     title, labels = current_labels(state)
-    lines.append(title)
+    lines = [panel_title(state, title), context_line(state), ""]
     cursor = selected_label_index(state)
-    visible = visible_items(labels, cursor, max(1, body_height - 2))
+    visible = visible_items(labels, cursor, max(1, body_height - 4))
     if visible:
         start_index, visible_labels = visible
         for offset, label in enumerate(visible_labels):
@@ -712,9 +772,9 @@ def screen_text(state, height=24):
 
 def body_text(state, height):
     title, labels = current_labels(state)
-    lines = [title]
+    lines = [panel_title(state, title), context_line(state), ""]
     cursor = selected_label_index(state)
-    visible = visible_items(labels, cursor, max(1, height - 3))
+    visible = visible_items(labels, cursor, max(1, height - 5))
     if visible:
         start_index, visible_labels = visible
         for offset, label in enumerate(visible_labels):
@@ -906,7 +966,38 @@ def _label_role(label):
 
 def _body_box_rows(state, width, height):
     title, _ = current_labels(state)
-    return _box_rows(title, _body_content_rows(state, max(1, height - 2)), width, height, "body")
+    inner_height = max(0, height - 2)
+    if state.mode == "inspect-delete-confirm":
+        _, labels = current_labels(state)
+        content_rows = _modal_content_rows("Confirm delete", labels, max(1, width - 2), inner_height)
+        return _box_rows(panel_title(state, title), content_rows, width, height, "body")
+
+    content_rows = []
+    if inner_height >= 1:
+        content_rows.append((context_line(state), "body"))
+    if inner_height >= 2:
+        content_rows.append(("", "body"))
+    item_height = max(1, inner_height - len(content_rows))
+    content_rows.extend(_body_content_rows(state, item_height))
+    return _box_rows(panel_title(state, title), content_rows, width, height, "body")
+
+
+def _modal_content_rows(title, labels, width, height):
+    if height <= 0:
+        return []
+    content_width = max(1, width)
+    label_width = max([len(str(title)), *(len(str(label)) for label in labels)] or [1])
+    modal_width = min(content_width, max(42, label_width + 4))
+    modal_height = min(height, max(5, len(labels) + 2))
+    top_pad = max(0, (height - modal_height) // 2)
+    left_pad = max(0, (content_width - modal_width) // 2)
+    rows = [("", "body") for _ in range(top_pad)]
+    for row in _box_rows(title, labels, modal_width, modal_height, "body"):
+        text = "".join(part for part, _role in row)
+        rows.append(((" " * left_pad) + text, "body"))
+    while len(rows) < height:
+        rows.append(("", "body"))
+    return rows[:height]
 
 
 def _tweaks_detail_box_rows(state, width, height):
@@ -941,12 +1032,11 @@ def _progress_box_rows(title, ratio, label, width):
 def layout_heights(height):
     height = max(1, height)
     if height >= 16:
-        return 4, 5
+        return 0, 6
     if height >= 12:
-        return 3, 4
-    top_height = 1
-    footer_height = min(2, max(0, height - top_height - 1))
-    return top_height, footer_height
+        return 0, 5
+    footer_height = min(2, max(0, height - 1))
+    return 0, footer_height
 
 
 def _plain_rows(lines, width, role):
@@ -954,11 +1044,11 @@ def _plain_rows(lines, width, role):
 
 
 def _minimal_frame_rows(state, width, height):
-    rows = _plain_rows([top_chrome_lines(state)[0]], width, "header")
     footer_candidates = [status_line(state), key_line(state)]
-    footer_height = min(len(footer_candidates), max(0, height - len(rows) - 1))
-    body_height = max(1, height - len(rows) - footer_height)
+    footer_height = min(len(footer_candidates), max(0, height - 1))
+    body_height = max(1, height - footer_height)
     body_rows = body_text(state, body_height).splitlines()[:body_height]
+    rows = []
     rows.extend(_plain_rows(body_rows, width, "body"))
     rows.extend(_plain_rows(footer_candidates[:footer_height], width, "footer"))
     return rows[:height]
@@ -976,7 +1066,7 @@ def _frame_rows(state, width, height):
     top_height, footer_height = layout_heights(height)
     body_height = max(1, height - top_height - footer_height)
 
-    rows = _box_rows("", top_chrome_lines(state), width, top_height, "header")
+    rows = []
     if state.mode in {"tweaks-edit", "tweak-editor"} and not state.tweak_apply_preview and width > 60:
         rows.extend(_tweaks_two_pane_rows(state, width, body_height))
     else:

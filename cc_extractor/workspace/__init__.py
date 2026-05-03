@@ -39,6 +39,7 @@ from .models import (
     PatchedArtifact,
 )
 from .artifacts import (
+    delete_native_download,
     native_artifact_from_path,
     patchset_slug,
     scan_extractions,
@@ -106,6 +107,7 @@ __all__ = [
     "PatchProfile",
     "PatchedArtifact",
     # artifacts / scanners / storage
+    "delete_native_download",
     "native_artifact_from_path",
     "patchset_slug",
     "scan_extractions",

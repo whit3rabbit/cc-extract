@@ -39,6 +39,7 @@ class TuiState:
     variant_providers: List[Dict[str, Any]] = field(default_factory=list)
     download_index: dict = field(default_factory=dict)
     download_versions: List[str] = field(default_factory=list)
+    download_index_loaded: bool = False
     selected_source_index: int = 0
     selected_patch_indexes: List[int] = field(default_factory=list)
     selected_dashboard_tweak_ids: List[str] = field(default_factory=list)
@@ -82,6 +83,11 @@ class TuiState:
     tweak_search_active: bool = False
     tweak_apply_preview: bool = False
     last_tweak_result: Optional[Dict[str, Any]] = None
+    inspect_delete_confirm_path: str = ""
+
+    def __post_init__(self):
+        if not self.download_index_loaded and (self.download_index or self.download_versions):
+            self.download_index_loaded = True
 
     def refresh(self):
         self.theme_id = normalize_theme_id(self.theme_id)
@@ -93,8 +99,10 @@ class TuiState:
         self.dashboard_tweak_profiles = scan_dashboard_tweak_profiles()
         self.variants = scan_variants()
         self.variant_providers = list_variant_providers()
-        self.download_index = load_download_index()
-        self.download_versions = download_versions(self.download_index, "binary")
+        if not self.download_index_loaded:
+            self.download_index = load_download_index()
+            self.download_versions = download_versions(self.download_index, "binary")
+            self.download_index_loaded = True
         self.counts = (
             f"Native: {len(self.native_artifacts)}  "
             f"NPM: {npm_count}  "
@@ -164,7 +172,7 @@ class TuiState:
             return len(setup_manager_options(self))
         if self.mode == "setup-detail":
             return len(setup_detail_options(self))
-        if self.mode in {"loading", "busy", "create-preview", "upgrade-preview", "delete-confirm", "health-result", "logs", "help", "error"}:
+        if self.mode in {"loading", "busy", "create-preview", "upgrade-preview", "delete-confirm", "inspect-delete-confirm", "health-result", "logs", "help", "error"}:
             return 1
         if self.mode == "dashboard":
             return len(dashboard_options(self))

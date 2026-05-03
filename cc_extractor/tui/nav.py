@@ -41,6 +41,10 @@ def go_back(state) -> None:
         set_mode(state, state.help_return_mode or "setup-manager")
     elif state.mode in {"upgrade-preview", "delete-confirm", "logs", "error"}:
         set_mode(state, "setup-detail" if state.selected_setup_id else "setup-manager")
+    elif state.mode == "inspect-delete-confirm":
+        state.inspect_delete_confirm_path = ""
+        set_mode(state, "inspect")
+        state.message = "Delete cancelled."
     elif state.mode == "create-preview":
         set_mode(state, "variants" if state.variants else "first-run-setup")
     elif state.mode == "health-result":

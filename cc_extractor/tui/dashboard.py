@@ -79,6 +79,7 @@ def refresh_dashboard_index(state):
         index, _output = run_quiet(refresh_download_index)
         state.download_index = index
         state.download_versions = download_versions(index, "binary")
+        state.download_index_loaded = True
         state.message = (
             f"Saved {len(state.download_versions)} native versions to "
             f"{workspace_root() / 'download-index.json'}"

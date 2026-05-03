@@ -25,7 +25,7 @@ __all__ = [
     "provider_default_variant_name", "refresh_download_index", "scan_variants",
     "CURATED_TWEAK_IDS", "DASHBOARD_TWEAK_IDS", "DEFAULT_TWEAK_IDS",
     "DashboardTweakProfile", "NativeArtifact", "PatchPackage", "PatchProfile",
-    "delete_dashboard_tweak_profile", "delete_patch_profile", "extraction_paths",
+    "delete_dashboard_tweak_profile", "delete_native_download", "delete_patch_profile", "extraction_paths",
     "load_dashboard_tweak_profile", "load_patch_profile",
     "load_tui_settings", "native_artifact_from_path", "rename_dashboard_tweak_profile", "rename_patch_profile",
     "save_dashboard_tweak_profile", "save_patch_profile", "save_tui_settings", "scan_dashboard_tweak_profiles",
@@ -60,7 +60,7 @@ __all__ = [
     "_advance_variant", "_require_variant_model_mapping", "_reset_variant",
     "_set_variant_provider_defaults", "_toggle_variant_mcp", "_toggle_variant_tweak",
     "_variant_credential_env_for_create", "_variant_model_overrides_for_create",
-    "_run_setup_health", "_run_setup_upgrade", "_run_setup_delete", "_route_startup",
+    "_run_inspect_delete", "_run_setup_health", "_run_setup_upgrade", "_run_setup_delete", "_route_startup",
     "_queue_setup_run", "_run_pending_setup",
     "_start_busy_action", "_poll_busy_action",
     "_load_saved_setup_list_preferences", "_save_setup_list_preferences",
@@ -96,6 +96,7 @@ from ..workspace import (
     PatchPackage,
     PatchProfile,
     delete_dashboard_tweak_profile,
+    delete_native_download,
     delete_patch_profile,
     extraction_paths,
     load_dashboard_tweak_profile,
@@ -582,6 +583,15 @@ def _handle_char_key(state, char):
             state.delete_confirm_text += char
         return True
 
+    if state.mode == "inspect-delete-confirm":
+        if char.lower() == "y":
+            _run_inspect_delete(state)
+        elif char.lower() == "n":
+            _cancel_inspect_delete(state)
+        else:
+            state.message = "Press y to delete, or n/Esc to cancel."
+        return True
+
     if state.mode == "dashboard" and _dashboard_accepts_profile_text(state):
         if char.isprintable() and char not in "\r\n\t":
             state.dashboard_profile_name += char
@@ -713,6 +723,8 @@ def _handle_char_key(state, char):
         _begin_tweak_apply_preview(state)
     elif lowered == "d" and state.mode in {"tweaks-edit", "tweak-editor"}:
         _discard_tweaks(state)
+    elif lowered == "d" and state.mode == "inspect":
+        _open_inspect_delete_confirm(state)
     elif lowered == "v" and state.mode in {"tweaks-edit", "tweak-editor", "variants", "first-run-setup"}:
         _cycle_tweak_filter(state)
     elif char == " ":
@@ -780,6 +792,8 @@ def _activate(state):
             _activate_dashboard(state)
         elif state.mode == "inspect":
             _activate_inspect(state)
+        elif state.mode == "inspect-delete-confirm":
+            state.message = "Press y to delete, or n/Esc to cancel."
         elif state.mode == "extract":
             _activate_extract(state)
         elif state.mode == "patch-source":
@@ -883,6 +897,21 @@ def _open_delete_confirm(state):
     state.selected_setup_id = setup_id
     state.delete_confirm_text = ""
     _set_mode(state, "delete-confirm")
+
+
+def _open_inspect_delete_confirm(state):
+    artifact = _selected_artifact(state)
+    if artifact is None:
+        return
+    state.inspect_delete_confirm_path = str(artifact.path)
+    _set_mode(state, "inspect-delete-confirm")
+    state.message = "Confirm deleting this downloaded native artifact."
+
+
+def _cancel_inspect_delete(state):
+    state.inspect_delete_confirm_path = ""
+    _set_mode(state, "inspect")
+    state.message = "Delete cancelled."
 
 
 def _open_tweak_editor(state):
@@ -1220,6 +1249,40 @@ def _run_setup_upgrade(state):
     message = state.message
     _set_mode(state, "health-result")
     state.message = message
+
+
+def _inspect_delete_artifact(state):
+    target = state.inspect_delete_confirm_path
+    if not target:
+        return None
+    for artifact in state.native_artifacts:
+        if str(artifact.path) == target:
+            return artifact
+    return None
+
+
+def _run_inspect_delete(state):
+    artifact = _inspect_delete_artifact(state)
+    if artifact is None:
+        state.inspect_delete_confirm_path = ""
+        _set_mode(state, "inspect")
+        state.message = "Selected native artifact is no longer available."
+        return
+
+    label = f"{artifact.version} {artifact.platform} {short_sha(artifact.sha256)}"
+    try:
+        removed = delete_native_download(artifact)
+    except Exception as exc:
+        state.last_action_log = _stage_log_lines("Native artifact delete failure", str(exc))
+        _set_mode(state, "inspect")
+        state.message = f"Delete failed: {exc}"
+        return
+
+    state.inspect_delete_confirm_path = ""
+    _refresh_state(state)
+    state.message = f"Deleted native artifact: {label}" if removed else f"Native artifact already missing: {label}"
+    _set_mode(state, "inspect")
+    state.message = f"Deleted native artifact: {label}" if removed else f"Native artifact already missing: {label}"
 
 
 def _run_setup_delete(state):

@@ -11,8 +11,10 @@ from cc_extractor.workspace import (
     PatchProfile,
     load_dashboard_tweak_profile,
     load_tui_settings,
+    scan_native_downloads,
     save_dashboard_tweak_profile,
     save_tui_settings,
+    store_native_download,
 )
 
 
@@ -104,7 +106,8 @@ def test_screen_text_contains_dashboard_first_tab():
     screen = tui._screen_text(state)
 
     assert "Workspace:" in screen
-    assert "cc-extractor | Manage Setup [Dashboard] Inspect Extract Patch" in screen
+    assert "Dashboard: Source | Manage Setup [Dashboard] Inspect Extract Patch" in screen
+    assert "cc-extractor |" not in screen
     assert "Dashboard Source | Step 1/4" in screen
     assert "Latest native binary" in screen
     assert "Native 2.1.121" in screen
@@ -191,6 +194,7 @@ def test_screen_text_includes_theme_and_compact_progress():
     assert "Patches 1" in screen
     assert "Wizard: [" not in screen
     assert "Theme T" in screen
+    assert "Workspace:" in screen
 
 
 def test_busy_screen_text_shows_progress_and_locks_input():
@@ -308,7 +312,7 @@ def test_dashboard_tweak_ids_include_latest_safe_ports():
 def test_footer_keys_match_dashboard_step():
     state = tui.TuiState(mode="dashboard", dashboard_step=0)
     footer = tui._footer_text(state)
-    assert "Refresh R" in footer
+    assert "R refresh" in footer
     assert "Space toggle" not in footer
 
     state.dashboard_step = 1
@@ -326,14 +330,30 @@ def test_setup_manager_footer_advertises_quit_early():
     footer = tui._footer_text(state)
 
     assert "Q/Ctrl+C quit" in footer
-    assert footer.index("Q/Ctrl+C quit") < footer.index("Up/Down move")
+    assert footer.index("Q/Ctrl+C quit") < footer.index("Up/Down")
+    assert "? more" in footer
+
+
+def test_compact_key_footer_fits_narrow_width():
+    manager = tui.TuiState(mode="setup-manager", variants=[_variant("deepseek-main")])
+    detail = tui.TuiState(
+        mode="setup-detail",
+        variants=[_variant("deepseek-main")],
+        selected_setup_id="deepseek-main",
+    )
+
+    manager_screen = _render_screen(manager, 70, 24)
+    detail_screen = _render_screen(detail, 70, 24)
+
+    assert "Keys: Q/Ctrl+C quit | Enter manage | Up/Down | X run | ? more" in manager_screen
+    assert "Keys: Q/Ctrl+C quit | Enter select | Esc | Up/Down | ? more" in detail_screen
 
 
 def test_footer_keys_match_variant_step():
     state = tui.TuiState(mode="variants", variant_step=1)
     footer = tui._footer_text(state)
     assert "Setup names:" in footer
-    assert "Space toggle tweak" not in footer
+    assert "Space tweak" not in footer
 
     state.variant_step = 2
     footer = tui._footer_text(state)
@@ -343,7 +363,7 @@ def test_footer_keys_match_variant_step():
     state.variant_step = 3
     footer = tui._footer_text(state)
     assert "MCP servers:" in footer
-    assert "Space toggle MCP" in footer
+    assert "Space MCP" in footer
 
     state.variant_step = 4
     footer = tui._footer_text(state)
@@ -351,7 +371,7 @@ def test_footer_keys_match_variant_step():
 
     state.variant_step = 5
     footer = tui._footer_text(state)
-    assert "Space toggle tweak" in footer
+    assert "Space tweak" in footer
     assert "Variant names:" not in footer
 
 
@@ -415,20 +435,60 @@ def test_render_frame_puts_theme_only_in_bottom_banner():
 
     assert screen.count("Theme: Hacker BBS") == 1
     assert all("Theme:" not in line for line in lines[:4])
-    assert "Theme: Hacker BBS" in "\n".join(lines[-5:])
+    assert "Theme: Hacker BBS" in "\n".join(lines[-6:])
+    assert "Workspace:" in lines[-2]
+
+
+def test_render_frame_splits_workspace_from_counts():
+    state = tui.TuiState(
+        counts="Native: 4  NPM: 0  Extractions: 1  Patch bundles: 0  Profiles: 0",
+    )
+
+    screen = _render_screen(state, 140, 24)
+    lines = screen.splitlines()
+
+    theme_line = next(line for line in lines if "Theme: Hacker BBS" in line)
+    workspace_line = next(line for line in lines if "Workspace:" in line)
+
+    assert "Workspace:" not in theme_line
+    assert "Native: 4" in theme_line
+    assert "Patch bundles: 0" in theme_line
+    assert "Native: 4" not in workspace_line
+
+
+def test_render_frame_places_tabs_in_body_title():
+    state = tui.TuiState(
+        mode="first-run-setup",
+        variant_step=1,
+        variant_name="minimax",
+        variant_providers=[
+            {
+                "key": "minimax",
+                "label": "Minimax",
+                "defaultVariantName": "minimax",
+            }
+        ],
+    )
+
+    lines = _render_screen(state, 140, 24).splitlines()
+    context_text = "First run setup Name | Step 2/7 | Provider minimax | Name minimax"
+
+    assert "No Claude Code setups found: Name | [Manage Setup] Dashboard Inspect Extract Patch" in lines[0]
+    assert context_text in lines[1]
+    assert all("cc-extractor |" not in line for line in lines[:4])
 
 
 def test_render_frame_uses_stable_chrome_for_dashboard_and_inspect():
     dashboard = tui.TuiState(mode="dashboard")
     inspect = tui.TuiState(mode="inspect")
 
-    assert tui.rendering.layout_heights(24) == (4, 5)
+    assert tui.rendering.layout_heights(24) == (0, 6)
 
     dashboard_lines = _render_screen(dashboard, 80, 24).splitlines()
     inspect_lines = _render_screen(inspect, 80, 24).splitlines()
 
-    assert "Dashboard: Source" in dashboard_lines[4]
-    assert "Inspect" in inspect_lines[4]
+    assert "Dashboard: Source | Manage Setup [Dashboard] Inspect Extract Patch" in dashboard_lines[0]
+    assert "Inspect | Manage Setup Dashboard [Inspect] Extract Patch" in inspect_lines[0]
     assert "Status" in dashboard_lines[-5]
     assert "Status" in inspect_lines[-5]
 
@@ -460,6 +520,48 @@ def test_dashboard_selects_specific_version_without_downloading():
     assert state.dashboard_step == 1
     assert state.dashboard_source_kind == tui.SOURCE_VERSION
     assert state.dashboard_source_version == "2.1.121"
+
+
+def test_version_list_loads_once_until_manual_refresh(monkeypatch, tmp_path):
+    root = tmp_path / ".cc-extractor"
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    from cc_extractor.tui import dashboard as dashboard_module
+    from cc_extractor.tui import state as state_module
+
+    monkeypatch.setattr(state_module, "scan_native_downloads", lambda: [])
+    monkeypatch.setattr(state_module, "scan_npm_downloads", lambda: [])
+    monkeypatch.setattr(state_module, "scan_extractions", lambda: [])
+    monkeypatch.setattr(state_module, "scan_patch_packages", lambda: [])
+    monkeypatch.setattr(state_module, "scan_patch_profiles", lambda: [])
+    monkeypatch.setattr(state_module, "scan_dashboard_tweak_profiles", lambda: [])
+    monkeypatch.setattr(state_module, "scan_variants", lambda: [])
+    monkeypatch.setattr(state_module, "list_variant_providers", lambda: [])
+
+    loads = []
+
+    def fake_load_download_index():
+        loads.append(True)
+        return {"binary": {"latest": "2.1.121", "versions": [{"version": "2.1.121"}]}}
+
+    monkeypatch.setattr(state_module, "load_download_index", fake_load_download_index)
+    state = tui.TuiState(mode="dashboard")
+
+    state.refresh()
+    state.refresh()
+
+    assert len(loads) == 1
+    assert state.download_versions == ["2.1.121"]
+
+    monkeypatch.setattr(
+        dashboard_module,
+        "refresh_download_index",
+        lambda: {"binary": {"latest": "2.1.122", "versions": [{"version": "2.1.122"}]}},
+    )
+
+    tui._refresh_dashboard_index(state)
+
+    assert state.download_versions == ["2.1.122"]
+    assert state.download_index_loaded is True
 
 
 def test_dashboard_toggles_patch_and_loads_profile():
@@ -644,6 +746,38 @@ def test_move_tab_clears_stale_status():
 
     assert state.mode == "inspect"
     assert state.message == ""
+
+
+def test_inspect_delete_native_artifact_requires_yes(monkeypatch, tmp_path):
+    root = tmp_path / ".cc-extractor"
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    staged = tmp_path / "claude"
+    staged.write_bytes(b"fake-binary")
+    sha = "b" * 64
+    path = store_native_download(staged, "2.1.123", "darwin-arm64", sha, root=root)
+    artifact = scan_native_downloads(root=root)[0]
+    state = tui.TuiState(mode="inspect", native_artifacts=[artifact])
+
+    assert tui._handle_char_key(state, "d") is True
+
+    assert state.mode == "inspect-delete-confirm"
+    assert state.inspect_delete_confirm_path == str(path)
+    assert path.exists()
+    assert "Confirm delete" in _render_screen(state, 100, 24)
+
+    assert tui._handle_char_key(state, "n") is True
+
+    assert state.mode == "inspect"
+    assert path.exists()
+
+    assert tui._handle_char_key(state, "d") is True
+    assert tui._handle_char_key(state, "y") is True
+
+    assert state.mode == "inspect"
+    assert not path.exists()
+    assert not path.parent.exists()
+    assert state.native_artifacts == []
+    assert "Deleted native artifact: 2.1.123 darwin-arm64" in state.message
 
 
 def test_variants_tab_lists_providers_and_progress():
@@ -1184,10 +1318,13 @@ def test_help_panel_opens_and_returns_to_context():
     assert tui._handle_char_key(state, "?") is True
 
     assert state.mode == "help"
-    screen = tui._screen_text(state, height=48)
+    screen = tui._screen_text(state, height=80)
     assert "Shortcuts" in screen
+    assert "Q or Ctrl+C: quit" in screen
     assert "/: search setups" in screen
     assert "C: copy log text" in screen
+    assert "Dashboard" in screen
+    assert "Space: toggle selected tweak" in screen
 
     tui._go_back(state)
 
