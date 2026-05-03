@@ -270,6 +270,55 @@ class TestReplaceString:
 
         assert target_path.read_text(encoding="utf-8") == "after and after\n"
 
+    def test_replace_string_rejects_path_traversal(self, tmp_path):
+        extract_dir, _, _ = make_extract_dir(tmp_path)
+
+        patch_dir = tmp_path / "patch"
+        write_patch_manifest(
+            patch_dir,
+            make_patch_manifest(
+                operations=[
+                    {
+                        "type": "replace_string",
+                        "path": "../outside.js",
+                        "find": "before",
+                        "replace": "after",
+                    }
+                ],
+            ),
+        )
+
+        with pytest.raises(ValueError, match="unsafe path segment"):
+            apply_patch(patch_dir, extract_dir)
+
+    def test_replace_string_rejects_symlink_target(self, tmp_path):
+        extract_dir, _, _ = make_extract_dir(tmp_path)
+        real_path = extract_dir / "real.js"
+        real_path.write_text("const value = 'before';\n", encoding="utf-8")
+        link_path = extract_dir / "link.js"
+        try:
+            link_path.symlink_to(real_path)
+        except OSError as exc:
+            pytest.skip(f"symlink unavailable: {exc}")
+
+        patch_dir = tmp_path / "patch"
+        write_patch_manifest(
+            patch_dir,
+            make_patch_manifest(
+                operations=[
+                    {
+                        "type": "replace_string",
+                        "path": "link.js",
+                        "find": "before",
+                        "replace": "after",
+                    }
+                ],
+            ),
+        )
+
+        with pytest.raises(ValueError, match="Refusing to patch symlink"):
+            apply_patch(patch_dir, extract_dir)
+
 
 class TestReplaceBlock:
     def test_replace_block_success(self, tmp_path):
@@ -328,6 +377,67 @@ class TestReplaceBlock:
         )
 
         with pytest.raises(ValueError, match="Patch asset does not exist"):
+            apply_patch(patch_dir, extract_dir)
+
+    def test_replace_block_rejects_asset_traversal(self, tmp_path):
+        extract_dir, _, _ = make_extract_dir(
+            tmp_path,
+            content="function example() {\n  return 'before';\n}\n",
+        )
+
+        patch_dir = tmp_path / "patch"
+        outside = tmp_path / "find.js"
+        outside.write_text("function example() {\n  return 'before';\n}\n", encoding="utf-8")
+        write_patch_manifest(
+            patch_dir,
+            make_patch_manifest(
+                operations=[
+                    {
+                        "type": "replace_block",
+                        "path": "app.js",
+                        "find_file": "../find.js",
+                        "replace_file": "blocks/replace.js",
+                    }
+                ],
+            ),
+        )
+
+        with pytest.raises(ValueError, match="unsafe path segment"):
+            apply_patch(patch_dir, extract_dir)
+
+    def test_replace_block_rejects_symlink_asset(self, tmp_path):
+        extract_dir, _, _ = make_extract_dir(
+            tmp_path,
+            content="function example() {\n  return 'before';\n}\n",
+        )
+
+        patch_dir = tmp_path / "patch"
+        (patch_dir / "blocks").mkdir(parents=True)
+        real_find = patch_dir / "blocks" / "find-real.js"
+        real_find.write_text("function example() {\n  return 'before';\n}\n", encoding="utf-8")
+        try:
+            (patch_dir / "blocks" / "find.js").symlink_to(real_find)
+        except OSError as exc:
+            pytest.skip(f"symlink unavailable: {exc}")
+        (patch_dir / "blocks" / "replace.js").write_text(
+            "function example() {\n  return 'after';\n}\n",
+            encoding="utf-8",
+        )
+        write_patch_manifest(
+            patch_dir,
+            make_patch_manifest(
+                operations=[
+                    {
+                        "type": "replace_block",
+                        "path": "app.js",
+                        "find_file": "blocks/find.js",
+                        "replace_file": "blocks/replace.js",
+                    }
+                ],
+            ),
+        )
+
+        with pytest.raises(ValueError, match="Refusing to read symlink patch asset"):
             apply_patch(patch_dir, extract_dir)
 
     def test_replace_block_count_mismatch(self, tmp_path):

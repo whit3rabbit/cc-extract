@@ -65,6 +65,14 @@ def test_workspace_root_defaults_to_repo_local_directory(tmp_path, monkeypatch):
     assert workspace_root() == tmp_path / ".cc-extractor"
 
 
+def test_ensure_workspace_creates_gitignore(tmp_path):
+    from cc_extractor.workspace import ensure_workspace
+
+    root = ensure_workspace(tmp_path / ".cc-extractor")
+
+    assert (root / ".gitignore").read_text(encoding="utf-8") == "*\n"
+
+
 def test_tui_settings_roundtrip_uses_workspace_json(tmp_path):
     root = tmp_path / ".cc-extractor"
 

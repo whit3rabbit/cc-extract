@@ -11,6 +11,7 @@ from cc_extractor.providers import (
     provider_patch_config,
     provider_prompt_overlays,
 )
+from cc_extractor.providers.schema import ProviderSchemaError, provider_from_json
 
 
 def test_provider_list_includes_cc_mirror_parity_presets():
@@ -65,6 +66,60 @@ def test_stored_secret_is_separate_from_safe_env():
 def test_api_key_requires_store_secret():
     with pytest.raises(ValueError, match="--store-secret"):
         build_provider_env("zai", api_key="secret-value")
+
+
+def test_extra_env_rejects_unsafe_shell_key():
+    with pytest.raises(ValueError, match=r"--extra-env key"):
+        build_provider_env("zai", extra_env=["X; touch /tmp/pwn=1"])
+
+
+def test_credential_env_rejects_unsafe_shell_key():
+    with pytest.raises(ValueError, match="credential env"):
+        build_provider_env("zai", credential_env="X; touch /tmp/pwn")
+
+
+def test_provider_schema_rejects_unsafe_registry_env_keys():
+    payload = {
+        "schemaVersion": 1,
+        "key": "unsafe",
+        "label": "Unsafe",
+        "description": "Unsafe provider",
+        "displayOrder": 999,
+        "baseUrl": "",
+        "auth": {
+            "mode": "none",
+            "credentialEnv": "",
+        },
+        "models": {
+            "default": "",
+            "smallFast": "",
+            "opus": "",
+            "sonnet": "",
+            "haiku": "",
+            "subagent": "",
+            "requiresModelMapping": False,
+        },
+        "env": {"X; touch /tmp/pwn": "1"},
+        "variant": {
+            "splashStyle": "",
+            "theme": {},
+            "noPromptPack": True,
+            "promptOverlays": {},
+        },
+        "claudeConfig": {
+            "settingsPermissionsDeny": [],
+            "mcpServers": {},
+        },
+        "tui": {
+            "headline": "",
+            "features": [],
+            "setupLinks": {},
+            "setupNote": "",
+        },
+    }
+
+    with pytest.raises(ProviderSchemaError, match="unsafe.env key"):
+        provider_from_json(payload)
 
 
 def test_model_mapping_providers_require_core_model_overrides():
@@ -148,8 +203,11 @@ def test_provider_config_writer_merges_zai_mcp_and_denies(tmp_path):
     assert result.claude_config_changed is True
     assert "mcp__web_reader__webReader" in settings["permissions"]["deny"]
     assert sorted(config["mcpServers"]) == ["web-reader", "web-search-prime", "zai-mcp-server", "zread"]
-    assert config["mcpServers"]["web-reader"]["headers"] == {"Authorization": "Bearer zai-secret"}
-    assert config["mcpServers"]["zai-mcp-server"]["env"]["Z_AI_API_KEY"] == "zai-secret"
+    assert config["mcpServers"]["web-reader"]["headers"] == {
+        "Authorization": f"Bearer {PLACEHOLDER_CREDENTIAL}"
+    }
+    assert config["mcpServers"]["zai-mcp-server"]["env"]["Z_AI_API_KEY"] == PLACEHOLDER_CREDENTIAL
+    assert "zai-secret" not in json.dumps(config)
 
     second = apply_provider_claude_config("zai", tmp_path, credential_value="zai-secret")
     assert second.settings_changed is False
@@ -179,4 +237,5 @@ def test_provider_config_writer_adds_minimax_mcp(tmp_path):
 
     assert settings["permissions"]["deny"] == ["WebSearch"]
     assert config["mcpServers"]["MiniMax"]["command"] == "uvx"
-    assert config["mcpServers"]["MiniMax"]["env"]["MINIMAX_API_KEY"] == "mini-secret"
+    assert config["mcpServers"]["MiniMax"]["env"]["MINIMAX_API_KEY"] == PLACEHOLDER_CREDENTIAL
+    assert "mini-secret" not in json.dumps(config)

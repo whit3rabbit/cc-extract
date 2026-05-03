@@ -5,7 +5,7 @@ import shlex
 from pathlib import Path
 from typing import Dict, Optional
 
-from .._utils import utc_now as _utc_now
+from .._utils import require_env_name, utc_now as _utc_now
 from ..providers import (
     apply_provider_claude_config,
     get_provider,
@@ -24,7 +24,6 @@ def write_variant_config(manifest: Dict) -> None:
     apply_provider_claude_config(
         manifest["provider"]["key"],
         paths["configDir"],
-        credential_value=stored_credential_value(manifest),
         read_json=read_json,
         write_json=write_json,
     )
@@ -67,7 +66,10 @@ def read_secret_exports(path: Path) -> Dict[str, str]:
             continue
         key, value = parts[1].split("=", 1)
         if key:
-            result[key] = value
+            try:
+                result[require_env_name(key, label="secret env key")] = value
+            except ValueError:
+                continue
     return result
 
 
@@ -86,13 +88,14 @@ def write_wrapper(manifest: Dict) -> Path:
         'export DISABLE_AUTO_MIGRATE_TO_NATIVE="${DISABLE_AUTO_MIGRATE_TO_NATIVE:-1}"',
     ]
     for key, value in sorted(manifest.get("env", {}).items()):
-        lines.append(f"export {key}={shlex.quote(str(value))}")
+        env_key = require_env_name(key, label="wrapper env key")
+        lines.append(f"export {env_key}={shlex.quote(str(value))}")
     credential = manifest.get("credential", {})
     if credential.get("mode") == "stored":
         lines.append('if [ -f "$VARIANT_ROOT/secrets.env" ]; then . "$VARIANT_ROOT/secrets.env"; fi')
     elif credential.get("mode") == "env":
-        source = credential.get("source")
-        targets = credential.get("targets", [])
+        source = require_env_name(credential.get("source"), label="credential source")
+        targets = [require_env_name(target, label="credential target") for target in credential.get("targets", [])]
         lines.append(f": ${{{source}:?Set {source} for variant {manifest['id']}}}")
         for target in targets:
             lines.append(f"export {target}=\"${{{source}}}\"")
@@ -130,7 +133,16 @@ def write_wrapper(manifest: Dict) -> Path:
 
 
 def write_secrets(path: Path, secret_env: Dict[str, str]) -> None:
-    lines = [f"export {key}={shlex.quote(value)}" for key, value in sorted(secret_env.items())]
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    lines = [
+        f"export {require_env_name(key, label='secret env key')}={shlex.quote(str(value))}"
+        for key, value in sorted(secret_env.items())
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, SECRETS_FILE_MODE)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
     if os.name != "nt":
         os.chmod(path, SECRETS_FILE_MODE)

@@ -7,12 +7,22 @@ risk: only stdlib imports allowed here.
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Dict, Tuple
 
 _KEBAB_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
 
 
 def safe_read_json(path: Path) -> Dict:
@@ -58,3 +68,49 @@ def make_kebab_id(name: str, *, label: str = "name") -> str:
     if not slug:
         raise ValueError(f"{label} must contain letters or numbers")
     return slug
+
+
+def require_env_name(name: str, *, label: str = "environment variable") -> str:
+    """Return a shell-safe environment variable name or raise ValueError."""
+    if not isinstance(name, str) or not ENV_NAME_RE.fullmatch(name):
+        raise ValueError(f"{label} must match [A-Za-z_][A-Za-z0-9_]*")
+    return name
+
+
+def safe_relative_path(rel_path: str, *, label: str = "path") -> str:
+    """Validate a bundle/package relative path and return slash-normalized text."""
+    if not isinstance(rel_path, str) or not rel_path:
+        raise ValueError(f"{label} must be a non-empty relative path")
+
+    normalized = rel_path.replace("\\", "/")
+    windows_path = PureWindowsPath(rel_path)
+    if (
+        PurePosixPath(normalized).is_absolute()
+        or windows_path.is_absolute()
+        or windows_path.drive
+        or normalized.startswith("//")
+        or ":" in normalized
+    ):
+        raise ValueError(f"{label} must be a relative path: {rel_path}")
+
+    parts = normalized.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        raise ValueError(f"{label} contains unsafe path segment: {rel_path}")
+    if os.name == "nt" and any(_is_windows_reserved_name(part) for part in parts):
+        raise ValueError(f"{label} contains a Windows reserved name: {rel_path}")
+    return "/".join(parts)
+
+
+def safe_child_path(root: Path, rel_path: str, *, label: str = "path") -> Path:
+    """Resolve a safe child path under root, rejecting traversal and symlink escapes."""
+    normalized = safe_relative_path(rel_path, label=label)
+    root_resolved = Path(root).resolve()
+    candidate = (root_resolved / Path(*normalized.split("/"))).resolve()
+    if candidate == root_resolved or root_resolved not in candidate.parents:
+        raise ValueError(f"{label} escapes root: {rel_path}")
+    return candidate
+
+
+def _is_windows_reserved_name(segment: str) -> bool:
+    base = segment.split(".", 1)[0].upper()
+    return base in _WINDOWS_RESERVED_NAMES

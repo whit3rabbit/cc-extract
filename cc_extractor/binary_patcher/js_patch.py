@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from .._utils import safe_child_path
 from .prompts import apply_prompts
 from .strip_bun_wrapper import strip_bun_wrapper
 from .theme import apply_theme, themes_from_config as _themes_from_config
@@ -95,7 +96,7 @@ def _module_for_entry(manifest, entry_name):
 
 
 def _safe_join(root, rel_path):
-    normalized = str(rel_path).replace("\\", "/").lstrip("/")
-    if not normalized or any(segment == ".." for segment in normalized.split("/")):
+    try:
+        return safe_child_path(root, rel_path, label="entry module path")
+    except ValueError:
         raise UnpackedManifestError(f"unsafe entry module path: {rel_path}")
-    return root / normalized

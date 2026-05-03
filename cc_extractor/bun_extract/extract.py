@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
+from .._utils import safe_child_path, safe_relative_path
 from .types import BunFormatError
 
 
@@ -28,7 +29,7 @@ def extract_all(data, info, out_dir, write_sourcemaps=False, manifest=True):
         module_info["rel_path"] = rel_path
 
         if module.cont_len > 0:
-            out_path = out_root / rel_path
+            out_path = _safe_extract_path(out_root, rel_path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_bytes(data[info.data_start + module.cont_off : info.data_start + module.cont_off + module.cont_len])
             module_info["sourceFile"] = rel_path
@@ -36,7 +37,7 @@ def extract_all(data, info, out_dir, write_sourcemaps=False, manifest=True):
 
         if write_sourcemaps and module.smap_len > 0:
             smap_rel = rel_path + ".map"
-            smap_path = out_root / smap_rel
+            smap_path = _safe_extract_path(out_root, smap_rel)
             smap_path.parent.mkdir(parents=True, exist_ok=True)
             smap_path.write_bytes(
                 data[info.data_start + module.smap_off : info.data_start + module.smap_off + module.smap_len]
@@ -46,7 +47,7 @@ def extract_all(data, info, out_dir, write_sourcemaps=False, manifest=True):
 
         if module.bc_len > 0:
             bc_rel = rel_path + ".bc"
-            bc_path = out_root / bc_rel
+            bc_path = _safe_extract_path(out_root, bc_rel)
             bc_path.parent.mkdir(parents=True, exist_ok=True)
             bc_path.write_bytes(data[info.data_start + module.bc_off : info.data_start + module.bc_off + module.bc_len])
             module_info["bytecodeFile"] = bc_rel
@@ -102,9 +103,14 @@ def _build_manifest(info):
 
 
 def _sanitize_rel_path(rel_path):
-    normalized = rel_path.replace("\\", "/").lstrip("/")
-    if any(segment == ".." for segment in normalized.split("/")):
-        raise BunFormatError(f"Refusing to extract module with traversal path: {rel_path}")
-    if not normalized:
-        raise BunFormatError("Refusing to extract module with empty path")
-    return normalized
+    try:
+        return safe_relative_path(rel_path, label="module path")
+    except ValueError as exc:
+        raise BunFormatError(f"Refusing to extract module with unsafe path: {rel_path}") from exc
+
+
+def _safe_extract_path(out_root: Path, rel_path: str) -> Path:
+    try:
+        return safe_child_path(out_root, rel_path, label="module path")
+    except ValueError as exc:
+        raise BunFormatError(f"Refusing to extract module with unsafe path: {rel_path}") from exc

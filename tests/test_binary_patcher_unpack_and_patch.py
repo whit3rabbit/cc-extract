@@ -78,7 +78,26 @@ def test_unpack_and_patch_extracts_patches_package_json_and_runs_npm(tmp_path, m
     assert OVERLAY_MARKERS["start"] in written
     package_json = json.loads((unpacked_dir / "package.json").read_text(encoding="utf-8"))
     assert package_json["dependencies"] == RUNTIME_DEPENDENCIES
-    assert calls[0][0] == ["npm", "install", "--silent", "--no-audit", "--no-fund"]
+    assert (unpacked_dir / ".cc-extractor-unpacked").exists()
+    assert calls[0][0] == [
+        "npm",
+        "install",
+        "--package-lock-only",
+        "--ignore-scripts",
+        "--omit=dev",
+        "--no-audit",
+        "--no-fund",
+        "--silent",
+    ]
+    assert calls[1][0] == [
+        "npm",
+        "ci",
+        "--ignore-scripts",
+        "--omit=dev",
+        "--no-audit",
+        "--no-fund",
+        "--silent",
+    ]
     assert calls[0][1]["cwd"] == str(unpacked_dir)
 
 
@@ -109,3 +128,20 @@ def test_unpack_and_patch_wraps_extract_failure(tmp_path):
         )
 
     assert exc.value.stage == "extract"
+
+
+def test_unpack_and_patch_refuses_to_delete_non_generated_directory(tmp_path):
+    unpacked_dir = tmp_path / "unpacked"
+    unpacked_dir.mkdir()
+    user_file = unpacked_dir / "user-file.txt"
+    user_file.write_text("keep me", encoding="utf-8")
+
+    with pytest.raises(UnpackAndPatchError, match="without .cc-extractor-unpacked") as exc:
+        unpack_and_patch(
+            pristine_binary_path=str(tmp_path / "missing"),
+            unpacked_dir=str(unpacked_dir),
+            config={"settings": {"themes": THEMES}},
+        )
+
+    assert exc.value.stage == "extract"
+    assert user_file.read_text(encoding="utf-8") == "keep me"

@@ -29,6 +29,10 @@ def workspace_root(root: Optional[os.PathLike] = None) -> Path:
 
 def ensure_workspace(root: Optional[os.PathLike] = None) -> Path:
     root_path = workspace_root(root)
+    root_path.mkdir(parents=True, exist_ok=True)
+    gitignore_path = root_path / ".gitignore"
+    if not gitignore_path.exists():
+        gitignore_path.write_text("*\n", encoding="utf-8")
     for rel_path in (
         "downloads/native",
         "downloads/npm",

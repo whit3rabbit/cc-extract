@@ -174,6 +174,26 @@ def test_extract_all_refuses_path_traversal(tmp_path):
         extract_all(fixture["buf"], info, str(tmp_path))
 
 
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "C:/Users/alice/evil.js",
+        "src/./evil.js",
+        "src//evil.js",
+    ],
+)
+def test_extract_all_refuses_windows_or_ambiguous_paths(tmp_path, module_name):
+    fixture = build_bun_fixture(
+        platform="elf",
+        module_struct_size=52,
+        modules=[{"name": module_name, "content": "pwned"}],
+    )
+    info = parse_bun_binary(fixture["buf"])
+
+    with pytest.raises(BunFormatError):
+        extract_all(fixture["buf"], info, str(tmp_path))
+
+
 @pytest.mark.parametrize("platform", ["elf", "macho", "pe"])
 def test_extractor_wrapper_extracts_cross_platform_fixtures(tmp_path, platform):
     fixture = build_bun_fixture(platform=platform, module_struct_size=52, modules=SAMPLE_MODULES)

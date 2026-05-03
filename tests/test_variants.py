@@ -15,6 +15,7 @@ from cc_extractor.variants import (
     remove_variant,
     scan_variants,
 )
+from cc_extractor.variants.wrapper import write_wrapper
 from cc_extractor.workspace import NativeArtifact
 from tests.helpers.bun_fixture import build_bun_fixture
 
@@ -292,10 +293,31 @@ def test_create_variant_stored_secret_is_not_in_metadata(tmp_path):
 
     assert "super-secret" not in metadata_text
     assert "super-secret" not in settings_text
-    assert "super-secret" in claude_config_text
+    assert "super-secret" not in claude_config_text
+    assert "Enter your API key" in claude_config_text
     assert "super-secret" in secrets_path.read_text(encoding="utf-8")
     assert oct(secrets_path.stat().st_mode & 0o777) == "0o600"
     assert result.variant.manifest["credential"]["mode"] == "stored"
+
+
+def test_write_wrapper_rejects_unsafe_env_key(tmp_path):
+    manifest = {
+        "id": "unsafe",
+        "provider": {"key": "mirror"},
+        "env": {"X; touch /tmp/pwn": "1"},
+        "credential": {"mode": "none", "targets": []},
+        "paths": {
+            "root": str(tmp_path / "variant"),
+            "wrapper": str(tmp_path / "bin" / "unsafe"),
+            "configDir": str(tmp_path / "variant" / "config"),
+            "tweakccDir": str(tmp_path / "variant" / "tweakcc"),
+            "tmpDir": str(tmp_path / "variant" / "tmp"),
+            "binary": str(tmp_path / "variant" / "native" / "claude"),
+        },
+    }
+
+    with pytest.raises(ValueError, match="wrapper env key"):
+        write_wrapper(manifest)
 
 
 def test_apply_variant_rebuilds_from_saved_metadata(tmp_path, monkeypatch):

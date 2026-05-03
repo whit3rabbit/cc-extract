@@ -103,3 +103,14 @@ def test_patch_unpacked_entry_throws_theme_anchor_not_found(tmp_path):
 def test_resolve_entry_path_throws_when_manifest_missing(tmp_path):
     with pytest.raises(UnpackedManifestError):
         resolve_entry_path(str(tmp_path))
+
+
+@pytest.mark.parametrize("entry_name", ["../outside.js", "C:/Users/alice/evil.js"])
+def test_resolve_entry_path_rejects_unsafe_manifest_paths(tmp_path, entry_name):
+    (tmp_path / ".bundle_manifest.json").write_text(
+        json.dumps({"entryPoint": entry_name, "entryPointId": 0, "modules": [{"name": entry_name, "isEntry": True}]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(UnpackedManifestError, match="unsafe entry module path"):
+        resolve_entry_path(str(tmp_path))

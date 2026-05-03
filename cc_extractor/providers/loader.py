@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .._utils import require_env_name
 from .schema import (
     MODEL_ENV_KEYS,
     ProviderEnv,
@@ -60,6 +61,8 @@ def build_provider_env(
         targets = _credential_targets(provider)
         credential_value = (api_key or "").strip()
         source_env = (credential_env or provider.credential_env or _default_credential_env(provider)).strip()
+        if source_env:
+            source_env = require_env_name(source_env, label="credential env")
 
         if credential_value:
             if not store_secret:
@@ -133,11 +136,11 @@ def _credential_targets(provider: ProviderTemplate) -> List[str]:
         targets = ["ANTHROPIC_AUTH_TOKEN"]
         if provider.auth_token_also_sets_api_key:
             targets.append("ANTHROPIC_API_KEY")
-        return targets
+        return _require_env_names(targets, label="credential target")
     targets = ["ANTHROPIC_API_KEY"]
     if provider.credential_env and provider.credential_env not in targets:
         targets.append(provider.credential_env)
-    return targets
+    return _require_env_names(targets, label="credential target")
 
 
 def _default_credential_env(provider: ProviderTemplate) -> str:
@@ -191,7 +194,11 @@ def _apply_extra_env(env: Dict[str, str], entries: List[str]) -> None:
         key, value = entry.split("=", 1)
         key = key.strip()
         if key:
-            env[key] = value.strip()
+            env[require_env_name(key, label="--extra-env key")] = value.strip()
+
+
+def _require_env_names(names: List[str], *, label: str) -> List[str]:
+    return [require_env_name(name, label=label) for name in names]
 
 
 def _providers() -> Dict[str, ProviderTemplate]:

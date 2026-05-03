@@ -4,6 +4,8 @@ import copy
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from .._utils import require_env_name
+
 
 DEFAULT_TIMEOUT_MS = "3000000"
 
@@ -116,6 +118,8 @@ def provider_from_json(payload: Dict[str, object]) -> ProviderTemplate:
     models = _models(models_payload, key)
 
     env = _string_map(_object(payload, "env"), f"{key}.env")
+    for env_key in env:
+        _env_name(env_key, f"{key}.env key")
     for model_key, model_value in models.items():
         env_key = MODEL_ENV_KEYS[model_key]
         if model_value:
@@ -130,6 +134,7 @@ def provider_from_json(payload: Dict[str, object]) -> ProviderTemplate:
 
     claude_config = _object(payload, "claudeConfig")
     _require_keys(claude_config, CLAUDE_CONFIG_KEYS, f"{key}.claudeConfig")
+    _validate_mcp_env_keys(_object(claude_config, "mcpServers"), f"{key}.claudeConfig.mcpServers")
 
     tui = _object(payload, "tui")
     _require_keys(tui, TUI_KEYS, f"{key}.tui")
@@ -137,6 +142,10 @@ def provider_from_json(payload: Dict[str, object]) -> ProviderTemplate:
         raise ProviderSchemaError(f"{key}.tui.features must be a list of strings")
     if "setupLinks" in tui:
         _string_map(_object(tui, "setupLinks"), f"{key}.tui.setupLinks")
+
+    credential_env = _optional_string(auth, "credentialEnv")
+    if credential_env:
+        _env_name(credential_env, f"{key}.auth.credentialEnv")
 
     return ProviderTemplate(
         key=key,
@@ -154,7 +163,7 @@ def provider_from_json(payload: Dict[str, object]) -> ProviderTemplate:
         auth_token_also_sets_api_key=_bool(auth, "authTokenAlsoSetsApiKey"),
         auth_token_fallback=_optional_string(auth, "authTokenFallback"),
         default_variant_name=_optional_string(variant, "defaultVariantName"),
-        credential_env=_optional_string(auth, "credentialEnv"),
+        credential_env=credential_env,
         models=models,
         theme=copy.deepcopy(_object(variant, "theme")),
         prompt_overlays=_string_map(_object(variant, "promptOverlays"), f"{key}.variant.promptOverlays"),
@@ -246,3 +255,24 @@ def _string_list(payload: Dict[str, object], key: str) -> List[str]:
 
 def _is_string_list(value: object) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _env_name(value: str, context: str) -> str:
+    try:
+        return require_env_name(value, label=context)
+    except ValueError as exc:
+        raise ProviderSchemaError(str(exc)) from exc
+
+
+def _validate_mcp_env_keys(value: object, context: str) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "env":
+                if isinstance(item, dict):
+                    for env_key in item:
+                        _env_name(env_key, f"{context}.env key")
+                continue
+            _validate_mcp_env_keys(item, f"{context}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_mcp_env_keys(item, f"{context}[{index}]")

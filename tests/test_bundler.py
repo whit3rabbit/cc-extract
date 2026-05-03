@@ -61,3 +61,70 @@ class TestPackBundle:
         manifest = extract_all(str(out_binary), str(roundtrip_dir))
         assert manifest["platform"] == "macho"
         assert (roundtrip_dir / rel_path).read_bytes() == file_data
+
+    def test_pack_bundle_rejects_manifest_path_traversal(self, tmp_path):
+        indir = tmp_path / 'input'
+        indir.mkdir()
+        outside = tmp_path / 'secret.txt'
+        outside.write_text('do not bundle me', encoding='utf-8')
+
+        manifest = {
+            "isMacho": True,
+            "entryPointId": 0,
+            "flags": 0,
+            "modules": [
+                {
+                    "name": "src/index.js",
+                    "rel_path": "src/index.js",
+                    "sourceFile": "../secret.txt",
+                    "encoding": 2,
+                    "loader": 1,
+                    "format": 1,
+                    "side": 0
+                }
+            ]
+        }
+        write_manifest(indir, manifest)
+
+        base_binary = tmp_path / 'base'
+        base_fixture = build_bun_fixture(
+            platform="macho",
+            module_struct_size=52,
+            modules=[{"name": "src/index.js", "content": "console.log(0);"}],
+        )
+        base_binary.write_bytes(base_fixture["buf"])
+
+        with pytest.raises(ValueError, match="modules\\[0\\].sourceFile"):
+            pack_bundle(str(indir), str(tmp_path / 'output'), str(base_binary))
+
+    def test_pack_bundle_rejects_windows_drive_manifest_path(self, tmp_path):
+        indir = tmp_path / 'input'
+        indir.mkdir()
+        manifest = {
+            "isMacho": True,
+            "entryPointId": 0,
+            "flags": 0,
+            "modules": [
+                {
+                    "name": "src/index.js",
+                    "rel_path": "src/index.js",
+                    "sourceFile": "C:/Users/alice/secret.txt",
+                    "encoding": 2,
+                    "loader": 1,
+                    "format": 1,
+                    "side": 0
+                }
+            ]
+        }
+        write_manifest(indir, manifest)
+
+        base_binary = tmp_path / 'base'
+        base_fixture = build_bun_fixture(
+            platform="macho",
+            module_struct_size=52,
+            modules=[{"name": "src/index.js", "content": "console.log(0);"}],
+        )
+        base_binary.write_bytes(base_fixture["buf"])
+
+        with pytest.raises(ValueError, match="modules\\[0\\].sourceFile"):
+            pack_bundle(str(indir), str(tmp_path / 'output'), str(base_binary))

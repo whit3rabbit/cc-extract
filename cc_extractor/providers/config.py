@@ -71,7 +71,7 @@ def _merge_mcp_servers(config_dir: Path, servers: Dict[str, object], *, credenti
     config_path = config_dir / ".claude.json"
     existing = _read(config_path, read_json)
     existing_servers = dict(existing.get("mcpServers") or {})
-    credential = (credential_value or "").strip() or PLACEHOLDER_CREDENTIAL
+    credential = PLACEHOLDER_CREDENTIAL
 
     changed = False
     for name, server in servers.items():

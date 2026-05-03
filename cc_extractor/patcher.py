@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from ._utils import safe_child_path, safe_relative_path
 from .workspace import file_sha256, validate_patch_package_manifest
 
 PATCH_MANIFEST = "patch.json"
@@ -150,8 +151,8 @@ def apply_patch(
     source_version=None,
     source_platform=None,
 ):
-    patch_root = Path(patch_dir)
-    extract_root = Path(extract_dir)
+    patch_root = Path(patch_dir).resolve()
+    extract_root = Path(extract_dir).resolve()
     manifest = load_patch_manifest(patch_root)
     source_metadata = load_source_metadata(extract_root)
 
@@ -250,7 +251,17 @@ def apply_patch_operation(patch_root, extract_root, operation, pending_changes, 
         raise ValueError(f"Unsupported patch operation type at operations[{index - 1}]: {op_type!r}")
 
     rel_path = require_non_empty_string(operation.get("path"), f"operations[{index - 1}].path")
-    target_path = extract_root / rel_path
+    unresolved_target_path = unresolved_child_path(
+        extract_root,
+        rel_path,
+        label=f"operations[{index - 1}].path",
+    )
+    if unresolved_target_path.is_symlink():
+        raise ValueError(f"Refusing to patch symlink: {rel_path}")
+    try:
+        target_path = safe_child_path(extract_root, rel_path, label=f"operations[{index - 1}].path")
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     if not target_path.exists():
         raise ValueError(f"Patch target file does not exist: {rel_path}")
 
@@ -290,7 +301,13 @@ def apply_patch_operation(patch_root, extract_root, operation, pending_changes, 
 
 
 def read_patch_text(patch_root, rel_path):
-    path = patch_root / rel_path
+    unresolved_path = unresolved_child_path(Path(patch_root), rel_path, label="patch asset")
+    if unresolved_path.is_symlink():
+        raise ValueError(f"Refusing to read symlink patch asset: {rel_path}")
+    try:
+        path = safe_child_path(Path(patch_root), rel_path, label="patch asset")
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     if not path.exists():
         raise ValueError(f"Patch asset does not exist: {rel_path}")
     try:
@@ -310,3 +327,8 @@ def require_string(value, field_name):
     if not isinstance(value, str):
         raise ValueError(f"{field_name} must be a string")
     return value
+
+
+def unresolved_child_path(root: Path, rel_path: str, *, label: str) -> Path:
+    normalized = safe_relative_path(rel_path, label=label)
+    return Path(root).resolve() / Path(*normalized.split("/"))

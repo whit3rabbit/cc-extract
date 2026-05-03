@@ -1,9 +1,10 @@
 """Repack extracted Bun modules into a standalone binary."""
 
-import os
 import json
 import struct
+from pathlib import Path
 
+from ._utils import safe_child_path
 from .bun_extract import parse_bun_binary
 from .binary_patcher import repack_binary
 
@@ -33,8 +34,9 @@ SIDE_IDS = {
 
 def pack_bundle(indir, out_binary, base_binary):
     """Pack extracted modules and manifest back into a standalone binary."""
-    manifest_path = os.path.join(indir, ".bundle_manifest.json")
-    if not os.path.exists(manifest_path):
+    in_root = Path(indir).resolve()
+    manifest_path = in_root / ".bundle_manifest.json"
+    if not manifest_path.exists():
         raise ValueError(f"No .bundle_manifest.json found in {indir}")
 
     try:
@@ -51,7 +53,7 @@ def pack_bundle(indir, out_binary, base_binary):
     except OSError as exc:
         raise ValueError(f"Cannot read base binary {base_binary}: {exc}") from exc
     info = parse_bun_binary(binary_data)
-    new_raw_bytes, new_offsets_struct = _build_bundle_payload(indir, manifest)
+    new_raw_bytes, new_offsets_struct = _build_bundle_payload(in_root, manifest)
     repacked = repack_binary(binary_data, info, new_raw_bytes, new_offsets_struct)
 
     try:
@@ -64,6 +66,7 @@ def pack_bundle(indir, out_binary, base_binary):
 
 
 def _build_bundle_payload(indir, manifest):
+    in_root = Path(indir)
     module_size = int(manifest.get("moduleSize", 52))
     # Bun v1.3.13+ uses 52-byte structs; earlier versions use 36-byte structs
     if module_size not in (36, 52):
@@ -73,10 +76,10 @@ def _build_bundle_payload(indir, manifest):
     module_structs = bytearray()
 
     # 1. Include execArgv if present
-    argv_path = os.path.join(indir, "exec_argv.bin")
+    argv_path = in_root / "exec_argv.bin"
     exec_argv_offset = 0
     exec_argv_length = 0
-    if manifest.get("execArgvLength", 0) > 0 and os.path.exists(argv_path):
+    if manifest.get("execArgvLength", 0) > 0 and argv_path.exists():
         with open(argv_path, "rb") as f:
             argv_bytes = f.read()
         exec_argv_offset = len(data_buffer)
@@ -84,7 +87,7 @@ def _build_bundle_payload(indir, manifest):
         data_buffer.extend(argv_bytes)
 
     # 2. Iterate and append modules
-    for mod in manifest.get("modules", []):
+    for index, mod in enumerate(manifest.get("modules", [])):
         name_bytes = mod["name"].encode("utf-8")
         name_off = len(data_buffer)
         name_len = len(name_bytes)
@@ -92,8 +95,8 @@ def _build_bundle_payload(indir, manifest):
 
         cont_off, cont_len = 0, 0
         if mod.get("sourceFile"):
-            source_path = os.path.join(indir, mod["sourceFile"])
-            if os.path.exists(source_path):
+            source_path = _manifest_child_path(in_root, mod["sourceFile"], f"modules[{index}].sourceFile")
+            if source_path.exists():
                 with open(source_path, "rb") as f:
                     content_bytes = f.read()
                 cont_off = len(data_buffer)
@@ -102,8 +105,8 @@ def _build_bundle_payload(indir, manifest):
 
         smap_off, smap_len = 0, 0
         if mod.get("sourcemapFile"):
-            smap_path = os.path.join(indir, mod["sourcemapFile"])
-            if os.path.exists(smap_path):
+            smap_path = _manifest_child_path(in_root, mod["sourcemapFile"], f"modules[{index}].sourcemapFile")
+            if smap_path.exists():
                 with open(smap_path, "rb") as f:
                     smap_bytes = f.read()
                 smap_off = len(data_buffer)
@@ -112,8 +115,8 @@ def _build_bundle_payload(indir, manifest):
 
         bc_off, bc_len = 0, 0
         if mod.get("bytecodeFile"):
-            bc_path = os.path.join(indir, mod["bytecodeFile"])
-            if os.path.exists(bc_path):
+            bc_path = _manifest_child_path(in_root, mod["bytecodeFile"], f"modules[{index}].bytecodeFile")
+            if bc_path.exists():
                 with open(bc_path, "rb") as f:
                     bc_bytes = f.read()
                 bc_off = len(data_buffer)
@@ -193,6 +196,13 @@ def _flag_byte(value, lookup, field_name):
     if isinstance(value, str) and value in lookup:
         return lookup[value]
     raise ValueError(f"Invalid module {field_name} flag: {value!r}")
+
+
+def _manifest_child_path(root: Path, rel_path, label: str) -> Path:
+    try:
+        return safe_child_path(root, rel_path, label=label)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
 
 if __name__ == "__main__":
     import sys
