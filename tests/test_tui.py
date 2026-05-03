@@ -895,12 +895,15 @@ def test_setup_manager_lists_rows_and_opens_detail():
     assert state.selected_setup_id == "deepseek-main"
 
 
-def test_setup_detail_run_action_queues_command(tmp_path):
-    wrapper = tmp_path / "deepseek-main"
+def test_setup_detail_run_action_queues_command(tmp_path, monkeypatch):
+    root = tmp_path / ".cc-extractor"
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    wrapper = root / "bin" / "deepseek-main"
+    wrapper.parent.mkdir(parents=True)
     wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     wrapper.chmod(0o755)
     variant = _variant("deepseek-main")
-    variant.manifest["paths"]["wrapper"] = str(wrapper)
+    variant.manifest["paths"]["wrapper"] = str(tmp_path / "tampered-wrapper")
     state = tui.TuiState(
         mode="setup-detail",
         variants=[variant],
@@ -918,12 +921,15 @@ def test_setup_detail_run_action_queues_command(tmp_path):
     assert state.message == "Running setup deepseek-main after setup manager exits."
 
 
-def test_setup_manager_run_shortcut_requires_row_then_queues(tmp_path):
-    wrapper = tmp_path / "deepseek-main"
+def test_setup_manager_run_shortcut_requires_row_then_queues(tmp_path, monkeypatch):
+    root = tmp_path / ".cc-extractor"
+    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    wrapper = root / "bin" / "deepseek-main"
+    wrapper.parent.mkdir(parents=True)
     wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     wrapper.chmod(0o755)
     variant = _variant("deepseek-main")
-    variant.manifest["paths"]["wrapper"] = str(wrapper)
+    variant.manifest["paths"]["wrapper"] = str(tmp_path / "tampered-wrapper")
     state = tui.TuiState(mode="setup-manager", variants=[variant], selected_index=0)
 
     assert tui._handle_char_key(state, "x") is True

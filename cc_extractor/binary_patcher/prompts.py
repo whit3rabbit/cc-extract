@@ -94,8 +94,15 @@ def _build_overlay_block(overlay, delim):
     trimmed = overlay.strip()
     if not trimmed:
         return ""
+    _reject_reserved_overlay_markers(trimmed)
     block = f"\n\n{OVERLAY_MARKERS['start']}\n{trimmed}\n{OVERLAY_MARKERS['end']}\n"
     return _escape_for_delimiter(block, delim)
+
+
+def _reject_reserved_overlay_markers(overlay):
+    for marker in OVERLAY_MARKERS.values():
+        if marker in overlay:
+            raise ValueError("provider overlay contains reserved marker text")
 
 
 def _strip_existing_block(js, tail_end, delim):

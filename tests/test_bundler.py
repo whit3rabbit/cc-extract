@@ -128,3 +128,43 @@ class TestPackBundle:
 
         with pytest.raises(ValueError, match="modules\\[0\\].sourceFile"):
             pack_bundle(str(indir), str(tmp_path / 'output'), str(base_binary))
+
+    def test_pack_bundle_rejects_manifest_symlink_escape(self, tmp_path):
+        indir = tmp_path / 'input'
+        indir.mkdir()
+        outside = tmp_path / 'secret.txt'
+        outside.write_text('do not bundle me', encoding='utf-8')
+        (indir / 'src').mkdir()
+        try:
+            (indir / 'src' / 'link.js').symlink_to(outside)
+        except OSError as exc:
+            pytest.skip(f"symlink unavailable: {exc}")
+
+        manifest = {
+            "isMacho": True,
+            "entryPointId": 0,
+            "flags": 0,
+            "modules": [
+                {
+                    "name": "src/index.js",
+                    "rel_path": "src/index.js",
+                    "sourceFile": "src/link.js",
+                    "encoding": 2,
+                    "loader": 1,
+                    "format": 1,
+                    "side": 0
+                }
+            ]
+        }
+        write_manifest(indir, manifest)
+
+        base_binary = tmp_path / 'base'
+        base_fixture = build_bun_fixture(
+            platform="macho",
+            module_struct_size=52,
+            modules=[{"name": "src/index.js", "content": "console.log(0);"}],
+        )
+        base_binary.write_bytes(base_fixture["buf"])
+
+        with pytest.raises(ValueError, match="escapes root"):
+            pack_bundle(str(indir), str(tmp_path / 'output'), str(base_binary))

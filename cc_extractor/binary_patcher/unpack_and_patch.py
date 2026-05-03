@@ -19,6 +19,7 @@ RUNTIME_DEPENDENCIES = {
     "yaml": "2.6.0",
 }
 UNPACKED_SENTINEL = ".cc-extractor-unpacked"
+NPM_PROJECT_METADATA = ("package-lock.json", "npm-shrinkwrap.json", ".npmrc")
 
 
 class UnpackAndPatchError(Exception):
@@ -76,6 +77,7 @@ def unpack_and_patch(inputs=None, *, pristine_binary_path=None, unpacked_dir=Non
     except Exception as exc:
         raise UnpackAndPatchError("patch", str(exc)) from exc
 
+    _reset_npm_project_metadata(out_dir)
     _write_package_json(out_dir)
     _run_npm_install(out_dir)
 
@@ -93,6 +95,19 @@ def _write_package_json(unpacked_dir):
     (Path(unpacked_dir) / "package.json").write_text(json.dumps(pkg, indent=2) + "\n", encoding="utf-8")
 
 
+def _reset_npm_project_metadata(unpacked_dir):
+    root = Path(unpacked_dir)
+    for name in NPM_PROJECT_METADATA:
+        path = root / name
+        try:
+            if path.is_symlink() or path.is_file():
+                path.unlink()
+            elif path.is_dir():
+                shutil.rmtree(path)
+        except FileNotFoundError:
+            continue
+
+
 def _prepare_unpacked_dir(out_dir: Path) -> None:
     if out_dir.is_symlink():
         raise UnpackAndPatchError("extract", f"refusing symlink unpacked_dir: {out_dir}")
@@ -102,7 +117,7 @@ def _prepare_unpacked_dir(out_dir: Path) -> None:
         if not out_dir.is_dir():
             raise UnpackAndPatchError("extract", f"unpacked_dir is not a directory: {out_dir}")
         sentinel = out_dir / UNPACKED_SENTINEL
-        if not sentinel.exists() and any(out_dir.iterdir()):
+        if not sentinel.exists():
             raise UnpackAndPatchError(
                 "extract",
                 f"refusing to remove unpacked_dir without {UNPACKED_SENTINEL}: {out_dir}",

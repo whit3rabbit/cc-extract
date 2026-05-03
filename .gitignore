@@ -200,3 +200,8 @@ artifacts/
 
 # Superpowers
 .docs/superpowers/
+
+# Repomix
+repomix-output.xml
+.repomix/
+repomix-output.xml

@@ -35,13 +35,14 @@ def wrap_bun_cjs(body):
     return f"// @bun @bytecode @bun-cjs\n(function(exports, require, module, __filename, __dirname) {{{body}}})"
 
 
-def write_binary(tmp_path):
+def write_binary(tmp_path, extra_modules=None):
     fixture = build_bun_fixture(
         platform="macho",
         module_struct_size=52,
         modules=[
             {"name": "src/entrypoints/cli.js", "content": wrap_bun_cjs(ENTRY_BODY)},
             {"name": "src/lib.js", "content": "module.exports = 1;"},
+            *(extra_modules or []),
         ],
         entry_point_id=0,
     )
@@ -101,6 +102,33 @@ def test_unpack_and_patch_extracts_patches_package_json_and_runs_npm(tmp_path, m
     assert calls[0][1]["cwd"] == str(unpacked_dir)
 
 
+def test_unpack_and_patch_removes_extracted_npm_metadata_before_install(tmp_path, monkeypatch):
+    binary_path = write_binary(
+        tmp_path,
+        extra_modules=[
+            {"name": "package-lock.json", "content": '{"lockfileVersion":1,"packages":{"malicious":{}}}'},
+            {"name": ".npmrc", "content": "ignore-scripts=false\nregistry=https://example.invalid\n"},
+        ],
+    )
+    unpacked_dir = tmp_path / "unpacked"
+
+    def fake_run(args, **kwargs):
+        assert not (unpacked_dir / ".npmrc").exists()
+        if args[:2] == ["npm", "install"]:
+            assert not (unpacked_dir / "package-lock.json").exists()
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(unpack_and_patch_module.subprocess, "run", fake_run)
+
+    unpack_and_patch(
+        pristine_binary_path=str(binary_path),
+        unpacked_dir=str(unpacked_dir),
+        config={"settings": {"themes": THEMES}},
+    )
+
+    assert not (unpacked_dir / ".npmrc").exists()
+
+
 def test_unpack_and_patch_wraps_npm_failure(tmp_path, monkeypatch):
     binary_path = write_binary(tmp_path)
 
@@ -145,3 +173,17 @@ def test_unpack_and_patch_refuses_to_delete_non_generated_directory(tmp_path):
 
     assert exc.value.stage == "extract"
     assert user_file.read_text(encoding="utf-8") == "keep me"
+
+
+def test_unpack_and_patch_refuses_empty_directory_without_sentinel(tmp_path):
+    unpacked_dir = tmp_path / "unpacked"
+    unpacked_dir.mkdir()
+
+    with pytest.raises(UnpackAndPatchError, match="without .cc-extractor-unpacked"):
+        unpack_and_patch(
+            pristine_binary_path=str(tmp_path / "missing"),
+            unpacked_dir=str(unpacked_dir),
+            config={"settings": {"themes": THEMES}},
+        )
+
+    assert unpacked_dir.exists()

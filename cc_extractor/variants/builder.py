@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .._utils import safe_read_json as _safe_read_json
+from .._utils import safe_child_path, safe_read_json as _safe_read_json
 from ..patcher import apply_patch
 from ..providers import (
     get_provider,
@@ -80,7 +80,10 @@ def patch_entry_js(extract_dir: Path, manifest_data: Dict, *, provider_key: str,
             entry = read_json(manifest_path).get("entryPoint")
     if not entry:
         raise ValueError("Extracted bundle manifest did not include entryPoint")
-    entry_path = extract_dir / entry
+    try:
+        entry_path = safe_child_path(extract_dir, entry, label="entryPoint")
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     if not entry_path.exists():
         raise ValueError(f"Entry JS not found in extracted bundle: {entry}")
     js = entry_path.read_text(encoding="utf-8")

@@ -38,3 +38,19 @@ def test_try_adhoc_sign_darwin_handles_failed_codesign(monkeypatch):
 
     assert result.signed is False
     assert result.reason == "failed"
+
+
+def test_try_adhoc_sign_terminates_options_before_binary_path(monkeypatch):
+    monkeypatch.setattr("cc_extractor.binary_patcher.codesign.platform.system", lambda: "Darwin")
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("cc_extractor.binary_patcher.codesign.subprocess.run", fake_run)
+
+    result = try_adhoc_sign("-looks-like-a-flag")
+
+    assert result.signed is True
+    assert calls == [["codesign", "--force", "--sign", "-", "--", "-looks-like-a-flag"]]

@@ -256,6 +256,16 @@ def test_dashboard_tweak_workflow_rewrites_entry_js_and_writes_metadata(tmp_path
     assert "(Claude Code, cc-extractor variant)" in entry_js
 
 
+def test_dashboard_entry_path_rejects_tampered_entrypoint(tmp_path):
+    from cc_extractor.patch_workflow import _entry_path
+
+    extract_dir = tmp_path / "bundle"
+    extract_dir.mkdir()
+
+    with pytest.raises(ValueError, match="entryPoint"):
+        _entry_path(extract_dir, {"entryPoint": "../outside.js"})
+
+
 def test_patch_profile_lifecycle_uses_workspace_json(tmp_path):
     root = tmp_path / ".cc-extractor"
 

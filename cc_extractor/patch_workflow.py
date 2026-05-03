@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
-from ._utils import utc_now as _utc_now
+from ._utils import safe_child_path, utc_now as _utc_now
 from .bundler import pack_bundle
 from .extractor import extract_all
 from .patcher import apply_patch
@@ -246,7 +246,10 @@ def _entry_path(extract_dir: Path, manifest_data: dict) -> Path:
     entry = manifest_data.get("entryPoint")
     if not entry:
         raise ValueError("Extracted bundle manifest did not include entryPoint")
-    path = extract_dir / entry
+    try:
+        path = safe_child_path(extract_dir, entry, label="entryPoint")
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     if not path.exists():
         raise ValueError(f"Entry JS not found in extracted bundle: {entry}")
     return path

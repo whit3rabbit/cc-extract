@@ -13,9 +13,13 @@ from cc_extractor.variants import (
     doctor_variant,
     load_variant,
     remove_variant,
+    run_variant,
     scan_variants,
 )
+from cc_extractor.variants.builder import patch_entry_js
 from cc_extractor.variants.wrapper import write_wrapper
+import cc_extractor.variants.wrapper as wrapper_module
+from cc_extractor.variants.wrapper import write_secrets
 from cc_extractor.workspace import NativeArtifact
 from tests.helpers.bun_fixture import build_bun_fixture
 
@@ -300,6 +304,26 @@ def test_create_variant_stored_secret_is_not_in_metadata(tmp_path):
     assert result.variant.manifest["credential"]["mode"] == "stored"
 
 
+def test_write_secrets_fchmods_existing_file_before_write(tmp_path, monkeypatch):
+    secrets_path = tmp_path / "secrets.env"
+    secrets_path.write_text("old\n", encoding="utf-8")
+    secrets_path.chmod(0o644)
+    calls = []
+    real_fchmod = wrapper_module.os.fchmod
+
+    def tracked_fchmod(fd, mode):
+        calls.append(mode)
+        return real_fchmod(fd, mode)
+
+    monkeypatch.setattr(wrapper_module.os, "fchmod", tracked_fchmod)
+
+    write_secrets(secrets_path, {"ANTHROPIC_API_KEY": "secret"})
+
+    assert calls == [0o600]
+    assert oct(secrets_path.stat().st_mode & 0o777) == "0o600"
+    assert "secret" in secrets_path.read_text(encoding="utf-8")
+
+
 def test_write_wrapper_rejects_unsafe_env_key(tmp_path):
     manifest = {
         "id": "unsafe",
@@ -335,12 +359,33 @@ def test_apply_variant_rebuilds_from_saved_metadata(tmp_path, monkeypatch):
     )
     variant = load_variant("zai-test", root=root)
     Path(variant.manifest["paths"]["binary"]).write_bytes(b"broken")
+    evil_bin = tmp_path / "evil-bin"
+    variant.manifest["paths"]["binDir"] = str(evil_bin)
+    variant.manifest["paths"]["wrapper"] = str(evil_bin / "zai-test")
+    (variant.path / "variant.json").write_text(json.dumps(variant.manifest), encoding="utf-8")
 
     monkeypatch.setattr(variants_module, "_download_source_artifact", lambda version, root=None: artifact)
     rebuilt = apply_variant("zai-test", root=root)
 
     assert rebuilt.binary_path.read_bytes() != b"broken"
+    assert rebuilt.wrapper_path == root / "bin" / "zai-test"
+    assert not (evil_bin / "zai-test").exists()
     assert "Zai Cloud variant" in read_entry(rebuilt.binary_path)
+
+
+def test_patch_entry_js_rejects_tampered_entrypoint(tmp_path):
+    extract_dir = tmp_path / "extract"
+    extract_dir.mkdir()
+    outside = tmp_path / "outside.js"
+    outside.write_text(ENTRY_JS, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="entryPoint"):
+        patch_entry_js(
+            extract_dir,
+            {"entryPoint": "../outside.js"},
+            provider_key="mirror",
+            tweak_ids=[],
+        )
 
 
 def test_remove_variant_requires_confirmation_and_removes_wrapper(tmp_path):
@@ -361,6 +406,63 @@ def test_remove_variant_requires_confirmation_and_removes_wrapper(tmp_path):
     assert remove_variant("zai-test", yes=True, root=root) is True
     assert not result.wrapper_path.exists()
     assert scan_variants(root) == []
+
+
+def test_remove_variant_ignores_tampered_manifest_wrapper(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    variant_dir = root / "variants" / "fake"
+    canonical_wrapper = root / "bin" / "fake"
+    outside_wrapper = tmp_path / "outside-wrapper"
+    variant_dir.mkdir(parents=True)
+    canonical_wrapper.parent.mkdir(parents=True)
+    canonical_wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
+    outside_wrapper.write_text("do not delete\n", encoding="utf-8")
+    manifest = {
+        "schemaVersion": 1,
+        "id": "fake",
+        "name": "Fake",
+        "provider": {"key": "mirror"},
+        "source": {"version": "1.2.3"},
+        "paths": {"wrapper": str(outside_wrapper)},
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:00Z",
+    }
+    (variant_dir / "variant.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert remove_variant("fake", yes=True, root=root) is True
+
+    assert not canonical_wrapper.exists()
+    assert outside_wrapper.exists()
+    assert not variant_dir.exists()
+
+
+def test_run_variant_ignores_tampered_manifest_wrapper(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    variant_dir = root / "variants" / "fake"
+    canonical_wrapper = root / "bin" / "fake"
+    outside_wrapper = tmp_path / "outside-wrapper"
+    output = tmp_path / "output.txt"
+    variant_dir.mkdir(parents=True)
+    canonical_wrapper.parent.mkdir(parents=True)
+    canonical_wrapper.write_text(f"#!/bin/sh\necho canonical > {output}\n", encoding="utf-8")
+    outside_wrapper.write_text(f"#!/bin/sh\necho tampered > {output}\n", encoding="utf-8")
+    canonical_wrapper.chmod(0o755)
+    outside_wrapper.chmod(0o755)
+    manifest = {
+        "schemaVersion": 1,
+        "id": "fake",
+        "name": "Fake",
+        "provider": {"key": "mirror"},
+        "source": {"version": "1.2.3"},
+        "paths": {"wrapper": str(outside_wrapper)},
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:00Z",
+    }
+    (variant_dir / "variant.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert run_variant("fake", root=root) == 0
+
+    assert output.read_text(encoding="utf-8") == "canonical\n"
 
 
 def test_variant_cli_list_and_show_json(monkeypatch, tmp_path, capsys):

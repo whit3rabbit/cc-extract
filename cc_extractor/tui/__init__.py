@@ -89,7 +89,7 @@ from ..variants import (
     scan_variants,
     update_variants,
 )
-from ..variants.model import variant_id_from_name
+from ..variants.model import default_bin_dir, variant_id_from_name
 from ..workspace import (
     DashboardTweakProfile,
     NativeArtifact,
@@ -903,11 +903,7 @@ def _queue_setup_run(state, setup_id):
     if variant is None:
         state.message = f"Setup {setup_id} not found."
         return
-    wrapper = ((variant.manifest or {}).get("paths") or {}).get("wrapper") or ""
-    if not wrapper:
-        state.message = f"Setup {setup_id} has no command path."
-        return
-    wrapper_path = Path(wrapper)
+    wrapper_path = default_bin_dir() / setup_id
     if not wrapper_path.is_file():
         state.message = f"Setup command is missing: {wrapper_path}"
         return

@@ -111,6 +111,10 @@ def _resolve_bin_dir(bin_dir, root) -> Path:
     return Path(bin_dir)
 
 
+def _canonical_wrapper_path(variant_id: str, root=None) -> Path:
+    return default_bin_dir(root) / variant_id
+
+
 def _classify_theme_prompt_tweaks(tweak_ids, *, theme_done: bool, prompt_done: bool):
     applied: List[str] = []
     skipped: List[str] = []
@@ -240,7 +244,7 @@ def _apply_variant_manifest(manifest: Dict, *, claude_version: Optional[str] = N
     return _build_variant_from_manifest(
         manifest,
         root=root,
-        bin_dir=_resolve_bin_dir(manifest["paths"].get("binDir"), root),
+        bin_dir=default_bin_dir(root),
     )
 
 
@@ -269,7 +273,7 @@ def remove_variant(name: str, *, yes: bool = False, root=None) -> bool:
         variant = load_variant(variant_id, root=root)
     except ValueError:
         return False
-    wrapper_path = Path(variant.manifest.get("paths", {}).get("wrapper", ""))
+    wrapper_path = _canonical_wrapper_path(variant_id, root=root)
     if wrapper_path.exists():
         wrapper_path.unlink()
     shutil.rmtree(variant.path)
@@ -317,8 +321,9 @@ def doctor_variant(name: Optional[str] = None, *, all_variants: bool = False, ro
 
 
 def run_variant(name: str, args: Optional[List[str]] = None, root=None) -> int:
-    variant = load_variant(variant_id_from_name(name), root=root)
-    wrapper = Path(variant.manifest.get("paths", {}).get("wrapper", ""))
+    variant_id = variant_id_from_name(name)
+    load_variant(variant_id, root=root)
+    wrapper = _canonical_wrapper_path(variant_id, root=root)
     if not wrapper.exists():
         raise ValueError(f"Variant wrapper is missing: {wrapper}")
     try:

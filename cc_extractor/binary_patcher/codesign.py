@@ -18,7 +18,7 @@ def try_adhoc_sign(binary_path):
 
     try:
         result = subprocess.run(
-            ["codesign", "--force", "--sign", "-", binary_path],
+            ["codesign", "--force", "--sign", "-", "--", str(binary_path)],
             capture_output=True,
             text=True,
             check=False,

@@ -6,6 +6,7 @@ import pytest
 
 from cc_extractor.bundler import pack_bundle
 from cc_extractor.extractor import extract_all
+import cc_extractor.patcher as patcher_module
 from cc_extractor.patcher import apply_patch, init_patch, write_source_metadata
 
 
@@ -318,6 +319,28 @@ class TestReplaceString:
 
         with pytest.raises(ValueError, match="Refusing to patch symlink"):
             apply_patch(patch_dir, extract_dir)
+
+    def test_replace_string_rejects_symlink_swapped_before_write(self, tmp_path, monkeypatch):
+        extract_dir, target_path, _ = make_extract_dir(tmp_path)
+        outside = tmp_path / "outside.js"
+        outside.write_text("const value = 'outside';\n", encoding="utf-8")
+
+        patch_dir = tmp_path / "patch"
+        write_patch_manifest(patch_dir, make_patch_manifest())
+        original_apply_operation = patcher_module.apply_patch_operation
+
+        def swap_target_to_symlink(*args, **kwargs):
+            result = original_apply_operation(*args, **kwargs)
+            target_path.unlink()
+            target_path.symlink_to(outside)
+            return result
+
+        monkeypatch.setattr(patcher_module, "apply_patch_operation", swap_target_to_symlink)
+
+        with pytest.raises(ValueError, match="symlink|Cannot write"):
+            apply_patch(patch_dir, extract_dir)
+
+        assert outside.read_text(encoding="utf-8") == "const value = 'outside';\n"
 
 
 class TestReplaceBlock:

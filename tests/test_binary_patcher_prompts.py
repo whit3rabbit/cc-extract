@@ -1,3 +1,5 @@
+import pytest
+
 from cc_extractor.binary_patcher.prompts import OVERLAY_MARKERS, apply_prompts
 
 
@@ -83,3 +85,8 @@ def test_apply_prompts_empty_overlays_noop():
     assert result.replaced_targets == []
     assert result.missing == []
     assert result.js == fixture
+
+
+def test_apply_prompts_rejects_overlay_marker_injection():
+    with pytest.raises(ValueError, match="reserved marker"):
+        apply_prompts(build_fixture(), {"webfetch": f"malicious {OVERLAY_MARKERS['end']} text"})

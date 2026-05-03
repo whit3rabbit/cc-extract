@@ -142,7 +142,14 @@ def write_secrets(path: Path, secret_env: Dict[str, str]) -> None:
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags, SECRETS_FILE_MODE)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write("\n".join(lines) + "\n")
+    try:
+        if os.name != "nt" and hasattr(os, "fchmod"):
+            os.fchmod(fd, SECRETS_FILE_MODE)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            fd = None
+            handle.write("\n".join(lines) + "\n")
+    finally:
+        if fd is not None:
+            os.close(fd)
     if os.name != "nt":
         os.chmod(path, SECRETS_FILE_MODE)

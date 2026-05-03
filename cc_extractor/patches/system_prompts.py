@@ -10,20 +10,62 @@ def extract_build_time(content: str) -> Optional[str]:
     return match.group(1) if match else None
 
 def escape_unescaped_char(s: str, char: str) -> str:
+    return escape_js_string_fragment(s, char)
+
+def escape_js_string_fragment(s: str, delimiter: str) -> str:
     result = []
-    for i, c in enumerate(s):
-        if c == char:
-            bs = 0
-            j = i - 1
-            while j >= 0 and s[j] == '\\':
-                bs += 1
-                j -= 1
-            if bs % 2 == 0:
-                result.append('\\' + char)
-            else:
-                result.append(char)
+    for c in s:
+        if c == "\\":
+            result.append("\\\\")
+        elif c == delimiter:
+            result.append("\\" + delimiter)
+        elif c == "\n":
+            result.append("\\n")
+        elif c == "\r":
+            result.append("\\r")
+        elif c == "\t":
+            result.append("\\t")
+        elif c == "\b":
+            result.append("\\b")
+        elif c == "\f":
+            result.append("\\f")
+        elif c == "\0":
+            result.append("\\u0000")
+        elif c == "\u2028":
+            result.append("\\u2028")
+        elif c == "\u2029":
+            result.append("\\u2029")
+        elif ord(c) < 0x20:
+            result.append(f"\\u{ord(c):04x}")
         else:
             result.append(c)
+    return "".join(result)
+
+def escape_js_template_fragment(s: str) -> str:
+    result = []
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\":
+            result.append("\\\\")
+        elif c == "`":
+            result.append("\\`")
+        elif c == "$" and i + 1 < len(s) and s[i + 1] == "{":
+            result.append("\\${")
+            i += 1
+        elif c == "\r":
+            result.append("\\r")
+        elif c == "\0":
+            result.append("\\u0000")
+        elif c == "\u2028":
+            result.append("\\u2028")
+        elif c == "\u2029":
+            result.append("\\u2029")
+        elif ord(c) < 0x20 and c != "\n" and c != "\t":
+            result.append(f"\\u{ord(c):04x}")
+        else:
+            result.append(c)
+        i += 1
     return "".join(result)
 
 def apply_system_prompts(
@@ -99,11 +141,9 @@ def apply_system_prompts(
             delimiter = content[match_index - 1] if match_index > 0 else ''
             
             if delimiter in ('"', "'"):
-                replacement = replacement.replace('\n', '\\n')
-                replacement = escape_unescaped_char(replacement, delimiter)
+                replacement = escape_js_string_fragment(replacement, delimiter)
             elif delimiter == '`':
-                # Backtick escaping is more complex (nested ${})
-                replacement = replacement.replace('`', '\\`')
+                replacement = escape_js_template_fragment(replacement)
             
             # Replace in content
             # Use a lambda to avoid backreference issues

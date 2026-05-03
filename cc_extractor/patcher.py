@@ -1,6 +1,9 @@
 """Legacy text-patch manifest system for extracted Bun bundles."""
 
+import errno
 import json
+import os
+import stat
 from pathlib import Path
 
 from ._utils import safe_child_path, safe_relative_path
@@ -171,10 +174,11 @@ def apply_patch(
     )
 
     pending_changes = {}
+    pending_rel_paths = {}
     applied_operations = []
 
     for index, operation in enumerate(manifest["operations"], start=1):
-        target_path, updated_text, matches = apply_patch_operation(
+        target_path, rel_path, updated_text, matches = apply_patch_operation(
             patch_root,
             extract_root,
             operation,
@@ -182,6 +186,7 @@ def apply_patch(
             index,
         )
         pending_changes[target_path] = updated_text
+        pending_rel_paths[target_path] = rel_path
         applied_operations.append((operation["type"], target_path, matches))
 
     if check:
@@ -192,7 +197,12 @@ def apply_patch(
         return applied_operations
 
     for target_path, updated_text in pending_changes.items():
-        target_path.write_text(updated_text, encoding="utf-8")
+        _write_child_text_no_symlink(
+            extract_root,
+            pending_rel_paths[target_path],
+            updated_text,
+            label="patch target",
+        )
 
     print(f"[+] Applied patch {manifest['id']} to {extract_root}")
     for op_type, target_path, matches in applied_operations:
@@ -268,7 +278,13 @@ def apply_patch_operation(patch_root, extract_root, operation, pending_changes, 
     current_text = pending_changes.get(target_path)
     if current_text is None:
         try:
-            current_text = target_path.read_text(encoding="utf-8")
+            current_text = _read_child_text_no_symlink(
+                extract_root,
+                rel_path,
+                label="patch target",
+            )
+        except FileNotFoundError as exc:
+            raise ValueError(f"Patch target file does not exist: {rel_path}") from exc
         except UnicodeDecodeError as exc:
             raise ValueError(f"Patch target file is not valid UTF-8: {rel_path}") from exc
 
@@ -297,7 +313,7 @@ def apply_patch_operation(patch_root, extract_root, operation, pending_changes, 
         )
 
     updated_text = current_text.replace(find_text, replace_text, expected_count)
-    return target_path, updated_text, matches
+    return target_path, rel_path, updated_text, matches
 
 
 def read_patch_text(patch_root, rel_path):
@@ -311,7 +327,9 @@ def read_patch_text(patch_root, rel_path):
     if not path.exists():
         raise ValueError(f"Patch asset does not exist: {rel_path}")
     try:
-        return path.read_text(encoding="utf-8")
+        return _read_child_text_no_symlink(Path(patch_root), rel_path, label="patch asset")
+    except FileNotFoundError as exc:
+        raise ValueError(f"Patch asset does not exist: {rel_path}") from exc
     except UnicodeDecodeError as exc:
         raise ValueError(f"Patch asset is not valid UTF-8: {rel_path}") from exc
 
@@ -332,3 +350,85 @@ def require_string(value, field_name):
 def unresolved_child_path(root: Path, rel_path: str, *, label: str) -> Path:
     normalized = safe_relative_path(rel_path, label=label)
     return Path(root).resolve() / Path(*normalized.split("/"))
+
+
+def _read_child_text_no_symlink(root: Path, rel_path: str, *, label: str) -> str:
+    try:
+        fd = _open_child_no_symlink(root, rel_path, os.O_RDONLY, label=label)
+    except FileNotFoundError:
+        raise
+    except OSError as exc:
+        raise ValueError(f"Cannot read {label}: {rel_path}: {exc}") from exc
+    with os.fdopen(fd, "r", encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _write_child_text_no_symlink(root: Path, rel_path: str, text: str, *, label: str) -> None:
+    try:
+        fd = _open_child_no_symlink(root, rel_path, os.O_WRONLY | os.O_TRUNC, label=label)
+    except FileNotFoundError as exc:
+        raise ValueError(f"Patch target file does not exist: {rel_path}") from exc
+    except OSError as exc:
+        raise ValueError(f"Cannot write {label}: {rel_path}: {exc}") from exc
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+def _open_child_no_symlink(root: Path, rel_path: str, flags: int, *, label: str) -> int:
+    normalized = safe_relative_path(rel_path, label=label)
+    parts = normalized.split("/")
+    if not _supports_openat():
+        return _open_child_no_symlink_fallback(root, normalized, flags, label=label)
+
+    dir_flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        dir_flags |= os.O_DIRECTORY
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+
+    current_fd = os.open(Path(root).resolve(), dir_flags)
+    try:
+        for part in parts[:-1]:
+            next_fd = os.open(part, dir_flags | nofollow, dir_fd=current_fd)
+            try:
+                if not stat.S_ISDIR(os.fstat(next_fd).st_mode):
+                    raise ValueError(f"{label} parent is not a directory: {rel_path}")
+            except Exception:
+                os.close(next_fd)
+                raise
+            os.close(current_fd)
+            current_fd = next_fd
+
+        try:
+            fd = os.open(parts[-1], flags | nofollow, dir_fd=current_fd)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                raise ValueError(f"Refusing to follow symlink for {label}: {rel_path}") from exc
+            raise
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise ValueError(f"{label} is not a regular file: {rel_path}")
+        except Exception:
+            os.close(fd)
+            raise
+        return fd
+    finally:
+        os.close(current_fd)
+
+
+def _open_child_no_symlink_fallback(root: Path, rel_path: str, flags: int, *, label: str) -> int:
+    unresolved_path = unresolved_child_path(root, rel_path, label=label)
+    if unresolved_path.is_symlink():
+        raise ValueError(f"Refusing to follow symlink for {label}: {rel_path}")
+    path = safe_child_path(root, rel_path, label=label)
+    fd = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError(f"{label} is not a regular file: {rel_path}")
+    except Exception:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _supports_openat() -> bool:
+    return os.open in getattr(os, "supports_dir_fd", set())
