@@ -642,7 +642,7 @@ def key_line(state):
     if state.mode == "busy":
         return "Keys: input locked while this runs"
     if state.mode == "setup-manager":
-        return "Keys: Up/Down move | Enter manage | X run | / search | P provider | S sort | ? help | N new | U upgrade | T tweaks | H health | D delete | R refresh | Q quit"
+        return "Keys: Q/Ctrl+C quit | Up/Down move | Enter manage | X run | / search | P provider | S sort | N new | U upgrade | T tweaks | H health | D delete | R refresh | ? help"
     if state.mode == "setup-detail":
         return "Keys: Enter select | X run | Esc back | H health | U upgrade | T tweaks | D delete | C command | G config | L logs | ? help | Q quit"
     if state.mode == "delete-confirm":

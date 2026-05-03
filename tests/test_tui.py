@@ -212,6 +212,28 @@ def test_busy_screen_text_shows_progress_and_locks_input():
     assert state.mode == "busy"
 
 
+def test_run_tui_does_not_clear_every_frame(monkeypatch):
+    import ratatui_py
+
+    captured = {}
+
+    class FakeApp:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def run(self, state):
+            captured["state"] = state
+
+    monkeypatch.setattr(ratatui_py, "App", FakeApp)
+    monkeypatch.setattr(tui, "_load_saved_setup_list_preferences", lambda state: None)
+    monkeypatch.setattr(tui, "_refresh_state", lambda state: False)
+
+    tui.run_tui()
+
+    assert captured["clear_each_frame"] is False
+    assert captured["tick_ms"] == tui._BUSY_TICK_MS
+
+
 def test_poll_busy_action_copies_completed_state():
     completed = tui.TuiState(
         mode="health-result",
@@ -297,6 +319,14 @@ def test_footer_keys_match_dashboard_step():
     state.dashboard_step = 2
     footer = tui._footer_text(state)
     assert "Profile names:" in footer
+
+
+def test_setup_manager_footer_advertises_quit_early():
+    state = tui.TuiState(mode="setup-manager")
+    footer = tui._footer_text(state)
+
+    assert "Q/Ctrl+C quit" in footer
+    assert footer.index("Q/Ctrl+C quit") < footer.index("Up/Down move")
 
 
 def test_footer_keys_match_variant_step():
@@ -1010,6 +1040,16 @@ def test_setup_manager_search_input_does_not_trigger_global_hotkeys(tmp_path, mo
     assert tui._activate(state) is True
     assert state.setup_search_active is False
     assert state.mode == "setup-manager"
+
+
+def test_ctrl_c_requests_quit():
+    state = tui.TuiState(mode="setup-manager")
+
+    assert tui._handle_char_key(state, "\x03") is False
+    assert tui._event_requests_quit({"kind": "key", "code": 0, "ch": 3}, 0) is True
+    assert tui._event_requests_quit({"kind": "key", "code": 0, "ch": "c", "mods": ["CONTROL"]}, 0) is True
+    assert tui._event_requests_quit({"kind": "key", "key": "ctrl-c"}, 0) is True
+    assert tui._event_requests_quit({"kind": "key", "code": 0, "ch": "c"}, 0) is False
 
 
 def test_setup_manager_loads_and_saves_setup_list_preferences(tmp_path, monkeypatch):

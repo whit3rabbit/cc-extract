@@ -122,7 +122,7 @@ def select_version(versions, latest_version=None, title="Select Claude Code down
 
         return True
 
-    app = App(render=render, on_event=on_event, tick_ms=100, clear_each_frame=True)
+    app = App(render=render, on_event=on_event, tick_ms=100, clear_each_frame=False)
     app.run(state)
 
     if state.cancelled:

@@ -65,7 +65,7 @@ __all__ = [
     "_start_busy_action", "_poll_busy_action",
     "_load_saved_setup_list_preferences", "_save_setup_list_preferences",
     "_copy_logs", "_copy_setup_config", "_copy_text_to_clipboard", "_open_help", "_open_logs", "_open_variant_create_preview",
-    "_screen_text", "_style", "_render_frame",
+    "_event_requests_quit", "_screen_text", "_style", "_render_frame",
     "run_tui",
 ]
 
@@ -274,9 +274,11 @@ def run_tui():
             term.draw_paragraph(screen, (0, 0, max(1, width - 1), max(1, height - 1)))
 
     def on_event(term, event, app_state):
-        if app_state.mode == "busy":
-            return True
         if event.get("kind") != "key":
+            return True
+        if _event_requests_quit(event, KeyCode.Char):
+            return False
+        if app_state.mode == "busy":
             return True
 
         code = event.get("code")
@@ -326,7 +328,7 @@ def run_tui():
         on_start=on_start,
         on_stop=on_stop,
         tick_ms=_BUSY_TICK_MS,
-        clear_each_frame=True,
+        clear_each_frame=False,
     )
     app.run(state)
     if state.pending_run_command:
@@ -513,6 +515,38 @@ def _busy_tweak_apply_action(worker_state):
 
 # -- Key handlers ------------------------------------------------------------
 
+def _event_requests_quit(event, char_key_code):
+    if event.get("kind") != "key":
+        return False
+
+    key_name = str(event.get("key") or event.get("name") or "").replace("-", "+").lower()
+    if key_name in {"ctrl+c", "control+c"}:
+        return True
+
+    code = event.get("code")
+    code_name = str(code).lower()
+    code_is_char = code == int(char_key_code) or code_name == "char"
+    if not code_is_char:
+        return False
+
+    ch = event.get("ch")
+    if ch in {3, "\x03"}:
+        return True
+
+    if isinstance(ch, int):
+        char = chr(ch) if 0 <= ch <= 0x10FFFF else ""
+    else:
+        char = str(ch or "")
+
+    modifiers = event.get("modifiers") or event.get("mods") or event.get("modifier") or ""
+    if isinstance(modifiers, (list, tuple, set)):
+        modifier_text = " ".join(str(modifier).lower() for modifier in modifiers)
+    else:
+        modifier_text = str(modifiers).lower()
+    has_control = "ctrl" in modifier_text or "control" in modifier_text
+    return has_control and char.lower() == "c"
+
+
 def _handle_backspace_key(state):
     if state.mode == "busy":
         return True
@@ -538,6 +572,8 @@ def _handle_backspace_key(state):
 
 
 def _handle_char_key(state, char):
+    if char == "\x03":
+        return False
     if state.mode == "busy":
         return True
 

@@ -52,7 +52,7 @@ Use `.venv/bin/python` from the repository root.
 .venv/bin/python -m pytest -q
 ruff check cc_extractor/
 ruff check --fix cc_extractor/
-````
+```
 
 Do not document `python main.py ...` as canonical unless `main.py` is restored.
 
@@ -216,16 +216,6 @@ Important distinctions:
 * Do not stage or commit submodule/vendor changes unless explicitly requested.
 
 
-Yes. AGENTS.md should have a dedicated section for **patch authoring and validation**, plus a separate section for **TUI MCP behavioral testing**. Right now the file mentions the test tiers, but it does not tell an agent how to safely add a new patch or how to prove the patch works through the UI.
-
-The important distinction is that your repo has two patch systems:
-
-* **Curated regex tweaks** in `patches/`, registered in `patches/_registry.py`. These are surfaced through the tweak registry and TUI tweak editing flow. The patch object uses `PatchContext`, `PatchOutcome`, and statuses like `applied`, `skipped`, and `missed`. 
-* **Workspace patch packages** under `.cc-extractor/patches/packages/`, applied through `patch_workflow.apply_patch_packages_to_native`. These are separate from curated tweaks. 
-
-I would add this to AGENTS.md:
-
-````md
 ## Adding Curated Regex Tweaks
 
 Curated tweaks live under `cc_extractor/patches/` and are registered explicitly in
@@ -237,7 +227,7 @@ Use this flow when adding a new tweak:
 
    ```text
    patches/my_new_tweak.py
-````
+   ```
 
 2. Implement `_apply(js: str, ctx: PatchContext) -> PatchOutcome`.
 
@@ -286,11 +276,6 @@ Use this flow when adding a new tweak:
    `cc_extractor.binary_patcher.index.apply_patches` is the binary theme/prompt patch API.
    `patch_workflow.apply_patch_packages_to_native` applies workspace patch packages.
 
-````
-
-And add this test section:
-
-```md
 ## Patch Testing
 
 Use layered validation for patch work.
@@ -304,7 +289,7 @@ Use layered validation for patch work.
 
 # Full suite
 .venv/bin/python -m pytest -q
-````
+```
 
 Patch test expectations:
 
@@ -316,6 +301,16 @@ Patch test expectations:
 * Expected environment-gated skips are not failures. Use `pytest -q -rs` to verify skip reasons.
 
 Before updating `versions_tested`, prove the patch against a concrete Claude Code version. Do not widen `versions_tested` just because `versions_supported` is broad.
+
+## TUI Rendering Stability
+
+Avoid full-screen clears in steady-state TUI render loops.
+
+* Do not set `ratatui_py.App(clear_each_frame=True)` for `cc_extractor.tui.run_tui` or other idle-redrawing TUI flows without a measured reason.
+* The `App` loop renders every tick. Clearing every frame causes visible flashing even when the user is idle.
+* Prefer a startup clear through `on_start`, then normal redraws without per-frame clear.
+* For flicker regressions, use PTY capture or TUI MCP smoke and count repeated full-clear escape sequences such as `ESC[2J` while idle.
+* Keep constructor-flag tests for TUI entry points that use `ratatui_py.App`.
 
 ## TUI MCP Behavioral Testing
 
