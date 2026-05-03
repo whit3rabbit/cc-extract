@@ -1,6 +1,6 @@
 """Variant-tab action helpers (no monkey-patched dependencies)."""
 
-from ..providers import provider_default_variant_name
+from ..providers import normalize_mcp_ids, provider_default_variant_name
 from ..variant_tweaks import CURATED_TWEAK_IDS, DEFAULT_TWEAK_IDS
 from ._const import VARIANT_MODEL_FIELDS, VARIANT_STEPS
 from .options import (
@@ -20,6 +20,7 @@ def reset_variant(state):
     state.variant_name = ""
     state.variant_credential_env = ""
     state.variant_model_overrides = {}
+    state.selected_variant_mcp_ids = []
     state.selected_variant_tweaks = list(DEFAULT_TWEAK_IDS)
     state.tweak_filter = "recommended"
 
@@ -28,6 +29,7 @@ def set_variant_provider_defaults(state, provider):
     state.variant_name = provider_default_variant_name(provider["key"]) if provider else ""
     state.variant_credential_env = str(provider.get("credentialEnv") or "") if provider else ""
     state.variant_model_overrides = {}
+    state.selected_variant_mcp_ids = []
 
 
 def toggle_variant_tweak(state, tweak_id: str):
@@ -36,6 +38,14 @@ def toggle_variant_tweak(state, tweak_id: str):
     else:
         state.selected_variant_tweaks.append(tweak_id)
         state.selected_variant_tweaks.sort(key=lambda item: CURATED_TWEAK_IDS.index(item))
+
+
+def toggle_variant_mcp(state, mcp_id: str):
+    if mcp_id in state.selected_variant_mcp_ids:
+        state.selected_variant_mcp_ids.remove(mcp_id)
+        return
+    state.selected_variant_mcp_ids.append(mcp_id)
+    state.selected_variant_mcp_ids = normalize_mcp_ids(state.selected_variant_mcp_ids)
 
 
 def require_variant_model_mapping(state) -> bool:

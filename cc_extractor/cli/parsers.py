@@ -80,12 +80,17 @@ def _build_variant_subcommands(subparsers):
     providers = subparsers.add_parser("providers", help="List provider presets")
     providers.add_argument("--json", action="store_true", help="Print machine-readable JSON")
 
+    mcp = subparsers.add_parser("mcp", help="List provider and optional MCP servers")
+    mcp.add_argument("--provider", help="Provider key for provider-owned MCP servers")
+    mcp.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+
     create = subparsers.add_parser("create", help="Create an isolated variant")
     create.add_argument("--name", required=True, help="Variant name, also used as wrapper command")
     create.add_argument("--provider", required=True, help="Provider preset key")
     create.add_argument("--claude-version", default="latest", help="Claude Code version, latest, or stable")
     create.add_argument("--patch-profile", help="Patch profile id to apply")
     create.add_argument("--tweak", action="append", help="Curated tweak id, repeatable")
+    create.add_argument("--mcp", action="append", help="Optional MCP server id, repeatable")
     create.add_argument("--credential-env", help="Environment variable containing provider credentials")
     create.add_argument("--api-key", help="Provider credential to store locally, requires --store-secret")
     create.add_argument("--store-secret", action="store_true", help="Store --api-key in variant-local secrets.env")
@@ -125,5 +130,4 @@ def _build_variant_subcommands(subparsers):
     run = subparsers.add_parser("run", help="Run a variant wrapper")
     run.add_argument("name", help="Variant name or id")
     run.add_argument("variant_args", nargs=argparse.REMAINDER, help="Arguments passed to Claude Code")
-
 

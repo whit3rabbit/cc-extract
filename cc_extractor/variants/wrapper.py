@@ -24,6 +24,7 @@ def write_variant_config(manifest: Dict) -> None:
     apply_provider_claude_config(
         manifest["provider"]["key"],
         paths["configDir"],
+        optional_mcp_ids=(manifest.get("mcp") or {}).get("selected", []),
         read_json=read_json,
         write_json=write_json,
     )

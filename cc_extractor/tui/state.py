@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..download_index import download_versions, load_download_index
+from ..providers import normalize_mcp_ids
 from ..variant_tweaks import DEFAULT_TWEAK_IDS
 from ..variant_tweaks import DASHBOARD_TWEAK_IDS
 from ..variants import list_variant_providers, scan_variants
@@ -54,6 +55,7 @@ class TuiState:
     variant_name: str = ""
     variant_credential_env: str = ""
     variant_model_overrides: Dict[str, str] = field(default_factory=dict)
+    selected_variant_mcp_ids: List[str] = field(default_factory=list)
     selected_variant_tweaks: List[str] = field(default_factory=lambda: list(DEFAULT_TWEAK_IDS))
     selected_setup_id: Optional[str] = None
     setup_health: Dict[str, Dict[str, Any]] = field(default_factory=dict)
@@ -133,6 +135,10 @@ class TuiState:
             tweak_id for tweak_id in self.selected_dashboard_tweak_ids
             if tweak_id in available_dashboard_tweaks
         ]
+        try:
+            self.selected_variant_mcp_ids = normalize_mcp_ids(self.selected_variant_mcp_ids)
+        except ValueError:
+            self.selected_variant_mcp_ids = []
         self.selected_index = self._clamp(self.selected_index, self.item_count())
         self.selected_source_index = self._clamp(self.selected_source_index, len(self.native_artifacts))
         self.dashboard_source_artifact_index = self._clamp(

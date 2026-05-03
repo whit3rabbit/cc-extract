@@ -312,9 +312,14 @@ def test_footer_keys_match_variant_step():
 
     state.variant_step = 3
     footer = tui._footer_text(state)
-    assert "Model aliases:" in footer
+    assert "MCP servers:" in footer
+    assert "Space toggle MCP" in footer
 
     state.variant_step = 4
+    footer = tui._footer_text(state)
+    assert "Model aliases:" in footer
+
+    state.variant_step = 5
     footer = tui._footer_text(state)
     assert "Space toggle tweak" in footer
     assert "Variant names:" not in footer
@@ -627,7 +632,7 @@ def test_variants_tab_lists_providers_and_progress():
     screen = tui._screen_text(state)
 
     assert "[Manage Setup]" in screen
-    assert "Create setup Provider | Step 1/6" in screen
+    assert "Create setup Provider | Step 1/7" in screen
     assert "mirror  Mirror Claude" in screen
 
 
@@ -674,7 +679,15 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
 
     state.selected_index = 1
     tui._activate_variants(state)
-    assert state.variant_step == 4
+    assert state.variant_step == 3
+
+    state.selected_index = 2
+    tui._toggle_selected(state)
+    assert state.selected_variant_mcp_ids == ["github"]
+
+    state.selected_index = len(tui._variant_options(state)) - 1
+    tui._activate_variants(state)
+    assert state.variant_step == 5
 
     state.selected_index = 0
     first_tweak = state.selected_variant_tweaks[0]
@@ -683,7 +696,7 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
 
     state.selected_index = len(tui.DEFAULT_TWEAK_IDS) + 1
     tui._activate_variants(state)
-    assert state.variant_step == 5
+    assert state.variant_step == 6
 
     tui._activate_variants(state)
     assert calls == []
@@ -703,12 +716,13 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     assert calls[0]["name"] == "mirror"
     assert calls[0]["credential_env"] is None
     assert calls[0]["model_overrides"] == {}
+    assert calls[0]["mcp_ids"] == ["github"]
     assert first_tweak not in calls[0]["tweaks"]
     assert state.mode == "health-result"
 
 
 def test_variants_wizard_all_tweaks_lists_latest_curated_ports():
-    state = tui.TuiState(mode="variants", variant_step=4, tweak_filter="all")
+    state = tui.TuiState(mode="variants", variant_step=5, tweak_filter="all")
 
     labels = [option.label for option in tui._variant_options(state)]
     text = "\n".join(labels)
@@ -766,7 +780,7 @@ def test_create_failure_summary_reports_verified_path_state(monkeypatch, tmp_pat
 def test_variants_wizard_blocks_required_model_mapping():
     state = tui.TuiState(
         mode="variants",
-        variant_step=3,
+        variant_step=4,
         selected_index=len(tui.VARIANT_MODEL_FIELDS),
         variant_provider_index=0,
         variant_providers=[
@@ -785,7 +799,7 @@ def test_variants_wizard_blocks_required_model_mapping():
 
     tui._activate_variants(state)
 
-    assert state.variant_step == 3
+    assert state.variant_step == 4
     assert state.message == "Set model aliases for: Opus, Sonnet, Haiku"
 
     state.variant_model_overrides = {
@@ -795,7 +809,7 @@ def test_variants_wizard_blocks_required_model_mapping():
     }
     tui._activate_variants(state)
 
-    assert state.variant_step == 4
+    assert state.variant_step == 5
 
 
 def test_variants_text_inputs_cover_credentials_and_models():
@@ -806,7 +820,7 @@ def test_variants_text_inputs_cover_credentials_and_models():
     assert tui._variant_backspace(state) is True
     assert state.variant_credential_env == "Z_AI_API_KE"
 
-    state.variant_step = 3
+    state.variant_step = 4
     state.selected_index = 0
     assert tui._handle_char_key(state, "g") is True
     assert tui._handle_char_key(state, "l") is True

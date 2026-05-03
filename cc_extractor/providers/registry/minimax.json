@@ -49,7 +49,7 @@
           "-y"
         ],
         "env": {
-          "MINIMAX_API_KEY": "${credential}",
+          "MINIMAX_API_KEY": "${MINIMAX_API_KEY}",
           "MINIMAX_API_HOST": "https://api.minimax.io"
         }
       }

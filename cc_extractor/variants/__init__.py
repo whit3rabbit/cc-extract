@@ -23,6 +23,7 @@ from ..extractor import extract_all
 from ..providers import (
     build_provider_env,
     get_provider,
+    normalize_mcp_ids,
     provider_default_variant_name,
     provider_patch_config,
     provider_prompt_overlays,
@@ -165,6 +166,7 @@ def create_variant(
     model_overrides: Optional[Dict[str, str]] = None,
     extra_env: Optional[List[str]] = None,
     tweak_options: Optional[Dict[str, str]] = None,
+    mcp_ids: Optional[Iterable[str]] = None,
     root=None,
     source_artifact: Optional[NativeArtifact] = None,
 ) -> VariantBuildResult:
@@ -184,6 +186,7 @@ def create_variant(
         extra_env=extra_env,
     )
     tweak_ids = normalize_tweak_ids(tweaks or DEFAULT_TWEAK_IDS)
+    selected_mcp_ids = normalize_mcp_ids(mcp_ids or [])
     safe_env = dict(provider_env.env)
     safe_env.update(env_for_tweaks(tweak_ids, tweak_options))
     now = _utc_now()
@@ -205,6 +208,9 @@ def create_variant(
         "patches": patch_refs,
         "tweaks": tweak_ids,
         "tweakOptions": dict(tweak_options or {}),
+        "mcp": {
+            "selected": selected_mcp_ids,
+        },
         "modelOverrides": dict(model_overrides or {}),
         "env": safe_env,
         "credential": provider_env.credential,
@@ -643,6 +649,7 @@ __all__ = [
     "list_variant_providers",
     "load_variant",
     "normalize_tweak_ids",
+    "normalize_mcp_ids",
     "remove_variant",
     "run_variant",
     "scan_variants",

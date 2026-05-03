@@ -15,6 +15,7 @@ from cc_extractor.variants import (
     remove_variant,
     run_variant,
     scan_variants,
+    update_variants,
 )
 from cc_extractor.variants.builder import patch_entry_js
 from cc_extractor.variants.wrapper import write_wrapper
@@ -124,7 +125,41 @@ def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
     claude_config = json.loads((root / "variants" / "zai-test" / "config" / ".claude.json").read_text(encoding="utf-8"))
     assert "mcp__web_reader__webReader" in settings["permissions"]["deny"]
     assert sorted(claude_config["mcpServers"]) == ["web-reader", "web-search-prime", "zai-mcp-server", "zread"]
-    assert claude_config["mcpServers"]["web-reader"]["headers"] == {"Authorization": "Bearer Enter your API key"}
+    assert claude_config["mcpServers"]["web-reader"]["headers"] == {"Authorization": "Bearer ${Z_AI_API_KEY}"}
+    assert result.variant.manifest["mcp"]["selected"] == []
+
+
+def test_create_and_reapply_variant_preserves_selected_optional_mcp(tmp_path, monkeypatch):
+    import cc_extractor.variants as variants_module
+
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+
+    result = create_variant(
+        name="Mirror MCP",
+        provider_key="mirror",
+        mcp_ids=["github"],
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+
+    config_path = root / "variants" / "mirror-mcp" / "config" / ".claude.json"
+    claude_config = json.loads(config_path.read_text(encoding="utf-8"))
+    assert result.variant.manifest["mcp"]["selected"] == ["github"]
+    assert sorted(claude_config["mcpServers"]) == ["github"]
+    assert claude_config["mcpServers"]["github"]["headers"] == {
+        "Authorization": "Bearer ${GITHUB_TOKEN}"
+    }
+    assert "notion" not in claude_config["mcpServers"]
+
+    monkeypatch.setattr(variants_module, "_download_source_artifact", lambda version, root=None: artifact)
+    apply_variant("mirror-mcp", root=root)
+    update_variants("mirror-mcp", root=root)
+
+    reapplied_config = json.loads(config_path.read_text(encoding="utf-8"))
+    assert sorted(reapplied_config["mcpServers"]) == ["github"]
+    assert "notion" not in reapplied_config["mcpServers"]
 
 
 def test_macos_grow_skip_uses_unpacked_node_runtime(tmp_path, monkeypatch):
@@ -298,7 +333,7 @@ def test_create_variant_stored_secret_is_not_in_metadata(tmp_path):
     assert "super-secret" not in metadata_text
     assert "super-secret" not in settings_text
     assert "super-secret" not in claude_config_text
-    assert "Enter your API key" in claude_config_text
+    assert "${Z_AI_API_KEY}" in claude_config_text
     assert "super-secret" in secrets_path.read_text(encoding="utf-8")
     assert oct(secrets_path.stat().st_mode & 0o777) == "0o600"
     assert result.variant.manifest["credential"]["mode"] == "stored"
@@ -533,6 +568,12 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
 
     old_argv = sys.argv
     try:
+        sys.argv = ["cc-extractor", "variant", "mcp", "--provider", "zai", "--json"]
+        cli.main()
+        mcp_payload = json.loads(capsys.readouterr().out)
+        assert "github" in [item["id"] for item in mcp_payload["optionalMcpServers"]]
+        assert "web-reader" in [item["id"] for item in mcp_payload["providerMcpServers"]]
+
         sys.argv = [
             "cc-extractor",
             "variant",
@@ -545,6 +586,8 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
             "Z_AI_API_KEY",
             "--tweak",
             "themes",
+            "--mcp",
+            "github",
             "--json",
         ]
         cli.main()
@@ -552,6 +595,7 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
         assert create_payload["id"] == "fake"
         assert calls[0]["provider_key"] == "zai"
         assert calls[0]["tweaks"] == ["themes"]
+        assert calls[0]["mcp_ids"] == ["github"]
 
         sys.argv = ["cc-extractor", "variant", "show", "fake", "--json"]
         cli.main()

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from .._utils import version_sort_key
 from ..patches._registry import REGISTRY as PATCH_REGISTRY, patches_grouped
 from ..patches._versions import SemverRangeError, version_in_range
+from ..providers import PLUGIN_RECOMMENDATIONS, list_optional_mcp_entries
 from ..variant_tweaks import CURATED_TWEAK_IDS, DASHBOARD_TWEAK_IDS, DEFAULT_TWEAK_IDS, ENV_TWEAK_IDS
 from ..workspace import short_sha
 from ._const import (
@@ -366,6 +367,26 @@ def variant_options(state):
         ]
     if state.variant_step == 3:
         provider = selected_variant_provider(state)
+        options = []
+        provider_mcp = list(provider.get("mcpServers") or []) if provider else []
+        if provider_mcp:
+            credential_env = str(provider.get("credentialEnv") or "").strip() if provider else ""
+            env_note = f" env:{credential_env}" if credential_env else ""
+            for name in provider_mcp:
+                options.append(MenuOption("variant-mcp-auto", f"[x] {name}  provider MCP auto-enabled{env_note}", name))
+        else:
+            options.append(MenuOption("section", "Provider MCP servers: none"))
+        for entry in list_optional_mcp_entries():
+            marker = "[x]" if entry.id in state.selected_variant_mcp_ids else "[ ]"
+            env = ", ".join(entry.required_env)
+            auth = f" env:{env}" if env else (" oauth" if entry.auth == "oauth" else "")
+            options.append(MenuOption("variant-mcp", f"{marker} {entry.name}  ({entry.id}){auth}", entry.id))
+        options.append(MenuOption("section", f"Plugin recommendations: {', '.join(PLUGIN_RECOMMENDATIONS)}"))
+        next_label = "Continue to models" if provider and provider.get("requiresModelMapping") else "Continue to tweaks"
+        options.append(MenuOption("variant-mcp-continue", next_label))
+        return options
+    if state.variant_step == 4:
+        provider = selected_variant_provider(state)
         if provider and not provider.get("requiresModelMapping"):
             return [
                 MenuOption("variant-models-default", "Using provider default models"),
@@ -378,7 +399,7 @@ def variant_options(state):
             options.append(MenuOption("variant-model", f"{label}: {value or '(not set)'} ({source})", key))
         options.append(MenuOption("variant-models-continue", "Continue to tweaks"))
         return options
-    if state.variant_step == 4:
+    if state.variant_step == 5:
         options = []
         tweak_ids = list(DEFAULT_TWEAK_IDS) if state.tweak_filter == "recommended" else list(CURATED_TWEAK_IDS)
         for tweak_id in tweak_ids:

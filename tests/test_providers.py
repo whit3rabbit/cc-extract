@@ -3,15 +3,56 @@ import json
 import pytest
 
 from cc_extractor.providers import (
-    PLACEHOLDER_CREDENTIAL,
     apply_provider_claude_config,
     build_provider_env,
     get_provider,
+    list_mcp_catalog,
     list_providers,
     provider_patch_config,
     provider_prompt_overlays,
 )
 from cc_extractor.providers.schema import ProviderSchemaError, provider_from_json
+
+
+def _minimal_provider_payload(mcp_servers):
+    return {
+        "schemaVersion": 1,
+        "key": "test",
+        "label": "Test",
+        "description": "Test provider",
+        "displayOrder": 999,
+        "baseUrl": "",
+        "auth": {
+            "mode": "none",
+            "credentialEnv": "",
+        },
+        "models": {
+            "default": "",
+            "smallFast": "",
+            "opus": "",
+            "sonnet": "",
+            "haiku": "",
+            "subagent": "",
+            "requiresModelMapping": False,
+        },
+        "env": {},
+        "variant": {
+            "splashStyle": "",
+            "theme": {},
+            "noPromptPack": True,
+            "promptOverlays": {},
+        },
+        "claudeConfig": {
+            "settingsPermissionsDeny": [],
+            "mcpServers": mcp_servers,
+        },
+        "tui": {
+            "headline": "",
+            "features": [],
+            "setupLinks": {},
+            "setupNote": "",
+        },
+    }
 
 
 def test_provider_list_includes_cc_mirror_parity_presets():
@@ -122,6 +163,29 @@ def test_provider_schema_rejects_unsafe_registry_env_keys():
         provider_from_json(payload)
 
 
+def test_provider_schema_rejects_malformed_mcp_servers():
+    with pytest.raises(ProviderSchemaError, match=r"bad\.type must be http, stdio, or sse"):
+        provider_from_json(_minimal_provider_payload({"bad": {"url": "https://example.com/mcp"}}))
+
+    with pytest.raises(ProviderSchemaError, match=r"bad\.headers must be an object of strings"):
+        provider_from_json(_minimal_provider_payload({
+            "bad": {
+                "type": "http",
+                "url": "https://example.com/mcp",
+                "headers": ["Authorization: Bearer token"],
+            }
+        }))
+
+    with pytest.raises(ProviderSchemaError, match=r"bad\.args must be a list of strings"):
+        provider_from_json(_minimal_provider_payload({
+            "bad": {
+                "type": "stdio",
+                "command": "node",
+                "args": "server.js",
+            }
+        }))
+
+
 def test_model_mapping_providers_require_core_model_overrides():
     with pytest.raises(ValueError, match="requires model mapping"):
         build_provider_env("openrouter")
@@ -193,6 +257,24 @@ def test_provider_schema_exposes_tui_and_config_metadata():
     assert sorted(provider.mcp_servers) == ["web-reader", "web-search-prime", "zai-mcp-server", "zread"]
 
 
+def test_mcp_catalog_lists_provider_optional_and_plugin_recommendations():
+    catalog = list_mcp_catalog(provider_key="zai")
+
+    assert sorted(item["id"] for item in catalog["providerMcpServers"]) == [
+        "web-reader",
+        "web-search-prime",
+        "zai-mcp-server",
+        "zread",
+    ]
+    assert sorted(item["id"] for item in catalog["optionalMcpServers"]) == [
+        "dbhub-postgres",
+        "github",
+        "notion",
+        "sentry",
+    ]
+    assert "github" in catalog["pluginRecommendations"]
+
+
 def test_provider_config_writer_merges_zai_mcp_and_denies(tmp_path):
     result = apply_provider_claude_config("zai", tmp_path, credential_value="zai-secret")
 
@@ -204,9 +286,9 @@ def test_provider_config_writer_merges_zai_mcp_and_denies(tmp_path):
     assert "mcp__web_reader__webReader" in settings["permissions"]["deny"]
     assert sorted(config["mcpServers"]) == ["web-reader", "web-search-prime", "zai-mcp-server", "zread"]
     assert config["mcpServers"]["web-reader"]["headers"] == {
-        "Authorization": f"Bearer {PLACEHOLDER_CREDENTIAL}"
+        "Authorization": "Bearer ${Z_AI_API_KEY}"
     }
-    assert config["mcpServers"]["zai-mcp-server"]["env"]["Z_AI_API_KEY"] == PLACEHOLDER_CREDENTIAL
+    assert config["mcpServers"]["zai-mcp-server"]["env"]["Z_AI_API_KEY"] == "${Z_AI_API_KEY}"
     assert "zai-secret" not in json.dumps(config)
 
     second = apply_provider_claude_config("zai", tmp_path, credential_value="zai-secret")
@@ -214,7 +296,7 @@ def test_provider_config_writer_merges_zai_mcp_and_denies(tmp_path):
     assert second.claude_config_changed is False
 
 
-def test_provider_config_writer_preserves_existing_mcp_and_uses_placeholder(tmp_path):
+def test_provider_config_writer_preserves_existing_mcp_and_uses_env_refs(tmp_path):
     (tmp_path / ".claude.json").write_text(
         json.dumps({"mcpServers": {"user-mcp": {"command": "node", "args": ["server.js"]}}}),
         encoding="utf-8",
@@ -225,7 +307,7 @@ def test_provider_config_writer_preserves_existing_mcp_and_uses_placeholder(tmp_
 
     assert config["mcpServers"]["user-mcp"] == {"command": "node", "args": ["server.js"]}
     assert config["mcpServers"]["web-search-prime"]["headers"] == {
-        "Authorization": f"Bearer {PLACEHOLDER_CREDENTIAL}"
+        "Authorization": "Bearer ${Z_AI_API_KEY}"
     }
 
 
@@ -237,5 +319,17 @@ def test_provider_config_writer_adds_minimax_mcp(tmp_path):
 
     assert settings["permissions"]["deny"] == ["WebSearch"]
     assert config["mcpServers"]["MiniMax"]["command"] == "uvx"
-    assert config["mcpServers"]["MiniMax"]["env"]["MINIMAX_API_KEY"] == PLACEHOLDER_CREDENTIAL
+    assert config["mcpServers"]["MiniMax"]["env"]["MINIMAX_API_KEY"] == "${MINIMAX_API_KEY}"
     assert "mini-secret" not in json.dumps(config)
+
+
+def test_provider_config_writer_adds_selected_optional_mcp(tmp_path):
+    apply_provider_claude_config("mirror", tmp_path, optional_mcp_ids=["github"])
+
+    config = json.loads((tmp_path / ".claude.json").read_text(encoding="utf-8"))
+
+    assert sorted(config["mcpServers"]) == ["github"]
+    assert config["mcpServers"]["github"]["type"] == "http"
+    assert config["mcpServers"]["github"]["headers"] == {
+        "Authorization": "Bearer ${GITHUB_TOKEN}"
+    }

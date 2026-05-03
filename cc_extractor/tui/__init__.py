@@ -58,7 +58,7 @@ __all__ = [
     "_selected_variant_option", "_selected_variant_provider",
     "_active_theme", "_cycle_theme", "_load_saved_theme_id",
     "_advance_variant", "_require_variant_model_mapping", "_reset_variant",
-    "_set_variant_provider_defaults", "_toggle_variant_tweak",
+    "_set_variant_provider_defaults", "_toggle_variant_mcp", "_toggle_variant_tweak",
     "_variant_credential_env_for_create", "_variant_model_overrides_for_create",
     "_run_setup_health", "_run_setup_upgrade", "_run_setup_delete", "_route_startup",
     "_queue_setup_run", "_run_pending_setup",
@@ -221,6 +221,7 @@ from .variant_actions import (
     require_variant_model_mapping as _require_variant_model_mapping,
     reset_variant as _reset_variant,
     set_variant_provider_defaults as _set_variant_provider_defaults,
+    toggle_variant_mcp as _toggle_variant_mcp,
     toggle_variant_tweak as _toggle_variant_tweak,
     variant_credential_env_for_create as _variant_credential_env_for_create,
     variant_model_overrides_for_create as _variant_model_overrides_for_create,
@@ -704,6 +705,8 @@ def _toggle_selected(state):
         option = _selected_variant_option(state)
         if option and option.kind == "variant-tweak":
             _toggle_variant_tweak(state, str(option.value))
+        elif option and option.kind == "variant-mcp":
+            _toggle_variant_mcp(state, str(option.value))
     elif state.mode in {"tweaks-edit", "tweak-editor"}:
         _toggle_tweak(state)
 
@@ -1401,9 +1404,14 @@ def _activate_variants(state):
     elif option.kind == "variant-credential-env":
         state.message = "Type a credential environment variable name. Raw API keys are not accepted here."
     elif option.kind == "variant-credentials-continue":
+        state.variant_step = 3
+        state.selected_index = 0
+    elif option.kind == "variant-mcp":
+        _toggle_variant_mcp(state, str(option.value))
+    elif option.kind == "variant-mcp-continue":
         provider = _selected_variant_provider(state)
         if provider and not provider.get("requiresModelMapping"):
-            state.variant_step = 4
+            state.variant_step = 5
             state.selected_index = 0
         else:
             _advance_variant(state)
@@ -1422,7 +1430,7 @@ def _activate_variants(state):
     elif option.kind == "variant-create":
         _open_variant_create_preview(state)
     elif option.kind == "variant-review-back":
-        state.variant_step = 4
+        state.variant_step = 5
         state.selected_index = 0
     elif option.kind == "variant-reset":
         _reset_variant(state)
@@ -1514,6 +1522,7 @@ def _run_variant_create(state):
             tweaks=state.selected_variant_tweaks,
             credential_env=credential_env,
             model_overrides=_variant_model_overrides_for_create(state),
+            mcp_ids=state.selected_variant_mcp_ids,
             force=False,
         )
         state.last_action_log = _stage_log_lines("Create setup", output)

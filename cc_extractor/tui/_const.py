@@ -10,7 +10,7 @@ from dataclasses import dataclass
 TABS = ["Manage Setup", "Dashboard", "Inspect", "Extract", "Patch"]
 TAB_MODES = ["setup-manager", "dashboard", "inspect", "extract", "patch-source"]
 DASHBOARD_STEPS = ["Source", "Patches", "Profiles", "Review"]
-VARIANT_STEPS = ["Provider", "Name", "Credentials", "Models", "Tweaks", "Review"]
+VARIANT_STEPS = ["Provider", "Name", "Credentials", "MCP", "Models", "Tweaks", "Review"]
 VARIANT_MODEL_FIELDS = [
     ("opus", "Opus"),
     ("sonnet", "Sonnet"),

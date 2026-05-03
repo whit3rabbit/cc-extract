@@ -102,6 +102,20 @@ def validate_variant_manifest(manifest: Dict) -> None:
         raise ValueError("variant runtime must be native or node")
     if runtime == "node" and paths and not isinstance(paths.get("entryPath"), str):
         raise ValueError("node variant paths must include entryPath")
+    mcp = manifest.get("mcp", {})
+    if mcp is None:
+        mcp = {}
+    if not isinstance(mcp, dict):
+        raise ValueError("variant mcp must be an object")
+    selected_mcp = mcp.get("selected", [])
+    if selected_mcp is None:
+        selected_mcp = []
+    if not isinstance(selected_mcp, list) or not all(isinstance(item, str) for item in selected_mcp):
+        raise ValueError("variant mcp.selected must be a list of strings")
+    if selected_mcp:
+        from ..providers import normalize_mcp_ids
+
+        normalize_mcp_ids(selected_mcp)
     for field in ("createdAt", "updatedAt"):
         if not isinstance(manifest.get(field), str) or not manifest[field]:
             raise ValueError(f"variant {field} must be a non-empty string")

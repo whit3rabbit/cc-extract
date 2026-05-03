@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from .loader import get_provider
+from .mcp_catalog import optional_mcp_servers
 
 
 PLACEHOLDER_CREDENTIAL = "Enter your API key"
@@ -22,6 +23,7 @@ def apply_provider_claude_config(
     config_dir,
     *,
     credential_value: Optional[str] = None,
+    optional_mcp_ids=None,
     read_json=None,
     write_json=None,
 ) -> ProviderConfigResult:
@@ -33,9 +35,11 @@ def apply_provider_claude_config(
         read_json=read_json,
         write_json=write_json,
     )
+    mcp_servers = dict(provider.mcp_servers)
+    mcp_servers.update(optional_mcp_servers(optional_mcp_ids or []))
     claude_config_changed = _merge_mcp_servers(
         config_dir,
-        provider.mcp_servers,
+        mcp_servers,
         credential_value=credential_value,
         read_json=read_json,
         write_json=write_json,
@@ -71,13 +75,12 @@ def _merge_mcp_servers(config_dir: Path, servers: Dict[str, object], *, credenti
     config_path = config_dir / ".claude.json"
     existing = _read(config_path, read_json)
     existing_servers = dict(existing.get("mcpServers") or {})
-    credential = PLACEHOLDER_CREDENTIAL
 
     changed = False
     for name, server in servers.items():
         if name in existing_servers:
             continue
-        existing_servers[name] = _replace_credential(copy.deepcopy(server), credential)
+        existing_servers[name] = _replace_credential(copy.deepcopy(server), PLACEHOLDER_CREDENTIAL)
         changed = True
     if not changed:
         return False

@@ -177,6 +177,7 @@ def create_preview_labels(state):
     else:
         validation = "Validation: ready"
 
+    mcp_lines = _create_preview_mcp_lines(state, provider)
     model_lines = _create_preview_model_lines(state, provider)
     tweak_lines = [f"  {tweak_id}" for tweak_id in state.selected_variant_tweaks] or ["  none"]
     return [
@@ -186,6 +187,7 @@ def create_preview_labels(state):
         "Claude Code: latest",
         f"Command: {command}",
         f"Credential env: {_create_preview_credential(state, provider)}",
+        *mcp_lines,
         *model_lines,
         "Default tweaks:",
         *tweak_lines,
@@ -205,6 +207,19 @@ def _create_preview_credential(state, provider):
     if provider.get("credentialOptional"):
         suffix = f"optional, {suffix}"
     return f"{value} ({suffix})"
+
+
+def _create_preview_mcp_lines(state, provider):
+    provider_mcp = list(provider.get("mcpServers") or [])
+    selected = list(state.selected_variant_mcp_ids)
+    lines = ["MCP servers:"]
+    if provider_mcp:
+        lines.extend(f"  {name} (provider auto)" for name in provider_mcp)
+    if selected:
+        lines.extend(f"  {mcp_id} (optional)" for mcp_id in selected)
+    if not provider_mcp and not selected:
+        lines.append("  none")
+    return lines
 
 
 def _create_preview_model_lines(state, provider):
@@ -573,6 +588,8 @@ def context_hint(state):
         if state.variant_step == 2:
             return "Credential env: select row, then type or Backspace. Raw API keys are not accepted."
         if state.variant_step == 3:
+            return "MCP servers: provider servers are automatic. Space toggles optional servers."
+        if state.variant_step == 4:
             return "Model aliases: select row, then type or Backspace. Empty rows use provider defaults."
     return "Ready"
 
@@ -608,11 +625,13 @@ def _dashboard_key_line(state):
 
 
 def _variant_key_line(state):
-    if state.variant_step == 4:
-        action = "Space toggle tweak | V view | Enter choose"
+    if state.variant_step == 3:
+        action = "Space toggle MCP | Enter choose"
     elif state.variant_step == 5:
+        action = "Space toggle tweak | V view | Enter choose"
+    elif state.variant_step == 6:
         action = "Enter choose"
-    elif state.variant_step in {1, 2, 3}:
+    elif state.variant_step in {1, 2, 4}:
         action = "Type text | Enter choose"
     else:
         action = "Enter choose"

@@ -94,6 +94,8 @@ MODEL_KEYS = {"default", "smallFast", "opus", "sonnet", "haiku", "subagent", "re
 VARIANT_KEYS = {"defaultVariantName", "splashStyle", "theme", "noPromptPack", "promptOverlays"}
 CLAUDE_CONFIG_KEYS = {"settingsPermissionsDeny", "mcpServers"}
 TUI_KEYS = {"headline", "features", "setupLinks", "setupNote"}
+MCP_SERVER_KEYS = {"type", "command", "args", "env", "url", "headers", "headersHelper", "oauth"}
+MCP_SERVER_TYPES = {"http", "stdio", "sse"}
 
 
 def provider_from_json(payload: Dict[str, object]) -> ProviderTemplate:
@@ -134,7 +136,7 @@ def provider_from_json(payload: Dict[str, object]) -> ProviderTemplate:
 
     claude_config = _object(payload, "claudeConfig")
     _require_keys(claude_config, CLAUDE_CONFIG_KEYS, f"{key}.claudeConfig")
-    _validate_mcp_env_keys(_object(claude_config, "mcpServers"), f"{key}.claudeConfig.mcpServers")
+    _validate_mcp_servers(_object(claude_config, "mcpServers"), f"{key}.claudeConfig.mcpServers")
 
     tui = _object(payload, "tui")
     _require_keys(tui, TUI_KEYS, f"{key}.tui")
@@ -276,3 +278,37 @@ def _validate_mcp_env_keys(value: object, context: str) -> None:
     elif isinstance(value, list):
         for index, item in enumerate(value):
             _validate_mcp_env_keys(item, f"{context}[{index}]")
+
+
+def _validate_mcp_servers(servers: Dict[str, object], context: str) -> None:
+    for name, server in servers.items():
+        if not isinstance(name, str) or not name:
+            raise ProviderSchemaError(f"{context} keys must be non-empty strings")
+        if not isinstance(server, dict):
+            raise ProviderSchemaError(f"{context}.{name} must be an object")
+        extra = sorted(set(server) - MCP_SERVER_KEYS)
+        if extra:
+            raise ProviderSchemaError(f"{context}.{name} has unknown keys: {', '.join(extra)}")
+        server_type = server.get("type")
+        if server_type not in MCP_SERVER_TYPES:
+            raise ProviderSchemaError(f"{context}.{name}.type must be http, stdio, or sse")
+        if server_type == "stdio":
+            if not isinstance(server.get("command"), str) or not str(server.get("command")).strip():
+                raise ProviderSchemaError(f"{context}.{name}.command must be a non-empty string")
+            if "args" in server and not _is_string_list(server["args"]):
+                raise ProviderSchemaError(f"{context}.{name}.args must be a list of strings")
+        else:
+            if not isinstance(server.get("url"), str) or not str(server.get("url")).strip():
+                raise ProviderSchemaError(f"{context}.{name}.url must be a non-empty string")
+        if "headers" in server and not _is_string_map(server["headers"]):
+            raise ProviderSchemaError(f"{context}.{name}.headers must be an object of strings")
+        if "env" in server and not _is_string_map(server["env"]):
+            raise ProviderSchemaError(f"{context}.{name}.env must be an object of strings")
+        _validate_mcp_env_keys(server, f"{context}.{name}")
+
+
+def _is_string_map(value: object) -> bool:
+    return isinstance(value, dict) and all(
+        isinstance(key, str) and isinstance(item, str)
+        for key, item in value.items()
+    )

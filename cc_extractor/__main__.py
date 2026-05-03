@@ -12,6 +12,7 @@ import sys
 
 from .cli import build_parser, inspect_binary  # noqa: F401 — re-exported for test imports
 from .cli import handlers as _handlers
+from .providers import list_mcp_catalog
 from .cli.payloads import (
     model_overrides_from_args,
     print_json,
@@ -58,6 +59,22 @@ def cmd_variant(args, variant_parser):
         else:
             for provider in providers:
                 print(f"{provider['key']}: {provider['label']} - {provider['description']}")
+    elif sub == "mcp":
+        catalog = list_mcp_catalog(provider_key=args.provider or "")
+        if args.json:
+            print_json(catalog)
+        else:
+            print("Provider MCP servers:")
+            for item in catalog["providerMcpServers"]:
+                provider = item.get("providerKey") or "?"
+                print(f"    {provider}:{item['id']} auto-enabled")
+            print("Optional MCP servers:")
+            for item in catalog["optionalMcpServers"]:
+                env = ", ".join(item.get("requiredEnv") or [])
+                suffix = f" env:{env}" if env else ""
+                print(f"    {item['id']}: {item['name']}{suffix}")
+            print("Plugin recommendations:")
+            print("    " + ", ".join(catalog["pluginRecommendations"]))
     elif sub == "create":
         result = create_variant(
             name=args.name,
@@ -73,6 +90,7 @@ def cmd_variant(args, variant_parser):
             model_overrides=model_overrides_from_args(args),
             extra_env=args.extra_env,
             tweak_options=tweak_options_from_args(args),
+            mcp_ids=args.mcp,
         )
         if args.json:
             print_json(variant_result_payload(result))
