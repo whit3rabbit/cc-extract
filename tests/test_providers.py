@@ -1,17 +1,23 @@
 import json
+from urllib.error import URLError
 
 import pytest
 
+import cc_extractor.providers.model_discovery as model_discovery
 from cc_extractor.providers import (
     apply_provider_claude_config,
     build_provider_env,
+    fetch_provider_models,
     get_provider,
     list_mcp_catalog,
     list_providers,
+    parse_model_ids,
     provider_patch_config,
+    provider_models_url,
     provider_prompt_overlays,
 )
 from cc_extractor.providers.schema import ProviderSchemaError, provider_from_json
+from cc_extractor.variants import list_variant_providers
 from cc_extractor.variants.splash import has_style
 
 
@@ -79,6 +85,9 @@ def test_provider_list_includes_cc_mirror_parity_presets():
         "anthropic",
         "gatewayz",
         "custom",
+        "lmstudio",
+        "omlx",
+        "local-custom",
     ]
 
 
@@ -317,6 +326,108 @@ def test_ccrouter_and_cerebras_use_optional_router_fallbacks():
     assert cerebras.env["ANTHROPIC_AUTH_TOKEN"] == "cerebras-proxy"
     assert cerebras.env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "zai-glm-4.7"
     assert cerebras.env["ANTHROPIC_DEFAULT_SONNET_MODEL"] == "gpt-oss-120b"
+
+
+def test_local_llm_provider_defaults_and_endpoint_override():
+    model_overrides = {"opus": "local-model", "sonnet": "local-model", "haiku": "local-model"}
+    ollama = build_provider_env("ollama")
+    assert ollama.env["ANTHROPIC_BASE_URL"] == "http://localhost:11434"
+    assert ollama.env["ANTHROPIC_AUTH_TOKEN"] == "ollama"
+    assert ollama.env["ANTHROPIC_API_KEY"] == "ollama"
+
+    lmstudio = build_provider_env("lmstudio", model_overrides=model_overrides)
+    assert lmstudio.credential == {"mode": "none", "targets": []}
+    assert lmstudio.env["ANTHROPIC_BASE_URL"] == "http://localhost:1234"
+    assert lmstudio.env["ANTHROPIC_AUTH_TOKEN"] == "lmstudio"
+    assert lmstudio.env["ANTHROPIC_API_KEY"] == "lmstudio"
+
+    omlx = build_provider_env("omlx", model_overrides=model_overrides)
+    assert omlx.env["ANTHROPIC_BASE_URL"] == "http://localhost:8000"
+    assert omlx.env["ANTHROPIC_AUTH_TOKEN"] == "omlx"
+    assert omlx.env["ANTHROPIC_API_KEY"] == "omlx"
+
+    custom = build_provider_env("local-custom", base_url="http://localhost:8787", model_overrides=model_overrides)
+    assert custom.env["ANTHROPIC_BASE_URL"] == "http://localhost:8787"
+    assert custom.env["ANTHROPIC_AUTH_TOKEN"] == "local-llm"
+
+
+def test_local_llm_stored_secret_targets_anthropic_envs():
+    result = build_provider_env(
+        "lmstudio",
+        api_key="secret-value",
+        store_secret=True,
+        model_overrides={"opus": "local-model", "sonnet": "local-model", "haiku": "local-model"},
+    )
+
+    assert result.credential == {
+        "mode": "stored",
+        "targets": ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"],
+    }
+    assert result.secret_env == {
+        "ANTHROPIC_AUTH_TOKEN": "secret-value",
+        "ANTHROPIC_API_KEY": "secret-value",
+    }
+
+
+def test_provider_payload_exposes_sections_and_model_discovery():
+    providers = {provider["key"]: provider for provider in list_variant_providers()}
+
+    assert providers["mirror"]["section"] == "pinned"
+    assert providers["ccrouter"]["section"] == "pinned"
+    assert providers["lmstudio"]["section"] == "local"
+    assert providers["lmstudio"]["modelDiscovery"] == {"enabled": True}
+    assert providers["zai"]["section"] == "cloud"
+
+
+def test_model_discovery_url_and_payload_parsing():
+    assert provider_models_url("http://localhost:1234") == "http://localhost:1234/v1/models"
+    assert provider_models_url("http://localhost:1234/v1") == "http://localhost:1234/v1/models"
+    assert parse_model_ids({"data": [{"id": "a"}, {"id": "a"}, {"id": "b"}]}) == ["a", "b"]
+    assert parse_model_ids({"models": [{"key": "lmstudio-model"}, {"name": "fallback-name"}]}) == [
+        "lmstudio-model",
+        "fallback-name",
+    ]
+    assert parse_model_ids({"data": []}) == []
+
+
+def test_fetch_provider_models_success_and_errors(monkeypatch):
+    class Response:
+        def __init__(self, body):
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return self.body
+
+    calls = []
+
+    def ok_urlopen(request, timeout):
+        calls.append((request.full_url, request.headers.get("Authorization"), timeout))
+        return Response(b'{"data":[{"id":"model-a"}]}')
+
+    monkeypatch.setattr(model_discovery, "urlopen", ok_urlopen)
+    assert fetch_provider_models("http://localhost:1234", api_key="secret", timeout=1.5) == ["model-a"]
+    assert calls == [("http://localhost:1234/v1/models", "Bearer secret", 1.5)]
+
+    monkeypatch.setattr(model_discovery, "urlopen", lambda _request, timeout: Response(b"{"))
+    with pytest.raises(RuntimeError, match="Malformed model list"):
+        fetch_provider_models("http://localhost:1234")
+
+    monkeypatch.setattr(model_discovery, "urlopen", lambda _request, timeout: Response(b'{"unexpected":[]}'))
+    with pytest.raises(RuntimeError, match="did not contain"):
+        fetch_provider_models("http://localhost:1234")
+
+    def fail_urlopen(_request, timeout):
+        raise URLError("refused")
+
+    monkeypatch.setattr(model_discovery, "urlopen", fail_urlopen)
+    with pytest.raises(RuntimeError, match="Failed to refresh models"):
+        fetch_provider_models("http://localhost:1234")
 
 
 def test_provider_schema_exposes_tui_and_config_metadata():

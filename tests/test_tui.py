@@ -374,8 +374,8 @@ def test_footer_keys_match_variant_step():
 
     state.variant_step = 2
     footer = tui._footer_text(state)
-    assert "Credential env:" in footer
-    assert "Raw API keys are not accepted" in footer
+    assert "Credentials:" in footer
+    assert "toggle local API key storage" in footer
 
     state.variant_step = 3
     footer = tui._footer_text(state)
@@ -384,7 +384,7 @@ def test_footer_keys_match_variant_step():
 
     state.variant_step = 4
     footer = tui._footer_text(state)
-    assert "Model aliases:" in footer
+    assert "Models:" in footer
 
     state.variant_step = 5
     footer = tui._footer_text(state)
@@ -817,6 +817,30 @@ def test_variants_tab_lists_providers_and_progress():
     assert "mirror  Mirror Claude" in screen
 
 
+def test_variants_provider_selection_groups_pinned_cloud_and_local():
+    state = tui.TuiState(
+        mode="variants",
+        variant_providers=[
+            {"key": "zai", "label": "Zai Cloud", "description": "Cloud", "section": "cloud"},
+            {"key": "ollama", "label": "Ollama", "description": "Local", "section": "local"},
+            {"key": "ccrouter", "label": "CC Router", "description": "Router", "section": "pinned"},
+            {"key": "mirror", "label": "Mirror Claude Code", "description": "Pure", "section": "pinned"},
+            {"key": "lmstudio", "label": "LM Studio", "description": "Local", "section": "local"},
+        ],
+    )
+
+    labels = [option.label for option in tui._variant_options(state)]
+    provider_labels = [label.lstrip("* ") for label in labels]
+
+    assert provider_labels[0].startswith("mirror  Mirror Claude Code")
+    assert provider_labels[1].startswith("ccrouter  CC Router")
+    assert labels[2] == "Cloud Providers"
+    assert provider_labels[3].startswith("zai  Zai Cloud")
+    assert labels[4] == "Local LLMs"
+    assert provider_labels[5].startswith("ollama  Ollama")
+    assert provider_labels[6].startswith("lmstudio  LM Studio")
+
+
 def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch, tmp_path):
     calls = []
     create_started = threading.Event()
@@ -900,6 +924,188 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     assert calls[0]["mcp_ids"] == ["github"]
     assert first_tweak not in calls[0]["tweaks"]
     assert state.mode == "health-result"
+
+
+def test_variants_credentials_step_edits_endpoint_and_stored_key():
+    provider = {
+        "key": "lmstudio",
+        "label": "LM Studio",
+        "description": "Local",
+        "section": "local",
+        "baseUrl": "http://localhost:1234",
+        "authMode": "authToken",
+        "credentialEnv": "LM_API_TOKEN",
+        "credentialOptional": True,
+        "models": {},
+        "defaultVariantName": "cclmstudio",
+    }
+    state = tui.TuiState(mode="variants", variant_step=2, variant_providers=[provider])
+    tui._set_variant_provider_defaults(state, provider)
+
+    labels = [option.label for option in tui._variant_options(state)]
+    assert "Endpoint: http://localhost:1234" in labels
+    assert "Credential env: LM_API_TOKEN" in labels
+    assert "[ ] Store API key locally" in labels
+
+    state.selected_index = 2
+    tui._toggle_selected(state)
+    labels = [option.label for option in tui._variant_options(state)]
+    assert "[x] Store API key locally" in labels
+    assert "API key: not set" in labels
+
+    state.selected_index = 3
+    assert tui._handle_char_key(state, "s") is True
+    assert tui._handle_char_key(state, "3") is True
+    labels = [option.label for option in tui._variant_options(state)]
+    assert "API key: set" in labels
+    assert "s3" not in "\n".join(labels)
+
+    state.selected_index = 0
+    state.variant_base_url = ""
+    for char in "http://localhost:4567":
+        tui._handle_char_key(state, char)
+    assert state.variant_base_url == "http://localhost:4567"
+
+
+def test_variants_credentials_continue_validates_endpoint_and_secret():
+    provider = {
+        "key": "lmstudio",
+        "label": "LM Studio",
+        "description": "Local",
+        "section": "local",
+        "baseUrl": "http://localhost:1234",
+        "authMode": "authToken",
+        "credentialEnv": "LM_API_TOKEN",
+        "credentialOptional": True,
+        "models": {},
+        "defaultVariantName": "cclmstudio",
+    }
+    state = tui.TuiState(mode="variants", variant_step=2, variant_providers=[provider])
+    tui._set_variant_provider_defaults(state, provider)
+
+    state.variant_base_url = "localhost:1234"
+    state.selected_index = 3
+    tui._activate_variants(state)
+    assert state.variant_step == 2
+    assert state.message == "Endpoint must be an http:// or https:// URL."
+
+    state.variant_base_url = "http://localhost:1234"
+    state.variant_store_secret = True
+    state.selected_index = 4
+    tui._activate_variants(state)
+    assert state.variant_step == 2
+    assert state.message == "Enter an API key or turn off local secret storage."
+
+
+def test_variants_create_preview_redacts_stored_key_and_create_kwargs(monkeypatch, tmp_path):
+    calls = []
+
+    class Result:
+        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "cclmstudio"
+
+    def fake_create_variant(**kwargs):
+        calls.append(kwargs)
+        return Result()
+
+    monkeypatch.setattr(tui, "create_variant", fake_create_variant)
+    monkeypatch.setattr(tui, "doctor_variant", lambda name: [{"id": name, "ok": True, "checks": []}])
+    monkeypatch.setattr(tui, "_refresh_state", lambda state_arg: True)
+    provider = {
+        "key": "lmstudio",
+        "label": "LM Studio",
+        "description": "Local",
+        "section": "local",
+        "baseUrl": "http://localhost:1234",
+        "authMode": "authToken",
+        "credentialEnv": "LM_API_TOKEN",
+        "credentialOptional": True,
+        "models": {},
+        "defaultVariantName": "cclmstudio",
+    }
+    state = tui.TuiState(
+        mode="create-preview",
+        variant_providers=[provider],
+        variant_name="cclmstudio",
+        variant_base_url="http://localhost:4567",
+        variant_store_secret=True,
+        variant_api_key="secret-value",
+    )
+
+    screen = tui._screen_text(state)
+    assert "Endpoint: http://localhost:4567" in screen
+    assert "API key storage: on, key set" in screen
+    assert "secret-value" not in screen
+
+    tui._run_variant_create(state)
+
+    assert calls[0]["base_url"] == "http://localhost:4567"
+    assert calls[0]["credential_env"] is None
+    assert calls[0]["api_key"] == "secret-value"
+    assert calls[0]["store_secret"] is True
+
+
+def test_variants_model_refresh_applies_selected_model(monkeypatch):
+    provider = {
+        "key": "lmstudio",
+        "label": "LM Studio",
+        "description": "Local",
+        "section": "local",
+        "baseUrl": "http://localhost:1234",
+        "authMode": "authToken",
+        "credentialEnv": "LM_API_TOKEN",
+        "credentialOptional": True,
+        "requiresModelMapping": True,
+        "modelDiscovery": {"enabled": True},
+        "models": {},
+        "defaultVariantName": "cclmstudio",
+    }
+    calls = []
+
+    def fake_fetch(endpoint, api_key=None):
+        calls.append((endpoint, api_key))
+        return ["local/model-a", "local/model-b"]
+
+    monkeypatch.setattr(tui, "fetch_provider_models", fake_fetch)
+    state = tui.TuiState(mode="variants", variant_step=4, variant_providers=[provider])
+    tui._set_variant_provider_defaults(state, provider)
+
+    state.selected_index = 0
+    tui._activate_variants(state)
+
+    assert calls == [("http://localhost:1234", None)]
+    assert state.variant_model_choices == ["local/model-a", "local/model-b"]
+    assert state.selected_index == 1
+
+    tui._activate_variants(state)
+
+    assert all(state.variant_model_overrides[key] == "local/model-a" for key, _label in tui.VARIANT_MODEL_FIELDS)
+    assert state.message == "Model aliases set to local/model-a"
+
+
+def test_variants_model_refresh_failure_is_nonfatal(monkeypatch):
+    provider = {
+        "key": "lmstudio",
+        "label": "LM Studio",
+        "description": "Local",
+        "section": "local",
+        "baseUrl": "http://localhost:1234",
+        "authMode": "authToken",
+        "credentialEnv": "LM_API_TOKEN",
+        "credentialOptional": True,
+        "requiresModelMapping": True,
+        "modelDiscovery": {"enabled": True},
+        "models": {},
+        "defaultVariantName": "cclmstudio",
+    }
+    monkeypatch.setattr(tui, "fetch_provider_models", lambda endpoint, api_key=None: (_ for _ in ()).throw(RuntimeError("down")))
+    state = tui.TuiState(mode="variants", variant_step=4, variant_providers=[provider])
+    tui._set_variant_provider_defaults(state, provider)
+
+    tui._activate_variants(state)
+
+    assert state.variant_step == 4
+    assert state.variant_model_choices == []
+    assert state.message == "Model refresh failed: down"
 
 
 def test_variants_wizard_all_tweaks_lists_latest_curated_ports():

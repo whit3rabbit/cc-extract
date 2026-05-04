@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "key": "mirror",
-  "label": "Mirror Claude",
-  "description": "Pure Claude with isolated config and clean defaults",
+  "label": "Mirror Claude Code",
+  "description": "Pure Claude Code with isolated config and clean defaults",
   "displayOrder": 130,
   "baseUrl": "",
   "auth": {
@@ -40,6 +40,7 @@
   },
   "tui": {
     "headline": "Mirror Claude",
+    "section": "pinned",
     "features": [
       "Pure Claude Code behavior",
       "Isolated config",

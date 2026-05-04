@@ -228,6 +228,26 @@ def test_create_ccrouter_variant_persists_env_unset_and_wrapper_unsets_bedrock(t
     assert wrapper.index("export ANTHROPIC_BASE_URL=http://127.0.0.1:3456") < wrapper.index("unset CLAUDE_CODE_USE_BEDROCK") < wrapper.index("\nexec ")
 
 
+def test_create_variant_persists_base_url_override(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+
+    result = create_variant(
+        name="LM Local",
+        provider_key="lmstudio",
+        base_url="http://localhost:4567",
+        model_overrides={"opus": "local-model", "sonnet": "local-model", "haiku": "local-model"},
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+
+    wrapper = result.wrapper_path.read_text(encoding="utf-8")
+
+    assert result.variant.manifest["env"]["ANTHROPIC_BASE_URL"] == "http://localhost:4567"
+    assert "export ANTHROPIC_BASE_URL=http://localhost:4567" in wrapper
+
+
 def test_variant_provider_payload_exposes_ccrouter_env_unset():
     providers = {provider["key"]: provider for provider in list_variant_providers()}
 
@@ -1011,6 +1031,8 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
             "Fake",
             "--provider",
             "zai",
+            "--base-url",
+            "https://example.test/anthropic",
             "--credential-env",
             "Z_AI_API_KEY",
             "--tweak",
@@ -1023,6 +1045,7 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
         create_payload = json.loads(capsys.readouterr().out)
         assert create_payload["id"] == "fake"
         assert calls[0]["provider_key"] == "zai"
+        assert calls[0]["base_url"] == "https://example.test/anthropic"
         assert calls[0]["tweaks"] == ["themes"]
         assert calls[0]["mcp_ids"] == ["github"]
 

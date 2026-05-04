@@ -82,6 +82,7 @@ def cmd_variant(args, variant_parser):
             claude_version=args.claude_version,
             patch_profile_id=args.patch_profile,
             tweaks=args.tweak,
+            base_url=args.base_url,
             credential_env=args.credential_env,
             api_key=args.api_key,
             store_secret=args.store_secret,

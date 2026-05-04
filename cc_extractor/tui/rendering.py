@@ -194,7 +194,9 @@ def create_preview_labels(state):
         f"Provider: {provider.get('key') or '?'}",
         "Claude Code: latest",
         f"Command: {command}",
+        *_create_preview_endpoint_lines(state, provider),
         f"Credential env: {_create_preview_credential(state, provider)}",
+        f"API key storage: {_create_preview_api_key_storage(state)}",
         *mcp_lines,
         *model_lines,
         "Default tweaks:",
@@ -205,9 +207,17 @@ def create_preview_labels(state):
     ]
 
 
+def _create_preview_endpoint_lines(state, provider):
+    if provider.get("authMode") == "none":
+        return []
+    return [f"Endpoint: {state.variant_base_url.strip() or provider.get('baseUrl') or '(not set)'}"]
+
+
 def _create_preview_credential(state, provider):
     if provider.get("authMode") == "none":
         return "not required"
+    if state.variant_store_secret:
+        return "not used, storing setup-local secret"
     value = state.variant_credential_env.strip()
     if not value:
         return "not set"
@@ -215,6 +225,12 @@ def _create_preview_credential(state, provider):
     if provider.get("credentialOptional"):
         suffix = f"optional, {suffix}"
     return f"{value} ({suffix})"
+
+
+def _create_preview_api_key_storage(state):
+    if not state.variant_store_secret:
+        return "off"
+    return "on, key set" if state.variant_api_key.strip() else "on, key missing"
 
 
 def _create_preview_mcp_lines(state, provider):
@@ -639,11 +655,11 @@ def context_hint(state):
         if state.variant_step == 1:
             return "Setup names: select Name, then type or Backspace."
         if state.variant_step == 2:
-            return "Credential env: select row, then type or Backspace. Raw API keys are not accepted."
+            return "Credentials: edit endpoint/env, toggle local API key storage with Space."
         if state.variant_step == 3:
             return "MCP servers: provider servers are automatic. Space toggles optional servers."
         if state.variant_step == 4:
-            return "Model aliases: select row, then type or Backspace. Empty rows use provider defaults."
+            return "Models: refresh local model list, select one, or edit aliases manually."
     return "Ready"
 
 
@@ -689,7 +705,7 @@ def _variant_key_line(state):
     elif state.variant_step == 6:
         action = "Enter"
     elif state.variant_step in {1, 2, 4}:
-        action = "Type text | Enter choose"
+        action = "Type text | Enter choose | Space toggle"
     else:
         action = "Enter"
     return f"Keys: Q quit | Up/Down | {action} | B/Esc | ? more"

@@ -60,7 +60,9 @@ __all__ = [
     "_active_theme", "_cycle_theme", "_load_saved_theme_id",
     "_advance_variant", "_require_variant_model_mapping", "_reset_variant",
     "_set_variant_provider_defaults", "_toggle_variant_mcp", "_toggle_variant_tweak",
-    "_variant_credential_env_for_create", "_variant_model_overrides_for_create",
+    "_toggle_variant_store_secret", "_variant_api_key_for_create",
+    "_variant_base_url_for_create", "_variant_credential_env_for_create",
+    "_variant_model_overrides_for_create", "_variant_store_secret_for_create",
     "_run_inspect_delete", "_run_setup_health", "_run_setup_upgrade", "_run_setup_delete", "_route_startup",
     "_queue_setup_run", "_run_pending_setup",
     "_start_busy_action", "_poll_busy_action",
@@ -79,6 +81,7 @@ from ..downloader import download_binary
 from ..extractor import extract_all
 from ..patch_workflow import apply_dashboard_tweaks_to_native, apply_patch_packages_to_native
 from ..providers import provider_default_variant_name
+from ..providers import fetch_provider_models
 from ..variant_tweaks import CURATED_TWEAK_IDS, DASHBOARD_TWEAK_IDS, DEFAULT_TWEAK_IDS
 from ..variants import (
     apply_variant,
@@ -222,11 +225,18 @@ from .variant_actions import (
     advance_variant as _advance_variant,
     require_variant_model_mapping as _require_variant_model_mapping,
     reset_variant as _reset_variant,
+    apply_variant_model_choice as _apply_variant_model_choice,
     set_variant_provider_defaults as _set_variant_provider_defaults,
     toggle_variant_mcp as _toggle_variant_mcp,
+    toggle_variant_store_secret as _toggle_variant_store_secret,
     toggle_variant_tweak as _toggle_variant_tweak,
+    validate_variant_endpoint as _validate_variant_endpoint,
+    validate_variant_secret as _validate_variant_secret,
+    variant_api_key_for_create as _variant_api_key_for_create,
+    variant_base_url_for_create as _variant_base_url_for_create,
     variant_credential_env_for_create as _variant_credential_env_for_create,
     variant_model_overrides_for_create as _variant_model_overrides_for_create,
+    variant_store_secret_for_create as _variant_store_secret_for_create,
 )
 
 
@@ -756,6 +766,8 @@ def _toggle_selected(state):
             _toggle_variant_tweak(state, str(option.value))
         elif option and option.kind == "variant-mcp":
             _toggle_variant_mcp(state, str(option.value))
+        elif option and option.kind == "variant-store-secret":
+            _toggle_variant_store_secret(state)
     elif state.mode in {"tweaks-edit", "tweak-editor"}:
         _toggle_tweak(state)
 
@@ -929,6 +941,10 @@ def _open_variant_create_preview(state):
         return
     if not state.variant_name.strip():
         state.message = "Type a setup name first."
+        return
+    if not _validate_variant_endpoint(state, provider):
+        return
+    if not _validate_variant_secret(state):
         return
     state.last_action_summary = []
     _set_mode(state, "create-preview")
@@ -1510,10 +1526,22 @@ def _activate_variants(state):
             return
         _advance_variant(state)
     elif option.kind == "variant-credential-env":
-        state.message = "Type a credential environment variable name. Raw API keys are not accepted here."
+        state.message = "Type a credential environment variable name."
+    elif option.kind == "variant-endpoint":
+        state.message = "Type the provider endpoint URL, including http:// or https://."
+    elif option.kind == "variant-api-key":
+        state.message = "Type the API key. It will be stored only in this setup's secrets.env."
     elif option.kind == "variant-credentials-continue":
+        provider = _selected_variant_provider(state)
+        if not _validate_variant_endpoint(state, provider):
+            return
+        if not _validate_variant_secret(state):
+            return
         state.variant_step = 3
         state.selected_index = 0
+    elif option.kind == "variant-store-secret":
+        _toggle_variant_store_secret(state)
+        state.message = "Local API key storage enabled." if state.variant_store_secret else "Local API key storage disabled."
     elif option.kind == "variant-mcp":
         _toggle_variant_mcp(state, str(option.value))
     elif option.kind == "variant-mcp-continue":
@@ -1525,6 +1553,10 @@ def _activate_variants(state):
             _advance_variant(state)
     elif option.kind == "variant-model":
         state.message = f"Type the {option.value} model alias, or clear it to use the provider default."
+    elif option.kind == "variant-model-refresh":
+        _refresh_variant_models(state)
+    elif option.kind == "variant-model-choice":
+        _apply_variant_model_choice(state, str(option.value))
     elif option.kind == "variant-models-continue":
         if _require_variant_model_mapping(state):
             _advance_variant(state)
@@ -1591,6 +1623,37 @@ def _run_dashboard_build(state):
         state.message = f"Dashboard build failed: {exc}"
 
 
+def _refresh_variant_models(state):
+    provider = _selected_variant_provider(state)
+    if not provider or not ((provider.get("modelDiscovery") or {}).get("enabled")):
+        state.message = "This provider does not support model refresh."
+        return
+    if not _validate_variant_endpoint(state, provider):
+        return
+    endpoint = state.variant_base_url.strip() or str(provider.get("baseUrl") or "").strip()
+    try:
+        models = fetch_provider_models(endpoint, api_key=_variant_model_discovery_api_key(state))
+    except Exception as exc:
+        state.variant_model_choices = []
+        state.message = f"Model refresh failed: {exc}"
+        return
+    state.variant_model_choices = list(models)
+    if not state.variant_model_choices:
+        state.message = "Model refresh returned no models. Type aliases manually."
+        return
+    state.selected_index = 1
+    state.message = f"Loaded {len(state.variant_model_choices)} models. Select one to apply aliases."
+
+
+def _variant_model_discovery_api_key(state):
+    if state.variant_store_secret and state.variant_api_key.strip():
+        return state.variant_api_key.strip()
+    credential_env = state.variant_credential_env.strip()
+    if credential_env and credential_env in os.environ:
+        return os.environ[credential_env]
+    return None
+
+
 def _run_variant_create(state):
     provider = _selected_variant_provider(state)
     if provider is None:
@@ -1598,7 +1661,9 @@ def _run_variant_create(state):
         return
     name = state.variant_name.strip() or provider_default_variant_name(provider["key"])
     credential_env = _variant_credential_env_for_create(state, provider)
-    if credential_env and not provider.get("credentialOptional") and credential_env not in os.environ:
+    api_key = _variant_api_key_for_create(state)
+    store_secret = _variant_store_secret_for_create(state)
+    if credential_env and not store_secret and not provider.get("credentialOptional") and credential_env not in os.environ:
         state.message = f"Credential env {credential_env} is not set."
         return
     try:
@@ -1628,7 +1693,10 @@ def _run_variant_create(state):
             provider_key=provider["key"],
             claude_version="latest",
             tweaks=state.selected_variant_tweaks,
+            base_url=_variant_base_url_for_create(state, provider),
             credential_env=credential_env,
+            api_key=api_key,
+            store_secret=store_secret,
             model_overrides=_variant_model_overrides_for_create(state),
             mcp_ids=state.selected_variant_mcp_ids,
             force=False,

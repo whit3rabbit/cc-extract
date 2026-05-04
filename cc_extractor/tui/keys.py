@@ -29,7 +29,9 @@ def variant_accepts_text(state) -> bool:
     option = selected_variant_option(state)
     return option is not None and option.kind in {
         "variant-name",
+        "variant-endpoint",
         "variant-credential-env",
+        "variant-api-key",
         "variant-model",
     }
 
@@ -40,8 +42,14 @@ def variant_append_text(state, char: str) -> None:
         return
     if option.kind == "variant-name":
         state.variant_name += char
+    elif option.kind == "variant-endpoint":
+        state.variant_base_url += char
+        state.variant_model_choices = []
     elif option.kind == "variant-credential-env":
         state.variant_credential_env += char
+    elif option.kind == "variant-api-key":
+        state.variant_api_key += char
+        state.variant_model_choices = []
     elif option.kind == "variant-model":
         key = str(option.value)
         state.variant_model_overrides[key] = state.variant_model_overrides.get(key, "") + char
@@ -53,8 +61,14 @@ def variant_backspace(state) -> bool:
     option = selected_variant_option(state)
     if option.kind == "variant-name":
         state.variant_name = state.variant_name[:-1]
+    elif option.kind == "variant-endpoint":
+        state.variant_base_url = state.variant_base_url[:-1]
+        state.variant_model_choices = []
     elif option.kind == "variant-credential-env":
         state.variant_credential_env = state.variant_credential_env[:-1]
+    elif option.kind == "variant-api-key":
+        state.variant_api_key = state.variant_api_key[:-1]
+        state.variant_model_choices = []
     elif option.kind == "variant-model":
         key = str(option.value)
         state.variant_model_overrides[key] = state.variant_model_overrides.get(key, "")[:-1]

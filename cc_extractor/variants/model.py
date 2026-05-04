@@ -135,11 +135,16 @@ def list_variant_providers() -> List[Dict[str, object]]:
 
     providers = []
     for provider in list_providers():
+        section = str(provider.tui.get("section") or _default_provider_section(provider.key))
+        model_discovery = provider.tui.get("modelDiscovery") or {}
+        if not isinstance(model_discovery, dict):
+            model_discovery = {}
         providers.append(
             {
                 "key": provider.key,
                 "label": provider.label,
                 "description": provider.description,
+                "section": section,
                 "baseUrl": provider.base_url,
                 "authMode": provider.auth_mode,
                 "requiresModelMapping": provider.requires_model_mapping,
@@ -151,8 +156,17 @@ def list_variant_providers() -> List[Dict[str, object]]:
                 "envUnset": list(provider.env_unset),
                 "mcpServers": sorted(provider.mcp_servers),
                 "settingsPermissionsDeny": list(provider.settings_permissions_deny),
+                "modelDiscovery": dict(model_discovery),
                 "tui": dict(provider.tui),
                 "defaultVariantName": provider.default_variant_name or provider.key,
             }
         )
     return providers
+
+
+def _default_provider_section(provider_key: str) -> str:
+    if provider_key in {"mirror", "ccrouter"}:
+        return "pinned"
+    if provider_key in {"ollama", "lmstudio", "omlx", "local-custom"}:
+        return "local"
+    return "cloud"

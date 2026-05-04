@@ -184,6 +184,7 @@ def create_variant(
     claude_version: str = "latest",
     patch_profile_id: Optional[str] = None,
     tweaks: Optional[Iterable[str]] = None,
+    base_url: Optional[str] = None,
     credential_env: Optional[str] = None,
     api_key: Optional[str] = None,
     store_secret: bool = False,
@@ -205,6 +206,7 @@ def create_variant(
 
     provider_env = build_provider_env(
         provider_key,
+        base_url=base_url,
         api_key=api_key,
         credential_env=credential_env,
         store_secret=store_secret,

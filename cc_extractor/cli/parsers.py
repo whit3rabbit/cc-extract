@@ -91,6 +91,7 @@ def _build_variant_subcommands(subparsers):
     create.add_argument("--patch-profile", help="Patch profile id to apply")
     create.add_argument("--tweak", action="append", help="Curated tweak id, repeatable")
     create.add_argument("--mcp", action="append", help="Optional MCP server id, repeatable")
+    create.add_argument("--base-url", help="Override the provider endpoint URL")
     create.add_argument("--credential-env", help="Environment variable containing provider credentials")
     create.add_argument("--api-key", help="Provider credential to store locally, requires --store-secret")
     create.add_argument("--store-secret", action="store_true", help="Store --api-key in variant-local secrets.env")
@@ -130,4 +131,3 @@ def _build_variant_subcommands(subparsers):
     run = subparsers.add_parser("run", help="Run a variant wrapper")
     run.add_argument("name", help="Variant name or id")
     run.add_argument("variant_args", nargs=argparse.REMAINDER, help="Arguments passed to Claude Code")
-

@@ -54,8 +54,12 @@ class TuiState:
     variant_step: int = 0
     variant_provider_index: int = 0
     variant_name: str = ""
+    variant_base_url: str = ""
     variant_credential_env: str = ""
+    variant_api_key: str = ""
+    variant_store_secret: bool = False
     variant_model_overrides: Dict[str, str] = field(default_factory=dict)
+    variant_model_choices: List[str] = field(default_factory=list)
     selected_variant_mcp_ids: List[str] = field(default_factory=list)
     selected_variant_tweaks: List[str] = field(default_factory=lambda: list(DEFAULT_TWEAK_IDS))
     selected_setup_id: Optional[str] = None

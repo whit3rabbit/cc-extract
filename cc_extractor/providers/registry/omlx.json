@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "key": "omlx",
+  "label": "oMLX",
+  "description": "Local MLX-powered models through oMLX",
+  "displayOrder": 203,
+  "baseUrl": "http://localhost:8000",
+  "auth": {
+    "mode": "authToken",
+    "apiKeyLabel": "oMLX API key",
+    "credentialEnv": "OMLX_API_KEY",
+    "credentialOptional": true,
+    "authTokenFallback": "omlx",
+    "authTokenAlsoSetsApiKey": true
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "",
+    "sonnet": "",
+    "haiku": "",
+    "subagent": "",
+    "requiresModelMapping": true
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "defaultVariantName": "ccomlx",
+    "splashStyle": "omlx",
+    "noPromptPack": true,
+    "theme": {
+      "id": "omlx-variant",
+      "name": "oMLX",
+      "colors": {
+        "bashBorder": "rgb(122,162,247)",
+        "claude": "rgb(187,154,247)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "oMLX",
+    "section": "local",
+    "modelDiscovery": {
+      "enabled": true
+    },
+    "features": [
+      "Local oMLX server",
+      "MLX-optimized macOS models",
+      "Optional API key for custom local auth"
+    ],
+    "setupLinks": {
+      "docs": "https://omlx.ai/",
+      "apiKey": "https://omlx.ai/",
+      "subscribe": "https://omlx.ai/"
+    },
+    "setupNote": "Run oMLX locally, then keep the default endpoint or edit the port."
+  }
+}

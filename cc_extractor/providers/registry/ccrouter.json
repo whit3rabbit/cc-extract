@@ -49,6 +49,7 @@
   },
   "tui": {
     "headline": "CC Router",
+    "section": "pinned",
     "features": [
       "Generic local gateway at 127.0.0.1:3456",
       "Models are configured in Claude Code Router",

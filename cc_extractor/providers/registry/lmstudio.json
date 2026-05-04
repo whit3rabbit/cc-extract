@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "key": "lmstudio",
+  "label": "LM Studio",
+  "description": "Local OpenAI-compatible models through LM Studio",
+  "displayOrder": 202,
+  "baseUrl": "http://localhost:1234",
+  "auth": {
+    "mode": "authToken",
+    "apiKeyLabel": "LM Studio API key",
+    "credentialEnv": "LM_API_TOKEN",
+    "credentialOptional": true,
+    "authTokenFallback": "lmstudio",
+    "authTokenAlsoSetsApiKey": true
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "",
+    "sonnet": "",
+    "haiku": "",
+    "subagent": "",
+    "requiresModelMapping": true
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "defaultVariantName": "cclmstudio",
+    "splashStyle": "lmstudio",
+    "noPromptPack": true,
+    "theme": {
+      "id": "lmstudio-variant",
+      "name": "LM Studio",
+      "colors": {
+        "bashBorder": "rgb(84,173,179)",
+        "claude": "rgb(127,220,213)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "LM Studio",
+    "section": "local",
+    "modelDiscovery": {
+      "enabled": true
+    },
+    "features": [
+      "Local LM Studio server",
+      "OpenAI-compatible model list",
+      "Optional API key for protected local endpoints"
+    ],
+    "setupLinks": {
+      "docs": "https://lmstudio.ai/docs/integrations/claude-code",
+      "apiKey": "https://lmstudio.ai/docs/app/api/api-key",
+      "subscribe": "https://lmstudio.ai"
+    },
+    "setupNote": "Start the LM Studio local server, then keep the default endpoint or edit the port."
+  }
+}

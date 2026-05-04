@@ -10,6 +10,7 @@
     "apiKeyLabel": "Ollama API key, use \"ollama\" for local",
     "credentialEnv": "OLLAMA_API_KEY",
     "credentialOptional": true,
+    "authTokenFallback": "ollama",
     "authTokenAlsoSetsApiKey": true
   },
   "models": {
@@ -46,6 +47,10 @@
   },
   "tui": {
     "headline": "Ollama",
+    "section": "local",
+    "modelDiscovery": {
+      "enabled": true
+    },
     "features": [
       "Local or cloud Ollama endpoint",
       "qwen3-coder defaults",

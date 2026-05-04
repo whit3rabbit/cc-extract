@@ -96,7 +96,8 @@ AUTH_KEYS = {
 MODEL_KEYS = {"default", "smallFast", "opus", "sonnet", "haiku", "subagent", "requiresModelMapping"}
 VARIANT_KEYS = {"defaultVariantName", "splashStyle", "theme", "noPromptPack", "promptOverlays"}
 CLAUDE_CONFIG_KEYS = {"settingsPermissionsDeny", "mcpServers"}
-TUI_KEYS = {"headline", "features", "setupLinks", "setupNote"}
+TUI_KEYS = {"headline", "features", "setupLinks", "setupNote", "section", "modelDiscovery"}
+MODEL_DISCOVERY_KEYS = {"enabled"}
 MCP_SERVER_KEYS = {"type", "command", "args", "env", "url", "headers", "headersHelper", "oauth"}
 MCP_SERVER_TYPES = {"http", "stdio", "sse"}
 
@@ -151,6 +152,14 @@ def provider_from_json(payload: Dict[str, object]) -> ProviderTemplate:
         raise ProviderSchemaError(f"{key}.tui.features must be a list of strings")
     if "setupLinks" in tui:
         _string_map(_object(tui, "setupLinks"), f"{key}.tui.setupLinks")
+    if "section" in tui:
+        section = _string(tui, "section")
+        if section and section not in {"pinned", "cloud", "local"}:
+            raise ProviderSchemaError(f"{key}.tui.section must be pinned, cloud, or local")
+    if "modelDiscovery" in tui:
+        discovery = _object(tui, "modelDiscovery")
+        _require_keys(discovery, MODEL_DISCOVERY_KEYS, f"{key}.tui.modelDiscovery")
+        _bool(discovery, "enabled")
 
     credential_env = _optional_string(auth, "credentialEnv")
     if credential_env:

@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "key": "local-custom",
+  "label": "Custom Local Endpoint",
+  "description": "Custom local Anthropic or OpenAI-compatible endpoint",
+  "displayOrder": 204,
+  "baseUrl": "http://localhost:8000",
+  "auth": {
+    "mode": "authToken",
+    "apiKeyLabel": "Local API key",
+    "credentialEnv": "LOCAL_LLM_API_KEY",
+    "credentialOptional": true,
+    "authTokenFallback": "local-llm",
+    "authTokenAlsoSetsApiKey": true
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "",
+    "sonnet": "",
+    "haiku": "",
+    "subagent": "",
+    "requiresModelMapping": true
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "defaultVariantName": "cclocal",
+    "splashStyle": "local-custom",
+    "noPromptPack": true,
+    "theme": {
+      "id": "local-custom-variant",
+      "name": "Custom Local Endpoint",
+      "colors": {
+        "bashBorder": "rgb(156,163,175)",
+        "claude": "rgb(110,231,183)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "Custom Local Endpoint",
+    "section": "local",
+    "modelDiscovery": {
+      "enabled": true
+    },
+    "features": [
+      "Editable local endpoint",
+      "OpenAI-compatible model discovery",
+      "Optional local API key"
+    ],
+    "setupLinks": {},
+    "setupNote": "Use this for local gateways that expose /v1/models and Claude-compatible chat routes."
+  }
+}

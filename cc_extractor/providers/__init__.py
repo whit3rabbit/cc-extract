@@ -16,6 +16,11 @@ from .loader import (
     provider_prompt_overlays,
     provider_theme,
 )
+from .model_discovery import (
+    fetch_provider_models,
+    parse_model_ids,
+    provider_models_url,
+)
 from .mcp_catalog import (
     PLUGIN_RECOMMENDATIONS,
     McpCatalogEntry,
@@ -52,4 +57,7 @@ __all__ = [
     "provider_patch_config",
     "provider_prompt_overlays",
     "provider_theme",
+    "fetch_provider_models",
+    "parse_model_ids",
+    "provider_models_url",
 ]

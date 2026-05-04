@@ -355,13 +355,7 @@ def variant_options(state):
                 ))
         if state.variant_providers and state.mode not in {"variants", "first-run-setup"}:
             options.append(MenuOption("section", "Create setup provider"))
-        for index, provider in enumerate(state.variant_providers):
-            marker = "*" if index == state.variant_provider_index else " "
-            options.append(MenuOption(
-                "variant-provider",
-                f"{marker} {provider['key']}  {provider['label']} - {provider.get('description', '')} {_provider_markers(provider)}",
-                index,
-            ))
+        options.extend(_variant_provider_options(state))
         return options
     if state.variant_step == 1:
         name = state.variant_name or "(type a setup name)"
@@ -371,13 +365,29 @@ def variant_options(state):
         ]
     if state.variant_step == 2:
         provider = selected_variant_provider(state)
+        if provider is None:
+            credential = state.variant_credential_env or "(none)"
+            return [
+                MenuOption("variant-credential-env", f"Credential env: {credential}"),
+                MenuOption("variant-credentials-continue", "Continue to models"),
+            ]
+        if provider.get("authMode") == "none":
+            return [
+                MenuOption("section", "Credentials: not required"),
+                MenuOption("variant-credentials-continue", "Continue to models"),
+            ]
+        endpoint = state.variant_base_url or str(provider.get("baseUrl") or "")
         credential = state.variant_credential_env or "(none)"
-        if provider and provider.get("authMode") == "none":
-            credential = "(not required)"
-        return [
+        store_marker = "[x]" if state.variant_store_secret else "[ ]"
+        options = [
+            MenuOption("variant-endpoint", f"Endpoint: {endpoint or '(set endpoint)'}"),
             MenuOption("variant-credential-env", f"Credential env: {credential}"),
-            MenuOption("variant-credentials-continue", "Continue to models"),
+            MenuOption("variant-store-secret", f"{store_marker} Store API key locally"),
         ]
+        if state.variant_store_secret:
+            options.append(MenuOption("variant-api-key", f"API key: {_masked_secret(state.variant_api_key)}"))
+        options.append(MenuOption("variant-credentials-continue", "Continue to models"))
+        return options
     if state.variant_step == 3:
         provider = selected_variant_provider(state)
         options = []
@@ -412,6 +422,15 @@ def variant_options(state):
                 MenuOption("variant-models-continue", "Continue to tweaks"),
             ]
         options = []
+        if _provider_model_discovery_enabled(provider):
+            options.append(MenuOption("variant-model-refresh", "Refresh model list"))
+            if state.variant_model_choices:
+                for model_id in state.variant_model_choices:
+                    selected = _model_choice_selected(state, model_id)
+                    marker = "*" if selected else " "
+                    options.append(MenuOption("variant-model-choice", f"{marker} {model_id}", model_id))
+            else:
+                options.append(MenuOption("section", "No models loaded"))
         for key, label in VARIANT_MODEL_FIELDS:
             value = variant_model_display_value(state, provider, key)
             source = "override" if state.variant_model_overrides.get(key, "").strip() else "default"
@@ -437,6 +456,64 @@ def variant_options(state):
     ]
 
 
+def _variant_provider_options(state):
+    options = []
+    for provider in _providers_for_section(state, "pinned"):
+        options.append(_variant_provider_option(state, provider))
+    cloud = _providers_for_section(state, "cloud")
+    if cloud:
+        options.append(MenuOption("section", "Cloud Providers"))
+        options.extend(_variant_provider_option(state, provider) for provider in cloud)
+    local = _providers_for_section(state, "local")
+    if local:
+        options.append(MenuOption("section", "Local LLMs"))
+        options.extend(_variant_provider_option(state, provider) for provider in local)
+    return options
+
+
+def _providers_for_section(state, section):
+    providers = [
+        (index, provider)
+        for index, provider in enumerate(state.variant_providers)
+        if str(provider.get("section") or _default_provider_section(provider.get("key"))) == section
+    ]
+    if section == "pinned":
+        order = {"mirror": 0, "ccrouter": 1}
+        providers.sort(key=lambda item: (order.get(item[1].get("key"), 99), item[1].get("label", "")))
+    return providers
+
+
+def _default_provider_section(provider_key):
+    if provider_key in {"mirror", "ccrouter"}:
+        return "pinned"
+    if provider_key in {"ollama", "lmstudio", "omlx", "local-custom"}:
+        return "local"
+    return "cloud"
+
+
+def _variant_provider_option(state, item):
+    index, provider = item
+    return MenuOption(
+        "variant-provider",
+        f"{provider['key']}  {provider['label']} - {provider.get('description', '')} {_provider_markers(provider)}",
+        index,
+    )
+
+
+def _masked_secret(value):
+    return "set" if str(value or "").strip() else "not set"
+
+
+def _provider_model_discovery_enabled(provider):
+    discovery = (provider or {}).get("modelDiscovery") or {}
+    return bool(discovery.get("enabled"))
+
+
+def _model_choice_selected(state, model_id):
+    overrides = state.variant_model_overrides or {}
+    return bool(overrides) and all(overrides.get(key) == model_id for key, _label in VARIANT_MODEL_FIELDS)
+
+
 def _provider_markers(provider):
     markers = []
     auth_mode = provider.get("authMode") or "apiKey"
@@ -445,8 +522,10 @@ def _provider_markers(provider):
         markers.append("credential:optional")
     if provider.get("requiresModelMapping"):
         markers.append("model-map:required")
-    if provider.get("baseUrl", "").startswith(("http://127.0.0.1", "http://localhost")):
+    if provider.get("section") == "local" or provider.get("baseUrl", "").startswith(("http://127.0.0.1", "http://localhost")):
         markers.append("local")
+    if _provider_model_discovery_enabled(provider):
+        markers.append("models:refresh")
     markers.append("prompt-pack:off" if provider.get("noPromptPack") else "prompt-pack:on")
     if provider.get("mcpServers"):
         markers.append("mcp")
