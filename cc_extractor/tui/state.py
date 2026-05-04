@@ -54,6 +54,7 @@ class TuiState:
     variant_step: int = 0
     variant_provider_index: int = 0
     variant_name: str = ""
+    variant_claude_version: str = "latest"
     variant_base_url: str = ""
     variant_credential_env: str = ""
     variant_api_key: str = ""

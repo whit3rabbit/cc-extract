@@ -186,7 +186,7 @@ def create_preview_labels(state):
         f"Setup: {name or '(unnamed)'}",
         f"Setup id: {setup_id}",
         f"Provider: {provider.get('key') or '?'}",
-        "Claude Code: latest",
+        f"Claude Code: {state.variant_claude_version or 'latest'}",
         f"Command: {command}",
         *_create_preview_endpoint_lines(state, provider),
         f"Credential env: {_create_preview_credential(state, provider)}",
@@ -638,7 +638,7 @@ def context_hint(state):
         return "Profile names: select Name, then type or Backspace."
     if state.mode in {"variants", "first-run-setup"}:
         if state.variant_step == 1:
-            return "Setup names: select Name, then type or Backspace."
+            return "Setup names: select Name, then type or Backspace. Choose a Claude Code version if needed."
         if state.variant_step == 2:
             return "Credentials: edit endpoint/env, toggle local API key storage with Space."
         if state.variant_step == 3:
@@ -795,4 +795,3 @@ def layout_heights(height):
         return 0, 5
     footer_height = min(2, max(0, height - 1))
     return 0, footer_height
-

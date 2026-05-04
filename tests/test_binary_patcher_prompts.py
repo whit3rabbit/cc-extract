@@ -78,6 +78,30 @@ def test_apply_prompts_escapes_template_literal_overlay_text():
     assert "Use `npx zai-cli`" not in result.js
 
 
+def test_apply_prompts_detects_template_literal_with_apostrophe_before_anchor():
+    fixture = "let EXPLORE=`Earlier text mentions the user's goal. Complete the user's search request efficiently and report your findings clearly.`;"
+
+    result = apply_prompts(fixture, {"explore": "Prefix commands with `rtk`."})
+
+    assert result.replaced_targets == ["explore"]
+    assert "Prefix commands with \\`rtk\\`." in result.js
+    assert "Prefix commands with `rtk`." not in result.js
+
+
+def test_apply_prompts_detects_template_literal_after_nested_template_expression():
+    fixture = (
+        "let PLAN=`Use ${isWindows ? `PowerShell` : `Bash`} for the user's shell.\n"
+        "REMEMBER: You can ONLY explore and plan. You CANNOT and MUST NOT write, edit, or modify any files. "
+        "You do NOT have access to file editing tools.`;"
+    )
+
+    result = apply_prompts(fixture, {"planEnhanced": "Prefix commands with `rtk`."})
+
+    assert result.replaced_targets == ["planEnhanced"]
+    assert "Prefix commands with \\`rtk\\`." in result.js
+    assert "Prefix commands with `rtk`." not in result.js
+
+
 def test_apply_prompts_empty_overlays_noop():
     fixture = build_fixture()
     result = apply_prompts(fixture, {})

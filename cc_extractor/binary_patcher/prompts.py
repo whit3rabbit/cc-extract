@@ -77,10 +77,77 @@ def apply_prompts(js, overlays):
 
 
 def _detect_delimiter(js, index):
-    start = max(0, index - 8192)
-    for pos in range(index - 1, start - 1, -1):
-        if js[pos] in ("`", '"', "'"):
-            return js[pos]
+    stack = ["normal"]
+    escaped = False
+    pos = 0
+    while pos < index:
+        ch = js[pos]
+        nxt = js[pos + 1] if pos + 1 < len(js) else ""
+        mode = stack[-1]
+        if mode == "line-comment":
+            if ch in "\r\n":
+                stack.pop()
+        elif mode == "block-comment":
+            if ch == "*" and nxt == "/":
+                stack.pop()
+                pos += 1
+        elif isinstance(mode, tuple) and mode[0] == "string":
+            delim = mode[1]
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == delim:
+                stack.pop()
+        elif mode == "template":
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == "$" and nxt == "{":
+                stack.append(("template-expr", 1))
+                pos += 1
+            elif ch == "`":
+                stack.pop()
+        elif isinstance(mode, tuple) and mode[0] == "template-expr":
+            depth = mode[1]
+            if ch == "/" and nxt == "/":
+                stack.append("line-comment")
+                pos += 1
+            elif ch == "/" and nxt == "*":
+                stack.append("block-comment")
+                pos += 1
+            elif ch in ('"', "'"):
+                stack.append(("string", ch))
+                escaped = False
+            elif ch == "`":
+                stack.append("template")
+                escaped = False
+            elif ch == "{":
+                stack[-1] = ("template-expr", depth + 1)
+            elif ch == "}":
+                if depth <= 1:
+                    stack.pop()
+                else:
+                    stack[-1] = ("template-expr", depth - 1)
+        elif ch == "/" and nxt == "/":
+            stack.append("line-comment")
+            pos += 1
+        elif ch == "/" and nxt == "*":
+            stack.append("block-comment")
+            pos += 1
+        elif ch in ('"', "'"):
+            stack.append(("string", ch))
+            escaped = False
+        elif ch == "`":
+            stack.append("template")
+            escaped = False
+        pos += 1
+    mode = stack[-1]
+    if mode == "template":
+        return "`"
+    if isinstance(mode, tuple) and mode[0] == "string":
+        return mode[1]
     return "`"
 
 

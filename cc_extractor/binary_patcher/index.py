@@ -60,6 +60,21 @@ NATIVE_REGEX_TWEAK_IDS = {
 }
 
 
+def _pad_shrunk_macho_entry(js: str, pad_len: int) -> bytes:
+    encoded = js.encode("utf-8")
+    if pad_len <= 0:
+        return encoded
+
+    stripped = js.rstrip()
+    trailer = js[len(stripped):]
+    if js.startswith("// @bun") and stripped.endswith("})"):
+        # Bun's CJS wrapper check is sensitive to padding after the closing wrapper.
+        padded = (stripped[:-2] + (" " * pad_len) + "})" + trailer).encode("utf-8")
+        if len(padded) == len(encoded) + pad_len:
+            return padded
+    return encoded + (b" " * pad_len)
+
+
 def apply_patches(inputs):
     """Apply theme and prompt patches to a native binary."""
     if isinstance(inputs, dict):
@@ -92,10 +107,13 @@ def apply_patches(inputs):
         return PatchFailure(ok=False, reason="io-error", detail=f"apply_theme: {exc}")
 
     missing_prompt_keys = []
+    skipped_reason = None
     if inputs.overlays:
         prompt_result = apply_prompts(new_js, inputs.overlays)
         new_js = prompt_result.js
         missing_prompt_keys = prompt_result.missing
+        if info.platform == "macho" and len(new_js.encode("utf-8")) > old_entry_len:
+            skipped_reason = "macho-grow-not-supported"
 
     curated_applied = []
     curated_skipped = []
@@ -108,7 +126,7 @@ def apply_patches(inputs):
             reason="tweak-failed",
             detail=f"unsupported native regex tweak(s): {', '.join(unsupported)}",
         )
-    if regex_tweaks:
+    if regex_tweaks and not skipped_reason:
         try:
             regex_result = apply_regex_patches(
                 new_js,
@@ -130,16 +148,16 @@ def apply_patches(inputs):
 
     bytes_changed = 0
     write_data = None
-    skipped_reason = None
     new_content = new_js.encode("utf-8")
 
     if info.platform == "macho":
-        delta = len(new_content) - old_entry_len
-        if delta > 0:
-            skipped_reason = "macho-grow-not-supported"
-        else:
+        if not skipped_reason:
+            delta = len(new_content) - old_entry_len
+            if delta > 0:
+                skipped_reason = "macho-grow-not-supported"
+        if not skipped_reason:
             if delta < 0:
-                new_content += b" " * (-delta)
+                new_content = _pad_shrunk_macho_entry(new_js, -delta)
             try:
                 write_data = replace_module(data, info, entry.name, new_content).buf
             except Exception as exc:

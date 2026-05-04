@@ -20,6 +20,7 @@ def reset_variant(state):
     state.variant_step = 0
     state.selected_index = 0
     state.variant_name = ""
+    state.variant_claude_version = "latest"
     state.variant_base_url = ""
     state.variant_credential_env = ""
     state.variant_api_key = ""

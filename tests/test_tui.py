@@ -1024,10 +1024,61 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     assert calls[0]["provider_key"] == "mirror"
     assert calls[0]["name"] == "mirror"
     assert calls[0]["credential_env"] is None
+    assert calls[0]["claude_version"] == "latest"
     assert calls[0]["model_overrides"] == {}
     assert calls[0]["mcp_ids"] == ["github"]
     assert first_tweak not in calls[0]["tweaks"]
     assert state.mode == "health-result"
+
+
+def test_variants_wizard_selects_specific_claude_code_version_for_create(monkeypatch, tmp_path):
+    calls = []
+
+    class Result:
+        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "mirror"
+
+    def fake_create_variant(**kwargs):
+        calls.append(kwargs)
+        return Result()
+
+    monkeypatch.setattr(tui, "create_variant", fake_create_variant)
+    monkeypatch.setattr(tui, "doctor_variant", lambda name: [{"id": name, "ok": True, "checks": []}])
+    monkeypatch.setattr(tui, "_refresh_state", lambda state_arg: True)
+    state = tui.TuiState(
+        mode="variants",
+        variant_step=1,
+        variant_name="mirror",
+        download_index={"binary": {"latest": "2.1.123"}},
+        download_versions=["2.1.123", "2.1.122"],
+        variant_providers=[
+            {
+                "key": "mirror",
+                "label": "Mirror Claude",
+                "authMode": "none",
+                "models": {},
+                "defaultVariantName": "mirror",
+            }
+        ],
+    )
+
+    options = tui._variant_options(state)
+    labels = [option.label for option in options]
+    assert "* Claude Code: latest native binary (2.1.123)" in labels
+    state.selected_index = next(index for index, option in enumerate(options) if option.value == "2.1.122")
+
+    tui._activate_variants(state)
+
+    assert state.variant_claude_version == "2.1.122"
+    assert state.message == "Claude Code version: 2.1.122"
+    labels = [option.label for option in tui._variant_options(state)]
+    assert "* Claude Code: 2.1.122" in labels
+
+    state.mode = "create-preview"
+    assert "Claude Code: 2.1.122" in tui._screen_text(state)
+
+    tui._run_variant_create(state)
+
+    assert calls[0]["claude_version"] == "2.1.122"
 
 
 def test_variants_credentials_step_edits_endpoint_and_stored_key():

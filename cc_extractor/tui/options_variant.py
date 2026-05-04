@@ -2,7 +2,7 @@
 
 from ..providers import PLUGIN_RECOMMENDATIONS, list_optional_mcp_entries
 from ..variant_tweaks import CURATED_TWEAK_IDS, DEFAULT_TWEAK_IDS
-from ._const import MenuOption, VARIANT_MODEL_FIELDS, VARIANT_STEPS
+from ._const import MenuOption, SOURCE_LATEST, VARIANT_MODEL_FIELDS, VARIANT_STEPS
 from .options_tweaks import _tweak_display_name
 
 def variant_options(state):
@@ -26,6 +26,8 @@ def variant_options(state):
         return [
             MenuOption("variant-name", f"Name: {name}"),
             MenuOption("variant-name-continue", "Continue to credentials"),
+            MenuOption("section", "Claude Code version"),
+            *_variant_version_options(state),
         ]
     if state.variant_step == 2:
         provider = selected_variant_provider(state)
@@ -132,6 +134,35 @@ def _variant_provider_options(state):
         options.append(MenuOption("section", "Local LLMs"))
         options.extend(_variant_provider_option(state, provider) for provider in local)
     return options
+
+def _variant_version_options(state):
+    selected = state.variant_claude_version or SOURCE_LATEST
+    latest = (state.download_index.get("binary") or {}).get("latest")
+    latest_label = "Claude Code: latest native binary"
+    if latest:
+        latest_label = f"{latest_label} ({latest})"
+    options = [
+        MenuOption(
+            "variant-version-latest",
+            _variant_version_label(selected == SOURCE_LATEST, latest_label),
+            SOURCE_LATEST,
+        ),
+        MenuOption("variant-version-refresh", "Refresh version list"),
+    ]
+    for version in state.download_versions:
+        suffix = " (latest)" if version == latest else ""
+        label = f"Claude Code: {version}{suffix}"
+        options.append(
+            MenuOption(
+                "variant-version",
+                _variant_version_label(selected == version, label),
+                version,
+            )
+        )
+    return options
+
+def _variant_version_label(selected, label):
+    return f"* {label}" if selected else f"  {label}"
 
 def _providers_for_section(state, section):
     providers = [
@@ -421,4 +452,3 @@ def variant_summary(state):
         f"Model overrides: {model_count}  "
         f"Tweaks: {len(state.selected_variant_tweaks)}"
     )
-

@@ -24,6 +24,10 @@ def build_entry_js():
     )
 
 
+def wrap_bun_cjs(body):
+    return f"// @bun @bytecode @bun-cjs\n(function(exports, require, module, __filename, __dirname) {{{body}}})"
+
+
 def build_config():
     return {"settings": {"themes": THEMES}}
 
@@ -114,6 +118,43 @@ def test_apply_patches_macho_growth_skips_without_writing(tmp_path):
             binary_path=str(binary_path),
             config=build_config(),
             overlays={"webfetch": "Use zai-cli read instead."},
+        )
+    )
+
+    assert result.ok is True
+    assert result.skipped_reason == "macho-grow-not-supported"
+    assert binary_path.read_bytes() == original
+
+
+def test_apply_patches_macho_shrink_keeps_bun_cjs_wrapper_at_end(tmp_path):
+    entry_js = wrap_bun_cjs(build_entry_js() + ',R.createElement(B,{isBeforeFirstMessage:!1}),')
+    binary_path = write_fixture(tmp_path, "macho", entry_js=entry_js)
+
+    result = apply_patches(
+        PatchInputs(
+            binary_path=str(binary_path),
+            regex_tweaks=["hide-startup-banner"],
+        )
+    )
+
+    assert result.ok is True
+    assert result.skipped_reason is None
+    new_js = read_entry_js(binary_path)
+    assert 'R.createElement(B,{isBeforeFirstMessage:!1})' not in new_js
+    assert new_js.endswith("})")
+
+
+def test_apply_patches_macho_prompt_growth_is_not_masked_by_later_shrink(tmp_path):
+    startup_banner = 'function Startup(){let x="Apple_Terminal Welcome to Claude Code ' + ("x" * 500) + '";return x}'
+    entry_js = wrap_bun_cjs(build_entry_js() + startup_banner)
+    binary_path = write_fixture(tmp_path, "macho", entry_js=entry_js)
+    original = binary_path.read_bytes()
+
+    result = apply_patches(
+        PatchInputs(
+            binary_path=str(binary_path),
+            overlays={"webfetch": "Use provider-specific fetch routing." * 10},
+            regex_tweaks=["hide-startup-banner"],
         )
     )
 

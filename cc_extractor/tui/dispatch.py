@@ -582,6 +582,14 @@ def _activate_variants(state):
             state.message = "Type a setup name first."
             return
         _tui()._advance_variant(state)
+    elif option.kind == "variant-version-latest":
+        state.variant_claude_version = "latest"
+        state.message = "Claude Code version: latest"
+    elif option.kind == "variant-version":
+        state.variant_claude_version = str(option.value)
+        state.message = f"Claude Code version: {state.variant_claude_version}"
+    elif option.kind == "variant-version-refresh":
+        _tui()._refresh_dashboard_index(state)
     elif option.kind == "variant-credential-env":
         state.message = "Type a credential environment variable name."
     elif option.kind == "variant-endpoint":
@@ -655,4 +663,3 @@ def _activate_patch_packages(state):
         _tui()._set_mode(state, "patch-source")
     except Exception as exc:
         state.message = f"Patch failed: {exc}"
-

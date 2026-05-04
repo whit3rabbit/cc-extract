@@ -771,7 +771,7 @@ def _run_variant_create(state):
             create_variant,
             name=name,
             provider_key=provider["key"],
-            claude_version="latest",
+            claude_version=state.variant_claude_version or "latest",
             tweaks=state.selected_variant_tweaks,
             base_url=_tui()._variant_base_url_for_create(state, provider),
             credential_env=credential_env,
@@ -831,4 +831,3 @@ def _run_variant_create(state):
         message = state.message
         _tui()._set_mode(state, "error")
         state.message = message
-
