@@ -1,6 +1,7 @@
 import pytest
 
 from cc_extractor.patches import PatchContext
+from cc_extractor.patches._registry import REGISTRY
 from cc_extractor.patches.opusplan1m import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
@@ -9,16 +10,35 @@ def test_synthetic_applies(cli_js_synthetic):
     js = cli_js_synthetic("opusplan1m")
     outcome = PATCH.apply(js, PatchContext(claude_version=None))
     assert outcome.status == "applied"
+    assert 'if((currentModel()==="opusplan"||currentModel()==="opusplan[1m]")&&mode==="plan"' in outcome.js
     assert 'currentModel()==="opusplan[1m]"' in outcome.js
     assert '"opusplan","opusplan[1m]"' in outcome.js
-    assert 'if(A==="opusplan[1m]")return"Opus 4.6 in plan mode, else Sonnet 4.6 (1M context)"' in outcome.js
-    assert 'if(A==="opusplan[1m]")return"Opus Plan 1M"' in outcome.js
+    assert 'if(A==="opusplan[1m]")return"Architect mode: planner model in plan mode, worker model otherwise"' in outcome.js
+    assert 'if(A==="opusplan[1m]")return"Architect Mode"' in outcome.js
     assert 'value:"opusplan[1m]"' in outcome.js
+    assert 'label:"Architect Mode"' in outcome.js
+
+
+def test_synthetic_is_idempotent(cli_js_synthetic):
+    js = cli_js_synthetic("opusplan1m")
+    once = PATCH.apply(js, PatchContext(claude_version=None))
+    twice = PATCH.apply(once.js, PatchContext(claude_version=None))
+    assert twice.status == "skipped"
+    assert twice.js == once.js
+    assert twice.js.count('"opusplan[1m]"') == once.js.count('"opusplan[1m]"')
+
+
+def test_miss_when_anchor_absent():
+    outcome = PATCH.apply("function unrelated(){return null}", PatchContext(claude_version=None))
+    assert outcome.status == "missed"
+    assert outcome.notes
 
 
 def test_metadata():
     assert PATCH.id == "opusplan1m"
+    assert PATCH.name == "Architect Mode"
     assert PATCH.group == "ui"
+    assert REGISTRY["opusplan1m"] is PATCH
 
 
 @pytest.mark.parametrize("version", resolve_tested_versions(PATCH))
