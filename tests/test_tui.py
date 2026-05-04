@@ -841,6 +841,91 @@ def test_variants_provider_selection_groups_pinned_cloud_and_local():
     assert provider_labels[6].startswith("lmstudio  LM Studio")
 
 
+def _provider_selector_fixture():
+    return [
+        {
+            "key": "mirror",
+            "label": "Mirror Claude",
+            "description": "Pure Claude",
+            "section": "pinned",
+            "authMode": "none",
+            "credentialEnv": "",
+            "baseUrl": "",
+            "models": {},
+            "defaultVariantName": "mirror",
+            "tui": {
+                "headline": "Mirror Claude",
+                "features": ["Pure Claude Code behavior", "No provider credential required"],
+                "setupNote": "Uses normal Claude authentication.",
+            },
+        },
+        {
+            "key": "zai",
+            "label": "Z.ai Cloud",
+            "description": "GLM provider with official MCP defaults",
+            "section": "cloud",
+            "authMode": "apiKey",
+            "credentialEnv": "Z_AI_API_KEY",
+            "baseUrl": "https://api.z.ai/api/anthropic",
+            "requiresModelMapping": False,
+            "noPromptPack": False,
+            "models": {"sonnet": "glm-5-turbo", "opus": "glm-5.1"},
+            "mcpServers": ["web-reader"],
+            "settingsPermissionsDeny": ["mcp__zai__web_search"],
+            "envUnset": ["CLAUDE_CODE_USE_BEDROCK"],
+            "modelDiscovery": {"enabled": True},
+            "defaultVariantName": "zai",
+            "tui": {
+                "headline": "Z.ai Coding Plan",
+                "features": ["Official Z.ai MCP servers registered"],
+                "setupLinks": {"docs": "https://z.ai/docs"},
+                "setupNote": "Provide Z_AI_API_KEY.",
+            },
+        },
+    ]
+
+
+def test_provider_selector_screen_text_includes_highlighted_details():
+    state = tui.TuiState(
+        mode="first-run-setup",
+        selected_index=2,
+        variant_providers=_provider_selector_fixture(),
+    )
+
+    screen = tui._screen_text(state, height=40)
+
+    assert "Provider details" in screen
+    assert "Z.ai Coding Plan" in screen
+    assert "GLM provider with official MCP defaults" in screen
+    assert "Credential env: Z_AI_API_KEY" in screen
+    assert "MCP servers: web-reader" in screen
+    assert "Settings deny: mcp__zai__web_search" in screen
+    assert "docs: https://z.ai/docs" in screen
+
+
+def test_provider_selector_two_pane_renders_at_typical_widths():
+    state = tui.TuiState(
+        mode="variants",
+        variant_providers=_provider_selector_fixture(),
+        theme_id="hacker-bbs",
+    )
+
+    for width, height in ((100, 30), (80, 24)):
+        screen = _render_screen(state, width, height)
+        assert "Create setup: Provider" in screen
+        assert "Provider details" in screen
+        assert "Mirror Claude" in screen
+        assert "Auth: none" in screen
+
+    assert "No provider credential required" in _render_screen(state, 100, 30)
+
+    state.selected_index = 2
+    screen = _render_screen(state, 100, 30)
+
+    assert "Z.ai Coding Plan" in screen
+    assert "Credential env: Z_AI_API_KEY" in screen
+
+
 def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch, tmp_path):
     calls = []
     create_started = threading.Event()

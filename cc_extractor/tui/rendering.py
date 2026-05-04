@@ -6,6 +6,7 @@ functions.
 """
 
 import os
+import textwrap
 from typing import Optional
 
 from ..variants.model import default_bin_dir, variant_id_from_name
@@ -37,6 +38,8 @@ from .options import (
     tweaks_edit_options,
     tweaks_source_options,
     unsupported_pending_tweaks,
+    variant_provider_detail_lines,
+    variant_provider_selector_labels,
     variant_options,
     variant_title,
 )
@@ -758,6 +761,8 @@ def screen_text(state, height=24):
     body_height = max(3, height - top_height - footer_height)
 
     title, labels = current_labels(state)
+    if _variant_provider_selector_active(state):
+        labels = variant_provider_selector_labels(state)
     lines = [panel_title(state, title), context_line(state), ""]
     cursor = selected_label_index(state)
     visible = visible_items(labels, cursor, max(1, body_height - 4))
@@ -769,6 +774,12 @@ def screen_text(state, height=24):
             lines.append(prefix + label)
     else:
         lines.append("  " + empty_text(state))
+
+    if _variant_provider_selector_active(state):
+        lines.append("")
+        lines.append("Provider details")
+        for line in variant_provider_detail_lines(state):
+            lines.append("  " + line)
 
     if state.mode in {"tweaks-edit", "tweak-editor"} and not state.tweak_apply_preview:
         added, removed = tweak_diff(state)
@@ -954,6 +965,8 @@ def _box_rows(title, content_rows, width, height, role):
 
 def _body_content_rows(state, height):
     _, labels = current_labels(state)
+    if _variant_provider_selector_active(state):
+        labels = variant_provider_selector_labels(state)
     cursor = selected_label_index(state)
     visible = visible_items(labels, cursor, max(1, height))
     if not visible:
@@ -1021,6 +1034,44 @@ def _tweaks_detail_box_rows(state, width, height):
     return _box_rows("Tweak details", detail_rows, width, height, "body")
 
 
+def _variant_provider_selector_active(state):
+    return state.mode in {"variants", "first-run-setup"} and state.variant_step == 0
+
+
+def _provider_detail_box_rows(state, width, height):
+    content_width = max(1, width - 2)
+    detail_rows = [
+        (line, "body")
+        for line in _wrap_detail_lines(variant_provider_detail_lines(state), content_width)
+    ]
+    return _box_rows("Provider details", detail_rows, width, height, "body")
+
+
+def _wrap_detail_lines(lines, width):
+    wrapped = []
+    for line in lines:
+        text = str(line)
+        if not text:
+            wrapped.append("")
+            continue
+        if text.startswith("- "):
+            wrapped.extend(textwrap.wrap(
+                text,
+                width=max(1, width),
+                subsequent_indent="  ",
+                break_long_words=False,
+                break_on_hyphens=False,
+            ) or [""])
+            continue
+        wrapped.extend(textwrap.wrap(
+            text,
+            width=max(1, width),
+            break_long_words=False,
+            break_on_hyphens=False,
+        ) or [""])
+    return wrapped
+
+
 def _combine_segment_rows(left_rows, right_rows, gap_width):
     gap = " " * max(0, gap_width)
     rows = []
@@ -1037,6 +1088,17 @@ def _tweaks_two_pane_rows(state, width, height):
     right_width = max(1, width - gap - left_width)
     left_rows = _body_box_rows(state, left_width, height)
     right_rows = _tweaks_detail_box_rows(state, right_width, height)
+    return _combine_segment_rows(left_rows, right_rows, gap)
+
+
+def _provider_selector_two_pane_rows(state, width, height):
+    if width <= 1:
+        return _body_box_rows(state, width, height)
+    gap = 1
+    left_width = max(1, int((width - gap) * 0.42))
+    right_width = max(1, width - gap - left_width)
+    left_rows = _body_box_rows(state, left_width, height)
+    right_rows = _provider_detail_box_rows(state, right_width, height)
     return _combine_segment_rows(left_rows, right_rows, gap)
 
 
@@ -1083,7 +1145,9 @@ def _frame_rows(state, width, height):
     body_height = max(1, height - top_height - footer_height)
 
     rows = []
-    if state.mode in {"tweaks-edit", "tweak-editor"} and not state.tweak_apply_preview and width > 60:
+    if _variant_provider_selector_active(state) and width > 72 and body_height >= 10:
+        rows.extend(_provider_selector_two_pane_rows(state, width, body_height))
+    elif state.mode in {"tweaks-edit", "tweak-editor"} and not state.tweak_apply_preview and width > 60:
         rows.extend(_tweaks_two_pane_rows(state, width, body_height))
     else:
         rows.extend(_body_box_rows(state, width, body_height))
