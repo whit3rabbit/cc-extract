@@ -500,6 +500,125 @@ def _variant_provider_option(state, item):
     )
 
 
+def variant_provider_selector_labels(state):
+    labels = []
+    for option in variant_options(state):
+        if option.kind == "variant-provider":
+            labels.append(_variant_provider_row_label(_provider_by_index(state, option.value)))
+        else:
+            labels.append(option.label)
+    return labels
+
+
+def variant_provider_detail_lines(state):
+    provider = _highlighted_variant_provider(state)
+    if provider is None:
+        return ["No provider selected."]
+
+    tui = provider.get("tui") or {}
+    headline = str(tui.get("headline") or provider.get("label") or provider.get("key") or "Provider")
+    description = str(provider.get("description") or "No description.")
+    lines = [
+        headline,
+        "",
+        description,
+        "",
+        "Configuration",
+        f"Provider key: {provider.get('key') or '?'}",
+        f"Section: {provider.get('section') or _default_provider_section(provider.get('key'))}",
+        f"Auth: {provider.get('authMode') or 'apiKey'}",
+        f"Credential env: {provider.get('credentialEnv') or 'not required'}",
+        f"Endpoint: {provider.get('baseUrl') or 'provider default'}",
+        f"Model mapping: {'required' if provider.get('requiresModelMapping') else 'provider defaults'}",
+        f"Model discovery: {'enabled' if _provider_model_discovery_enabled(provider) else 'not available'}",
+        "",
+        "Enabled by default",
+        f"Prompt pack: {'off' if provider.get('noPromptPack') else 'on'}",
+        f"MCP servers: {_list_or_none(provider.get('mcpServers'))}",
+        f"Settings deny: {_list_or_none(provider.get('settingsPermissionsDeny'))}",
+        f"Env unset: {_list_or_none(provider.get('envUnset'))}",
+    ]
+
+    model_lines = _provider_model_lines(provider)
+    if model_lines:
+        lines.extend(["", "Models", *model_lines])
+
+    features = _string_list(tui.get("features"))
+    if features:
+        lines.extend(["", "Features", *[f"- {feature}" for feature in features]])
+
+    setup_note = str(tui.get("setupNote") or "").strip()
+    if setup_note:
+        lines.extend(["", "Setup note", setup_note])
+
+    links = tui.get("setupLinks") or {}
+    if isinstance(links, dict) and links:
+        lines.extend(["", "Setup links"])
+        for key, value in sorted(links.items()):
+            lines.append(f"{key}: {value}")
+
+    return lines
+
+
+def _variant_provider_row_label(provider):
+    if not provider:
+        return "unknown provider"
+    key = str(provider.get("key") or "?")
+    label = str(provider.get("label") or key)
+    markers = []
+    auth_mode = provider.get("authMode") or "apiKey"
+    if auth_mode == "none":
+        markers.append("no-auth")
+    else:
+        markers.append(str(auth_mode))
+    if provider.get("requiresModelMapping"):
+        markers.append("model-map")
+    if provider.get("mcpServers"):
+        markers.append("mcp")
+    if provider.get("section") == "local" or provider.get("baseUrl", "").startswith(("http://127.0.0.1", "http://localhost")):
+        markers.append("local")
+    return f"{key}  {label} [{', '.join(markers)}]"
+
+
+def _highlighted_variant_provider(state):
+    option = selected_variant_option(state)
+    if option is not None and option.kind == "variant-provider":
+        return _provider_by_index(state, option.value)
+    return selected_variant_provider(state)
+
+
+def _provider_by_index(state, value):
+    try:
+        index = int(value)
+    except (TypeError, ValueError):
+        return None
+    if index < 0 or index >= len(state.variant_providers):
+        return None
+    return state.variant_providers[index]
+
+
+def _list_or_none(values):
+    values = [str(value) for value in (values or []) if str(value)]
+    return ", ".join(values) if values else "none"
+
+
+def _provider_model_lines(provider):
+    models = provider.get("models") or {}
+    if not isinstance(models, dict) or not models:
+        return []
+    return [
+        f"{key}: {value}"
+        for key, value in sorted(models.items())
+        if str(value).strip()
+    ]
+
+
+def _string_list(value):
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
+
+
 def _masked_secret(value):
     return "set" if str(value or "").strip() else "not set"
 
