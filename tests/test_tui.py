@@ -320,6 +320,7 @@ def test_dashboard_tweak_ids_include_latest_safe_ports():
     assert "token-count-rounding" in ids
     assert "statusline-update-throttle" in ids
     assert "auto-accept-plan-mode" in ids
+    assert "rtk-shell-prefix" not in ids
     assert "remember-skill" not in ids
     assert "allow-sudo-bypass-permissions" not in ids
     assert "input-pattern-highlighters" not in ids
@@ -912,8 +913,53 @@ def test_variants_wizard_all_tweaks_lists_latest_curated_ports():
     assert "opusplan1m" in text
     assert "mcp-non-blocking" in text
     assert "mcp-batch-size" in text
+    assert "rtk-shell-prefix" in text
     assert "token-count-rounding" in text
     assert "statusline-update-throttle" in text
+
+
+def test_variants_wizard_recommended_tweaks_include_mcp_and_rtk():
+    state = tui.TuiState(mode="variants", variant_step=5, tweak_filter="recommended")
+
+    labels = [option.label for option in tui._variant_options(state)]
+    text = "\n".join(labels)
+
+    assert "mcp-non-blocking" in text
+    assert "mcp-batch-size" in text
+    assert "rtk-shell-prefix" in text
+
+
+def test_variants_wizard_can_uncheck_new_default_tweaks():
+    state = tui.TuiState(mode="variants", variant_step=5, tweak_filter="recommended")
+
+    for tweak_id in ("mcp-batch-size", "rtk-shell-prefix"):
+        options = tui._variant_options(state)
+        state.selected_index = next(index for index, option in enumerate(options) if option.value == tweak_id)
+        tui._toggle_selected(state)
+
+    assert "mcp-batch-size" not in state.selected_variant_tweaks
+    assert "rtk-shell-prefix" not in state.selected_variant_tweaks
+
+
+def test_variants_wizard_provider_mcp_copy_clarifies_auto_enabled():
+    state = tui.TuiState(
+        mode="variants",
+        variant_step=3,
+        variant_providers=[
+            {
+                "key": "zai",
+                "label": "Zai Cloud",
+                "credentialEnv": "Z_AI_API_KEY",
+                "mcpServers": ["web-reader"],
+            }
+        ],
+    )
+
+    labels = [option.label for option in tui._variant_options(state)]
+    preview = "\n".join(tui.rendering._create_preview_mcp_lines(state, state.variant_providers[0]))
+
+    assert "[x] web-reader  auto-enabled for this provider env:Z_AI_API_KEY" in labels
+    assert "web-reader (auto-enabled for this provider)" in preview
 
 
 def test_create_failure_summary_reports_verified_path_state(monkeypatch, tmp_path):
@@ -1737,8 +1783,9 @@ def test_tweaks_editor_advanced_view_uses_curated_tweaks_and_env_backed():
     assert "agents-md" in values
     assert "session-memory" in values
     assert "opusplan1m" in values
-    assert "mcp-non-blocking" in values
-    assert "mcp-batch-size" in values
+    assert "mcp-non-blocking" not in values
+    assert "mcp-batch-size" not in values
+    assert "rtk-shell-prefix" not in values
     assert "token-count-rounding" in values
     assert "statusline-update-throttle" in values
     assert "context-limit" in values

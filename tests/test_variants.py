@@ -188,7 +188,11 @@ def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
         "prompt-overlays",
         "hide-startup-banner",
         "hide-startup-clawd",
+        "mcp-non-blocking",
+        "mcp-batch-size",
+        "rtk-shell-prefix",
     ]
+    assert result.variant.manifest["env"]["MCP_SERVER_CONNECTION_BATCH_SIZE"] == "10"
     assert scan_variants(root)[0].variant_id == "zai-test"
     stage_names = [stage.name for stage in result.stages]
     assert "prepare directories" in stage_names
@@ -339,7 +343,7 @@ def test_macos_startup_regex_tweaks_use_in_place_binary_patch(tmp_path, monkeypa
             skipped_reason=None,
             missing_prompt_keys=[],
             resigned=False,
-            curated_applied=["hide-startup-banner", "hide-startup-clawd"],
+            curated_applied=["hide-startup-banner", "hide-startup-clawd", "mcp-non-blocking"],
             curated_skipped=[],
             curated_missed=[],
         )
@@ -385,7 +389,7 @@ def test_macos_default_startup_tweaks_do_not_force_node_runtime(tmp_path, monkey
             skipped_reason=None,
             missing_prompt_keys=[],
             resigned=False,
-            curated_applied=["hide-startup-banner", "hide-startup-clawd"],
+            curated_applied=["hide-startup-banner", "hide-startup-clawd", "mcp-non-blocking"],
             curated_skipped=[],
             curated_missed=[],
         )
@@ -411,13 +415,24 @@ def test_macos_default_startup_tweaks_do_not_force_node_runtime(tmp_path, monkey
         "prompt-overlays",
         "hide-startup-banner",
         "hide-startup-clawd",
+        "mcp-non-blocking",
+        "mcp-batch-size",
+        "rtk-shell-prefix",
     ]
-    assert patch_calls[0].regex_tweaks == ["hide-startup-banner", "hide-startup-clawd"]
+    assert result.variant.manifest["env"]["MCP_SERVER_CONNECTION_BATCH_SIZE"] == "10"
+    assert patch_calls[0].regex_tweaks == [
+        "hide-startup-banner",
+        "hide-startup-clawd",
+        "mcp-non-blocking",
+    ]
     assert result.variant.manifest["patchResults"]["appliedTweaks"] == [
         "themes",
         "prompt-overlays",
         "hide-startup-banner",
         "hide-startup-clawd",
+        "mcp-non-blocking",
+        "mcp-batch-size",
+        "rtk-shell-prefix",
     ]
 
 
@@ -787,6 +802,39 @@ def test_apply_variant_rebuilds_from_saved_metadata(tmp_path, monkeypatch):
     assert rebuilt.wrapper_path == root / "bin" / "zai-test"
     assert not (evil_bin / "zai-test").exists()
     assert 'case"zai-variant"' in read_entry(rebuilt.binary_path)
+
+
+def test_apply_variant_removes_unchecked_default_tweak_env(tmp_path, monkeypatch):
+    import cc_extractor.variants as variants_module
+
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+    create_variant(
+        name="Remove Defaults",
+        provider_key="zai",
+        credential_env="Z_AI_API_KEY",
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+    variant = load_variant("remove-defaults", root=root)
+    manifest = dict(variant.manifest)
+    manifest["tweaks"] = [
+        tweak_id
+        for tweak_id in manifest["tweaks"]
+        if tweak_id not in {"mcp-batch-size", "rtk-shell-prefix"}
+    ]
+    (variant.path / "variant.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    monkeypatch.setattr(variants_module, "_download_source_artifact", lambda version, root=None: artifact)
+    rebuilt = apply_variant("remove-defaults", root=root)
+
+    assert "mcp-batch-size" not in rebuilt.variant.manifest["tweaks"]
+    assert "rtk-shell-prefix" not in rebuilt.variant.manifest["tweaks"]
+    assert "MCP_SERVER_CONNECTION_BATCH_SIZE" not in rebuilt.variant.manifest["env"]
+    assert "MCP_SERVER_CONNECTION_BATCH_SIZE" not in rebuilt.wrapper_path.read_text(encoding="utf-8")
+    assert "mcp-batch-size" not in rebuilt.variant.manifest["patchResults"]["appliedTweaks"]
+    assert "rtk-shell-prefix" not in rebuilt.variant.manifest["patchResults"]["appliedTweaks"]
 
 
 def test_patch_entry_js_rejects_tampered_entrypoint(tmp_path):

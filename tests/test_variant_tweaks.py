@@ -1,6 +1,13 @@
 import pytest
 
-from cc_extractor.variant_tweaks import TweakPatchError, apply_variant_tweaks, env_for_tweaks
+from cc_extractor.variant_tweaks import (
+    DEFAULT_TWEAK_IDS,
+    RTK_SHELL_PREFIX_TEXT,
+    TweakPatchError,
+    apply_variant_tweaks,
+    compose_prompt_overlays,
+    env_for_tweaks,
+)
 
 
 THEMES = [
@@ -137,6 +144,57 @@ def test_env_backed_tweaks_emit_env_without_patching_js():
     assert env["CLAUDE_CODE_CONTEXT_LIMIT"] == "1000000"
     assert env["CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS"] == "90000"
     assert env["CLAUDE_CODE_SUBAGENT_MODEL"] == "model-x"
+
+
+def test_default_tweaks_include_mcp_startup_and_rtk_instruction():
+    assert DEFAULT_TWEAK_IDS == [
+        "themes",
+        "prompt-overlays",
+        "hide-startup-banner",
+        "hide-startup-clawd",
+        "mcp-non-blocking",
+        "mcp-batch-size",
+        "rtk-shell-prefix",
+    ]
+
+
+def test_mcp_batch_size_setup_tweak_emits_wrapper_env():
+    env = env_for_tweaks(["mcp-batch-size"])
+
+    assert env["MCP_SERVER_CONNECTION_BATCH_SIZE"] == "10"
+
+
+def test_sync_tweak_env_removes_unselected_managed_env():
+    from cc_extractor.variant_tweaks import sync_tweak_env
+
+    env = {
+        "ANTHROPIC_BASE_URL": "https://example.test",
+        "MCP_SERVER_CONNECTION_BATCH_SIZE": "10",
+        "CLAUDE_CODE_CONTEXT_LIMIT": "1000000",
+        "DISABLE_COMPACT": "1",
+    }
+
+    synced = sync_tweak_env(env, ["themes"], {})
+
+    assert synced == {"ANTHROPIC_BASE_URL": "https://example.test"}
+
+
+def test_rtk_shell_prefix_composes_prompt_overlays():
+    overlays = compose_prompt_overlays({"explore": "Use provider docs."}, ["rtk-shell-prefix"])
+
+    assert "Use provider docs." in overlays["explore"]
+    assert RTK_SHELL_PREFIX_TEXT in overlays["explore"]
+    assert RTK_SHELL_PREFIX_TEXT in overlays["planEnhanced"]
+
+
+def test_rtk_shell_prefix_applies_without_provider_prompt_overlays():
+    js = "let EXPLORE=`Complete the user's search request efficiently and report your findings clearly.`;"
+    overlays = compose_prompt_overlays({}, ["rtk-shell-prefix"])
+
+    result = apply_variant_tweaks(js, tweak_ids=["rtk-shell-prefix"], overlays=overlays)
+
+    assert result.applied == ["rtk-shell-prefix"]
+    assert "prefix each command with \\`rtk\\`" in result.js
 
 
 def test_apply_variant_tweaks_warns_on_untested_version():

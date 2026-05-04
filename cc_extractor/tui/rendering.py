@@ -222,7 +222,7 @@ def _create_preview_mcp_lines(state, provider):
     selected = list(state.selected_variant_mcp_ids)
     lines = ["MCP servers:"]
     if provider_mcp:
-        lines.extend(f"  {name} (provider auto)" for name in provider_mcp)
+        lines.extend(f"  {name} (auto-enabled for this provider)" for name in provider_mcp)
     if selected:
         lines.extend(f"  {mcp_id} (optional)" for mcp_id in selected)
     if not provider_mcp and not selected:

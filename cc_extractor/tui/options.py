@@ -12,7 +12,13 @@ from .._utils import version_sort_key
 from ..patches._registry import REGISTRY as PATCH_REGISTRY, patches_grouped
 from ..patches._versions import SemverRangeError, version_in_range
 from ..providers import PLUGIN_RECOMMENDATIONS, list_optional_mcp_entries
-from ..variant_tweaks import CURATED_TWEAK_IDS, DASHBOARD_TWEAK_IDS, DEFAULT_TWEAK_IDS, ENV_TWEAK_IDS
+from ..variant_tweaks import (
+    CURATED_TWEAK_IDS,
+    DASHBOARD_TWEAK_IDS,
+    DEFAULT_TWEAK_IDS,
+    ENV_TWEAK_IDS,
+    PROMPT_ONLY_TWEAK_IDS,
+)
 from ..workspace import short_sha
 from ._const import (
     DASHBOARD_STEPS,
@@ -39,6 +45,13 @@ ENV_TWEAK_META = {
         "Subagent model",
         "environment",
         "Sets CLAUDE_CODE_SUBAGENT_MODEL.",
+    ),
+}
+PROMPT_ONLY_TWEAK_META = {
+    "rtk-shell-prefix": (
+        "RTK shell prefix",
+        "prompts",
+        "Adds setup prompt guidance to prefix shell commands with rtk when available.",
     ),
 }
 
@@ -373,7 +386,13 @@ def variant_options(state):
             credential_env = str(provider.get("credentialEnv") or "").strip() if provider else ""
             env_note = f" env:{credential_env}" if credential_env else ""
             for name in provider_mcp:
-                options.append(MenuOption("variant-mcp-auto", f"[x] {name}  provider MCP auto-enabled{env_note}", name))
+                options.append(
+                    MenuOption(
+                        "variant-mcp-auto",
+                        f"[x] {name}  auto-enabled for this provider{env_note}",
+                        name,
+                    )
+                )
         else:
             options.append(MenuOption("section", "Provider MCP servers: none"))
         for entry in list_optional_mcp_entries():
@@ -449,6 +468,8 @@ def _tweak_display_name(tweak_id):
         return patch.name
     if tweak_id in ENV_TWEAK_META:
         return ENV_TWEAK_META[tweak_id][0]
+    if tweak_id in PROMPT_ONLY_TWEAK_META:
+        return PROMPT_ONLY_TWEAK_META[tweak_id][0]
     return tweak_id.replace("-", " ").title()
 
 
@@ -711,6 +732,9 @@ def selected_setup_version(state):
 def tweak_status(state, tweak_id):
     if tweak_id in ENV_TWEAK_IDS:
         return {"label": "env-backed", "selectable": True, "reason": "Sets environment only."}
+    if tweak_id in PROMPT_ONLY_TWEAK_IDS:
+        label = "ready" if tweak_id in DEFAULT_TWEAK_IDS else "advanced"
+        return {"label": label, "selectable": True, "reason": "Adds prompt overlay instructions."}
     patch = PATCH_REGISTRY.get(tweak_id)
     if patch is None:
         return {"label": "unknown", "selectable": False, "reason": "Tweak is not registered."}
@@ -772,6 +796,18 @@ def _filtered_patches_grouped(state):
         for tweak_id in ENV_TWEAK_IDS
         if tweak_id in curated and _tweak_passes_filter(state, tweak_id, recommended)
     ]
+    prompt_only_filtered = [
+        _tweak_meta(tweak_id)
+        for tweak_id in PROMPT_ONLY_TWEAK_IDS
+        if tweak_id in curated and _tweak_passes_filter(state, tweak_id, recommended)
+    ]
+    if prompt_only_filtered:
+        for index, (group, patches) in enumerate(grouped):
+            if group == "prompts":
+                grouped[index] = (group, [*patches, *prompt_only_filtered])
+                break
+        else:
+            grouped.append(("prompts", prompt_only_filtered))
     if env_filtered:
         grouped.append(("environment", env_filtered))
     return grouped
@@ -781,6 +817,18 @@ def _tweak_meta(tweak_id):
     patch = PATCH_REGISTRY.get(tweak_id)
     if patch is not None:
         return patch
+    if tweak_id in PROMPT_ONLY_TWEAK_META:
+        name, group, description = PROMPT_ONLY_TWEAK_META[tweak_id]
+        return SimpleNamespace(
+            id=tweak_id,
+            name=name,
+            group=group,
+            versions_supported="prompt-only",
+            versions_tested=("prompt-only",),
+            versions_blacklisted=(),
+            on_miss="skip",
+            description=description,
+        )
     if tweak_id not in ENV_TWEAK_META:
         return None
     name, group, description = ENV_TWEAK_META[tweak_id]

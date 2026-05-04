@@ -52,7 +52,12 @@ class PatchFailure:
     detail: str
 
 
-NATIVE_REGEX_TWEAK_IDS = {"hide-startup-banner", "hide-startup-clawd"}
+NATIVE_REGEX_TWEAK_IDS = {
+    "hide-startup-banner",
+    "hide-startup-clawd",
+    "mcp-non-blocking",
+    "mcp-batch-size",
+}
 
 
 def apply_patches(inputs):

@@ -62,9 +62,13 @@ from .model import (
 from .tweaks import (
     DEFAULT_TWEAK_IDS,
     ENV_TWEAK_IDS,
+    PROMPT_ONLY_TWEAK_IDS,
+    SETUP_ENV_ONLY_TWEAK_IDS,
     apply_variant_tweaks,
+    compose_prompt_overlays,
     env_for_tweaks,
     normalize_tweak_ids,
+    sync_tweak_env,
 )
 from .wrapper import (
     SECRETS_FILE,
@@ -78,8 +82,16 @@ from .wrapper import (
 VARIANT_METADATA = "variant.json"
 
 _THEME_PROMPT_TWEAKS = ("themes", "prompt-overlays")
-_NATIVE_REGEX_TWEAKS = ("hide-startup-banner", "hide-startup-clawd")
-_IN_PLACE_TWEAKS = (*_THEME_PROMPT_TWEAKS, *_NATIVE_REGEX_TWEAKS, *ENV_TWEAK_IDS)
+_PROMPT_ONLY_TWEAKS = tuple(PROMPT_ONLY_TWEAK_IDS)
+_NATIVE_REGEX_TWEAKS = ("hide-startup-banner", "hide-startup-clawd", "mcp-non-blocking")
+_SETUP_ENV_ONLY_TWEAKS = tuple(SETUP_ENV_ONLY_TWEAK_IDS)
+_IN_PLACE_TWEAKS = (
+    *_THEME_PROMPT_TWEAKS,
+    *_NATIVE_REGEX_TWEAKS,
+    *_SETUP_ENV_ONLY_TWEAKS,
+    *_PROMPT_ONLY_TWEAKS,
+    *ENV_TWEAK_IDS,
+)
 
 
 class _BuildStageRecorder:
@@ -125,7 +137,19 @@ def _classify_theme_prompt_tweaks(tweak_ids, *, theme_done: bool, prompt_done: b
         (applied if theme_done else skipped).append("themes")
     if "prompt-overlays" in tweak_ids:
         (applied if prompt_done else skipped).append("prompt-overlays")
+    for tweak_id in _PROMPT_ONLY_TWEAKS:
+        if tweak_id in tweak_ids:
+            (applied if prompt_done else skipped).append(tweak_id)
     return applied, skipped
+
+
+def _selected_setup_env_tweaks(tweak_ids):
+    return [tweak_id for tweak_id in _SETUP_ENV_ONLY_TWEAKS if tweak_id in tweak_ids]
+
+
+def _order_selected_tweaks(tweak_ids, values):
+    selected = list(tweak_ids)
+    return [tweak_id for tweak_id in selected if tweak_id in values]
 
 
 def scan_variants(root=None) -> List[Variant]:
@@ -249,6 +273,11 @@ def _apply_variant_manifest(manifest: Dict, *, claude_version: Optional[str] = N
     if claude_version:
         manifest["source"] = dict(manifest["source"])
         manifest["source"]["version"] = claude_version
+    manifest["env"] = sync_tweak_env(
+        manifest.get("env", {}),
+        manifest.get("tweaks", []),
+        manifest.get("tweakOptions", {}),
+    )
     manifest["updatedAt"] = _utc_now()
     return _build_variant_from_manifest(
         manifest,
@@ -527,7 +556,8 @@ def _copy_patch_or_unpack_variant_binary(
         os.chmod(output_binary, 0o755)
 
     config = provider_patch_config(provider_key) if "themes" in tweak_ids else {}
-    overlays = provider_prompt_overlays(provider_key) if "prompt-overlays" in tweak_ids else None
+    provider_overlays = provider_prompt_overlays(provider_key) if "prompt-overlays" in tweak_ids else {}
+    overlays = compose_prompt_overlays(provider_overlays, tweak_ids)
     native_regex_tweaks = [tweak_id for tweak_id in tweak_ids if tweak_id in _NATIVE_REGEX_TWEAKS]
     provider = get_provider(provider_key)
     result = apply_patches(
@@ -564,12 +594,17 @@ def _copy_patch_or_unpack_variant_binary(
         )
         applied.extend(getattr(result, "curated_applied", []) or [])
         skipped.extend(getattr(result, "curated_skipped", []) or [])
+        applied.extend(_selected_setup_env_tweaks(tweak_ids))
     skipped.extend(
         tweak_id for tweak_id in tweak_ids
         if tweak_id not in _THEME_PROMPT_TWEAKS
         and tweak_id not in _NATIVE_REGEX_TWEAKS
+        and tweak_id not in _SETUP_ENV_ONLY_TWEAKS
+        and tweak_id not in _PROMPT_ONLY_TWEAKS
         and tweak_id not in skipped
     )
+    applied = _order_selected_tweaks(tweak_ids, applied)
+    skipped = _order_selected_tweaks(tweak_ids, skipped)
     sign_result = try_adhoc_sign(str(output_binary)) if not result.resigned else _AlreadySigned()
     return _RuntimePatchResult(
         tweaks=_BinaryTweakResult(applied, skipped, missing),
@@ -600,7 +635,8 @@ def _copy_unpack_node_runtime_variant(
         os.chmod(output_binary, 0o755)
 
     config = provider_patch_config(provider_key) if "themes" in tweak_ids else {}
-    overlays = provider_prompt_overlays(provider_key) if "prompt-overlays" in tweak_ids else None
+    provider_overlays = provider_prompt_overlays(provider_key) if "prompt-overlays" in tweak_ids else {}
+    overlays = compose_prompt_overlays(provider_overlays, tweak_ids)
     return _unpack_node_runtime_variant(
         source_artifact,
         output_binary,
@@ -636,8 +672,14 @@ def _unpack_node_runtime_variant(
         theme_done=bool(result.patch.theme_replaced),
         prompt_done=bool(result.patch.prompt_replaced),
     )
+    applied.extend(_selected_setup_env_tweaks(tweak_ids))
 
-    remaining_tweaks = [tweak_id for tweak_id in tweak_ids if tweak_id not in _THEME_PROMPT_TWEAKS]
+    remaining_tweaks = [
+        tweak_id for tweak_id in tweak_ids
+        if tweak_id not in _THEME_PROMPT_TWEAKS
+        and tweak_id not in _PROMPT_ONLY_TWEAKS
+        and tweak_id not in _SETUP_ENV_ONLY_TWEAKS
+    ]
     if remaining_tweaks:
         entry_path = Path(result.entry_path)
         js = entry_path.read_text(encoding="latin1")
@@ -653,6 +695,8 @@ def _unpack_node_runtime_variant(
         applied.extend(extra.applied)
         skipped.extend(extra.skipped)
         missing.extend(extra.missing)
+    applied = _order_selected_tweaks(tweak_ids, applied)
+    skipped = _order_selected_tweaks(tweak_ids, skipped)
 
     return _RuntimePatchResult(
         tweaks=_BinaryTweakResult(applied, skipped, missing),
