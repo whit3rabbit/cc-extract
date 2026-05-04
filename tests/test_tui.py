@@ -363,7 +363,7 @@ def test_compact_key_footer_fits_narrow_width():
     detail_screen = _render_screen(detail, 70, 24)
 
     assert "Keys: Q/Ctrl+C quit | Enter manage | Up/Down | X run | ? more" in manager_screen
-    assert "Keys: Q/Ctrl+C quit | Enter select | Esc | Up/Down | ? more" in detail_screen
+    assert "Keys: Q quit | Enter select | M models | Esc | Up/Down | ?" in detail_screen
 
 
 def test_footer_keys_match_variant_step():
@@ -912,7 +912,11 @@ def test_provider_selector_two_pane_renders_at_typical_widths():
 
     for width, height in ((100, 30), (80, 24)):
         screen = _render_screen(state, width, height)
+        lines = screen.splitlines()
         assert "Create setup: Provider" in screen
+        assert lines[0].startswith("Create setup: Provider | [Manage Setup]")
+        assert lines[1].startswith("┌Provider")
+        assert "Create setup: Provider" not in lines[1]
         assert "Provider details" in screen
         assert "Mirror Claude" in screen
         assert "Auth: none" in screen
@@ -924,6 +928,21 @@ def test_provider_selector_two_pane_renders_at_typical_widths():
 
     assert "Z.ai Coding Plan" in screen
     assert "Credential env: Z_AI_API_KEY" in screen
+
+
+def test_first_run_provider_selector_header_spans_two_panes():
+    state = tui.TuiState(
+        mode="first-run-setup",
+        variant_providers=_provider_selector_fixture(),
+        theme_id="hacker-bbs",
+    )
+
+    lines = _render_screen(state, 140, 30).splitlines()
+
+    assert lines[0].startswith("No Claude Code setups found: Provider | [Manage Setup]")
+    assert lines[1].startswith("┌Provider")
+    assert "┌No Claude Code setups found" not in lines[1]
+    assert "Provider details" in lines[1]
 
 
 def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch, tmp_path):
@@ -1005,10 +1024,61 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     assert calls[0]["provider_key"] == "mirror"
     assert calls[0]["name"] == "mirror"
     assert calls[0]["credential_env"] is None
+    assert calls[0]["claude_version"] == "latest"
     assert calls[0]["model_overrides"] == {}
     assert calls[0]["mcp_ids"] == ["github"]
     assert first_tweak not in calls[0]["tweaks"]
     assert state.mode == "health-result"
+
+
+def test_variants_wizard_selects_specific_claude_code_version_for_create(monkeypatch, tmp_path):
+    calls = []
+
+    class Result:
+        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "mirror"
+
+    def fake_create_variant(**kwargs):
+        calls.append(kwargs)
+        return Result()
+
+    monkeypatch.setattr(tui, "create_variant", fake_create_variant)
+    monkeypatch.setattr(tui, "doctor_variant", lambda name: [{"id": name, "ok": True, "checks": []}])
+    monkeypatch.setattr(tui, "_refresh_state", lambda state_arg: True)
+    state = tui.TuiState(
+        mode="variants",
+        variant_step=1,
+        variant_name="mirror",
+        download_index={"binary": {"latest": "2.1.123"}},
+        download_versions=["2.1.123", "2.1.122"],
+        variant_providers=[
+            {
+                "key": "mirror",
+                "label": "Mirror Claude",
+                "authMode": "none",
+                "models": {},
+                "defaultVariantName": "mirror",
+            }
+        ],
+    )
+
+    options = tui._variant_options(state)
+    labels = [option.label for option in options]
+    assert "* Claude Code: latest native binary (2.1.123)" in labels
+    state.selected_index = next(index for index, option in enumerate(options) if option.value == "2.1.122")
+
+    tui._activate_variants(state)
+
+    assert state.variant_claude_version == "2.1.122"
+    assert state.message == "Claude Code version: 2.1.122"
+    labels = [option.label for option in tui._variant_options(state)]
+    assert "* Claude Code: 2.1.122" in labels
+
+    state.mode = "create-preview"
+    assert "Claude Code: 2.1.122" in tui._screen_text(state)
+
+    tui._run_variant_create(state)
+
+    assert calls[0]["claude_version"] == "2.1.122"
 
 
 def test_variants_credentials_step_edits_endpoint_and_stored_key():
@@ -1366,6 +1436,100 @@ def test_setup_manager_health_reports_doctor_failure(monkeypatch):
 
     assert state.message == "Health for setup mirror: broken"
     assert state.setup_health["mirror"]["status"] == "broken"
+
+
+def test_setup_detail_opens_model_editor_and_applies_changes(monkeypatch, tmp_path):
+    calls = []
+    variant = _variant("lm-local", "LM Local")
+    variant.manifest["provider"] = {"key": "lmstudio", "label": "LM Studio"}
+    variant.manifest["modelOverrides"] = {"opus": "old-model", "sonnet": "old-model", "haiku": "old-model"}
+    variant.manifest["env"] = {"ANTHROPIC_BASE_URL": "http://localhost:1234"}
+    variant.manifest["paths"]["wrapper"] = str(tmp_path / "lm-local")
+    provider = {
+        "key": "lmstudio",
+        "label": "LM Studio",
+        "baseUrl": "http://localhost:1234",
+        "models": {},
+        "modelDiscovery": {"enabled": True},
+        "requiresModelMapping": True,
+    }
+
+    def fake_update_models(variant_id, model_overrides, root=None):
+        calls.append((variant_id, model_overrides))
+        variant.manifest["modelOverrides"] = dict(model_overrides)
+        return variant
+
+    def fake_refresh(state_arg):
+        state_arg.variants = [variant]
+        return True
+
+    monkeypatch.setattr(tui, "update_variant_models", fake_update_models)
+    monkeypatch.setattr(tui, "doctor_variant", lambda name: [{"id": name, "ok": True, "checks": []}])
+    monkeypatch.setattr(tui, "_refresh_state", fake_refresh)
+    state = tui.TuiState(
+        mode="setup-detail",
+        variants=[variant],
+        selected_setup_id="lm-local",
+        variant_providers=[provider],
+    )
+
+    tui._handle_char_key(state, "m")
+
+    assert state.mode == "models-edit"
+    assert state.models_pending["opus"] == "old-model"
+    assert "Edit models: lm-local" in tui._screen_text(state)
+
+    state.selected_index = 2
+    state.models_pending["opus"] = ""
+    for char in "new-model":
+        tui._handle_char_key(state, char)
+    tui._apply_models(state)
+
+    assert calls[0][0] == "lm-local"
+    assert calls[0][1]["opus"] == "new-model"
+    assert calls[0][1]["sonnet"] == "old-model"
+    assert state.mode == "health-result"
+    assert "Binary rebuilt: no" in "\n".join(state.last_action_summary)
+
+
+def test_models_editor_refresh_applies_selected_model(monkeypatch):
+    variant = _variant("lm-local", "LM Local")
+    variant.manifest["provider"] = {"key": "lmstudio", "label": "LM Studio"}
+    variant.manifest["modelOverrides"] = {}
+    variant.manifest["env"] = {"ANTHROPIC_BASE_URL": "http://localhost:1234"}
+    provider = {
+        "key": "lmstudio",
+        "label": "LM Studio",
+        "baseUrl": "http://localhost:1234",
+        "models": {},
+        "modelDiscovery": {"enabled": True},
+        "requiresModelMapping": True,
+    }
+    calls = []
+
+    def fake_fetch(endpoint, api_key=None):
+        calls.append((endpoint, api_key))
+        return ["local/model-a", "local/model-b"]
+
+    monkeypatch.setattr(tui, "fetch_provider_models", fake_fetch)
+    state = tui.TuiState(
+        mode="models-edit",
+        variants=[variant],
+        selected_setup_id="lm-local",
+        models_variant_id="lm-local",
+        variant_providers=[provider],
+    )
+
+    tui._activate_models_edit(state)
+
+    assert calls == [("http://localhost:1234", None)]
+    assert state.models_choices == ["local/model-a", "local/model-b"]
+    assert state.selected_index == 1
+
+    tui._activate_models_edit(state)
+
+    assert all(state.models_pending[key] == "local/model-a" for key, _label in tui.VARIANT_MODEL_FIELDS)
+    assert state.message == "Model aliases set to local/model-a"
 
 
 # -- Tweaks tab tests ----------------------------------------------------------

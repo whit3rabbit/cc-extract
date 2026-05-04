@@ -178,6 +178,8 @@ Important distinctions:
 * `patch_workflow.apply_dashboard_tweaks_to_native` applies curated tweak IDs directly for Dashboard builds.
 * Theme anchor misses are fatal structured failures.
 * Prompt anchor misses are recorded and non-fatal.
+* On Mach-O, prompt overlays that grow the entry module must force the unpacked Node runtime fallback even if a later shrink tweak makes the final byte length fit. Do not let net shrinkage mask intermediate prompt-overlay growth.
+* Bun CJS entry modules must keep a valid `// @bun ... @bun-cjs` function wrapper. Same-size shrink padding must not be appended after the closing wrapper.
 * Mach-O signing is explicit and soft-failing through `binary_patcher/codesign.py`.
 * Unpacked fallback supports both Python `.bundle_manifest.json` and TS-style `manifest.json`.
 * PE resize requires `.bun` to be the last raw-data section.
@@ -379,3 +381,7 @@ A new curated tweak is not complete until:
 - Dashboard/Tweaks visibility is intentional;
 - TUI MCP smoke test exists if the patch changes visible UI behavior;
 - real-binary smoke test is gated, not run by default.
+
+## Patch Source Code
+
+- When creating patches you can use @original as source of truth when creating patches. This is a reference only and will be to understand original code. Do not commit.

@@ -204,4 +204,10 @@ artifacts/
 # Repomix
 repomix-output.xml
 .repomix/
-repomix-output.xml
+
+# Original Code Bun
+original/
+tmp/
+
+# Vendor
+vendor/

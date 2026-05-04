@@ -19,6 +19,7 @@ from cc_extractor.variants import (
     run_variant,
     scan_variants,
     update_variants,
+    update_variant_models,
 )
 from cc_extractor.variants.builder import patch_entry_js
 from cc_extractor.variants.wrapper import write_wrapper
@@ -855,6 +856,69 @@ def test_apply_variant_removes_unchecked_default_tweak_env(tmp_path, monkeypatch
     assert "MCP_SERVER_CONNECTION_BATCH_SIZE" not in rebuilt.wrapper_path.read_text(encoding="utf-8")
     assert "mcp-batch-size" not in rebuilt.variant.manifest["patchResults"]["appliedTweaks"]
     assert "rtk-shell-prefix" not in rebuilt.variant.manifest["patchResults"]["appliedTweaks"]
+
+
+def test_update_variant_models_rewrites_manifest_and_wrapper_without_rebuild(tmp_path, monkeypatch):
+    import cc_extractor.variants as variants_module
+
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+    create_variant(
+        name="LM Local",
+        provider_key="lmstudio",
+        model_overrides={"opus": "old-model", "sonnet": "old-model", "haiku": "old-model"},
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+    monkeypatch.setattr(
+        variants_module,
+        "_download_source_artifact",
+        lambda version, root=None: (_ for _ in ()).throw(AssertionError("should not rebuild")),
+    )
+
+    updated = update_variant_models(
+        "lm-local",
+        {
+            "opus": "new-model",
+            "sonnet": "new-model",
+            "haiku": "new-model",
+            "default": "new-model",
+            "small_fast": "",
+        },
+        root=root,
+    )
+
+    wrapper = Path(updated.manifest["paths"]["wrapper"]).read_text(encoding="utf-8")
+
+    assert updated.manifest["modelOverrides"] == {
+        "opus": "new-model",
+        "sonnet": "new-model",
+        "haiku": "new-model",
+        "default": "new-model",
+    }
+    assert updated.manifest["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "new-model"
+    assert updated.manifest["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"] == "new-model"
+    assert updated.manifest["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == "new-model"
+    assert updated.manifest["env"]["ANTHROPIC_MODEL"] == "new-model"
+    assert "export ANTHROPIC_DEFAULT_OPUS_MODEL=new-model" in wrapper
+    assert "old-model" not in wrapper
+
+
+def test_update_variant_models_blocks_missing_required_core_aliases(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+    create_variant(
+        name="LM Local",
+        provider_key="lmstudio",
+        model_overrides={"opus": "old-model", "sonnet": "old-model", "haiku": "old-model"},
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+
+    with pytest.raises(ValueError, match="requires model mapping"):
+        update_variant_models("lm-local", {}, root=root)
 
 
 def test_patch_entry_js_rejects_tampered_entrypoint(tmp_path):
