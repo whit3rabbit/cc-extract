@@ -8,7 +8,9 @@ RESET = r"\033[0m"
 
 
 PALETTES: Dict[str, Tuple[str, str, str, str]] = {
+    "9router": (r"\033[38;5;208m", r"\033[38;5;75m", r"\033[38;5;45m", r"\033[38;5;240m"),
     "alibaba": (r"\033[38;5;51m", r"\033[38;5;81m", r"\033[38;5;141m", r"\033[38;5;60m"),
+    "anthropic": (r"\033[38;5;216m", r"\033[38;5;223m", r"\033[38;5;215m", r"\033[38;5;94m"),
     "ccrouter": (r"\033[38;5;39m", r"\033[38;5;45m", r"\033[38;5;33m", r"\033[38;5;31m"),
     "cerebras": (r"\033[38;5;214m", r"\033[38;5;220m", r"\033[38;5;208m", r"\033[38;5;94m"),
     "custom": (r"\033[38;5;255m", r"\033[38;5;183m", r"\033[38;5;147m", r"\033[38;5;245m"),
@@ -16,6 +18,7 @@ PALETTES: Dict[str, Tuple[str, str, str, str]] = {
     "gatewayz": (r"\033[38;5;141m", r"\033[38;5;135m", r"\033[38;5;99m", r"\033[38;5;60m"),
     "kimi": (r"\033[38;5;81m", r"\033[38;5;75m", r"\033[38;5;69m", r"\033[38;5;67m"),
     "minimax": (r"\033[38;5;203m", r"\033[38;5;209m", r"\033[38;5;208m", r"\033[38;5;167m"),
+    "minimax-cn": (r"\033[38;5;196m", r"\033[38;5;214m", r"\033[38;5;220m", r"\033[38;5;88m"),
     "mirror": (r"\033[38;5;252m", r"\033[38;5;250m", r"\033[38;5;45m", r"\033[38;5;243m"),
     "nanogpt": (r"\033[38;5;120m", r"\033[38;5;51m", r"\033[38;5;154m", r"\033[38;5;66m"),
     "ollama": (r"\033[38;5;180m", r"\033[38;5;223m", r"\033[38;5;137m", r"\033[38;5;101m"),
@@ -28,7 +31,9 @@ PALETTES: Dict[str, Tuple[str, str, str, str]] = {
 
 
 SPLASH_TEXT: Dict[str, Tuple[str, ...]] = {
+    "9router": ("   9ROUTER", "  [ LOCAL AI GATEWAY ]", "  FALLBACK READY"),
     "alibaba": ("   ALIBABA CLOUD", "  [ DASH SCOPE ]", "  QWEN CODING LANE"),
+    "anthropic": ("   ANTHROPIC", "  < CONSOLE API >", "  FIRST PARTY CLAUDE"),
     "ccrouter": ("   CC ROUTER", "  < ANY MODEL >", "  LOCAL ROUTE ONLINE"),
     "cerebras": ("   CEREBRAS", "  [ WAFER SCALE ]", "  ROUTED VIA CCR"),
     "custom": ("   CUSTOM", "  [ BRING YOUR ENDPOINT ]", "  CONFIGURED VARIANT"),
@@ -36,6 +41,7 @@ SPLASH_TEXT: Dict[str, Tuple[str, ...]] = {
     "gatewayz": ("   GATEWAYZ", "  [ MULTI MODEL GATEWAY ]", "  ROUTING ACTIVE"),
     "kimi": ("   KIMI CODE", "  < LONG CONTEXT >", "  MOONSHOT CODING"),
     "minimax": ("   MINIMAX", "  [ MODEL SPECTRUM ]", "  AGI FOR ALL"),
+    "minimax-cn": ("   MINIMAX CN", "  [ MODEL SPECTRUM ]", "  CHINA API ROUTE"),
     "mirror": ("   MIRROR CLAUDE", "  < CLEAN REFLECTION >", "  ISOLATED VANILLA"),
     "nanogpt": ("   NANOGPT", "  [ ANY MODEL ]", "  PAY PER TOKEN"),
     "ollama": ("   OLLAMA", "  < LOCAL FIRST >", "  MODELS NEARBY"),

@@ -36,6 +36,7 @@ class ProviderTemplate:
     display_order: int
     base_url: str = ""
     env: Dict[str, str] = field(default_factory=dict)
+    env_unset: List[str] = field(default_factory=list)
     api_key_label: str = ""
     auth_mode: str = "apiKey"
     requires_model_mapping: bool = False
@@ -57,6 +58,7 @@ class ProviderTemplate:
 @dataclass(frozen=True)
 class ProviderEnv:
     env: Dict[str, str]
+    env_unset: List[str]
     secret_env: Dict[str, str]
     credential: Dict[str, object]
 
@@ -75,6 +77,7 @@ TOP_LEVEL_KEYS = {
     "auth",
     "models",
     "env",
+    "envUnset",
     "variant",
     "claudeConfig",
     "tui",
@@ -122,6 +125,9 @@ def provider_from_json(payload: Dict[str, object]) -> ProviderTemplate:
     env = _string_map(_object(payload, "env"), f"{key}.env")
     for env_key in env:
         _env_name(env_key, f"{key}.env key")
+    env_unset = _string_list(payload, "envUnset")
+    for env_key in env_unset:
+        _env_name(env_key, f"{key}.envUnset item")
     for model_key, model_value in models.items():
         env_key = MODEL_ENV_KEYS[model_key]
         if model_value:
@@ -157,6 +163,7 @@ def provider_from_json(payload: Dict[str, object]) -> ProviderTemplate:
         display_order=display_order,
         base_url=base_url,
         env=env,
+        env_unset=env_unset,
         api_key_label=_string(auth, "apiKeyLabel"),
         auth_mode=auth_mode,
         requires_model_mapping=_bool(models_payload, "requiresModelMapping"),

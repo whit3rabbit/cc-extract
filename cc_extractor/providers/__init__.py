@@ -1,6 +1,11 @@
 """Provider templates and env builders for alternate Claude Code backends."""
 
-from .config import PLACEHOLDER_CREDENTIAL, ProviderConfigResult, apply_provider_claude_config
+from .config import (
+    PLACEHOLDER_CREDENTIAL,
+    ProviderConfigResult,
+    apply_provider_claude_config,
+    provider_auth_bootstrap_enabled,
+)
 from .loader import (
     build_provider_env,
     get_provider,
@@ -42,6 +47,7 @@ __all__ = [
     "normalize_mcp_ids",
     "optional_mcp_servers",
     "provider_claude_config",
+    "provider_auth_bootstrap_enabled",
     "provider_default_variant_name",
     "provider_patch_config",
     "provider_prompt_overlays",

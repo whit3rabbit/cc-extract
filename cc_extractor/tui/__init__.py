@@ -14,6 +14,7 @@ import copy
 import concurrent.futures
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 __all__ = [
@@ -982,11 +983,19 @@ def _queue_setup_run(state, setup_id):
     state.message = f"Running setup {setup_id} after setup manager exits."
 
 
+def _clear_terminal_for_external_command():
+    if not sys.stdout.isatty():
+        return
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
+
+
 def _run_pending_setup(state):
     command = list(state.pending_run_command or [])
     if not command:
         return 0
     setup_id = state.pending_run_setup_id or Path(command[0]).name
+    _clear_terminal_for_external_command()
     print(f"Running setup {setup_id}: {command[0]}")
     try:
         result = subprocess.run(command, check=False)

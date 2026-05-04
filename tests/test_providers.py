@@ -59,9 +59,11 @@ def _minimal_provider_payload(mcp_servers):
 def test_provider_list_includes_cc_mirror_parity_presets():
     keys = [provider.key for provider in list_providers()]
 
+    assert keys.count("ccrouter") == 1
     assert keys == [
         "kimi",
         "minimax",
+        "minimax-cn",
         "zai",
         "deepseek",
         "alibaba",
@@ -70,9 +72,11 @@ def test_provider_list_includes_cc_mirror_parity_presets():
         "vercel",
         "ollama",
         "nanogpt",
+        "9router",
         "ccrouter",
         "cerebras",
         "mirror",
+        "anthropic",
         "gatewayz",
         "custom",
     ]
@@ -164,6 +168,14 @@ def test_provider_schema_rejects_unsafe_registry_env_keys():
         provider_from_json(payload)
 
 
+def test_provider_schema_rejects_unsafe_env_unset_keys():
+    payload = _minimal_provider_payload({})
+    payload["envUnset"] = ["X; touch /tmp/pwn"]
+
+    with pytest.raises(ProviderSchemaError, match="test.envUnset item"):
+        provider_from_json(payload)
+
+
 def test_provider_schema_rejects_malformed_mcp_servers():
     with pytest.raises(ProviderSchemaError, match=r"bad\.type must be http, stdio, or sse"):
         provider_from_json(_minimal_provider_payload({"bad": {"url": "https://example.com/mcp"}}))
@@ -190,6 +202,8 @@ def test_provider_schema_rejects_malformed_mcp_servers():
 def test_model_mapping_providers_require_core_model_overrides():
     with pytest.raises(ValueError, match="requires model mapping"):
         build_provider_env("openrouter")
+    with pytest.raises(ValueError, match="requires model mapping"):
+        build_provider_env("9router")
 
     result = build_provider_env(
         "openrouter",
@@ -201,6 +215,19 @@ def test_model_mapping_providers_require_core_model_overrides():
     )
 
     assert result.env["ANTHROPIC_DEFAULT_SONNET_MODEL"] == "anthropic/claude-sonnet-4"
+
+    router = build_provider_env(
+        "9router",
+        model_overrides={
+            "sonnet": "kr/claude-sonnet-4.5",
+            "opus": "cc/claude-opus-4-7",
+            "haiku": "oc/kimi-k2.5",
+        },
+    )
+
+    assert router.env["ANTHROPIC_DEFAULT_SONNET_MODEL"] == "kr/claude-sonnet-4.5"
+    assert router.env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "cc/claude-opus-4-7"
+    assert router.env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == "oc/kimi-k2.5"
 
 
 def test_provider_patch_assets_are_safe_and_prompt_pack_skips_mirror():
@@ -223,6 +250,15 @@ def test_ported_provider_defaults_match_cc_mirror_update():
     assert minimax.env["ANTHROPIC_MODEL"] == "MiniMax-M2.7"
     assert minimax.env["ANTHROPIC_DEFAULT_SONNET_MODEL"] == "MiniMax-M2.7"
 
+    minimax_cn = build_provider_env("minimax-cn")
+    assert minimax_cn.credential == {
+        "mode": "env",
+        "source": "MINIMAX_CN_API_KEY",
+        "targets": ["ANTHROPIC_API_KEY", "MINIMAX_CN_API_KEY"],
+    }
+    assert minimax_cn.env["ANTHROPIC_BASE_URL"] == "https://api.minimaxi.com/anthropic"
+    assert minimax_cn.env["ANTHROPIC_MODEL"] == "MiniMax-M2.7"
+
     deepseek = build_provider_env("deepseek")
     assert deepseek.env["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
     assert deepseek.env["ANTHROPIC_MODEL"] == "deepseek-v4-pro"
@@ -239,12 +275,42 @@ def test_ported_provider_defaults_match_cc_mirror_update():
     assert poe.credential["targets"] == ["ANTHROPIC_AUTH_TOKEN"]
     assert poe.env["ANTHROPIC_BASE_URL"] == "https://api.poe.com"
 
+    anthropic = build_provider_env("anthropic")
+    assert anthropic.credential == {
+        "mode": "env",
+        "source": "ANTHROPIC_API_KEY",
+        "targets": ["ANTHROPIC_API_KEY"],
+    }
+    assert anthropic.env["ANTHROPIC_BASE_URL"] == "https://api.anthropic.com"
+    assert "ANTHROPIC_MODEL" not in anthropic.env
+
+    router = build_provider_env(
+        "9router",
+        credential_env="ROUTER_API_KEY",
+        model_overrides={
+            "sonnet": "kr/claude-sonnet-4.5",
+            "opus": "premium-coding",
+            "haiku": "oc/kimi-k2.5",
+        },
+    )
+    assert router.credential == {
+        "mode": "env",
+        "source": "ROUTER_API_KEY",
+        "targets": ["ANTHROPIC_API_KEY", "NINEROUTER_API_KEY"],
+    }
+    assert router.env["ANTHROPIC_BASE_URL"] == "http://localhost:20128/v1"
+    assert router.env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "premium-coding"
+
 
 def test_ccrouter_and_cerebras_use_optional_router_fallbacks():
     ccrouter = build_provider_env("ccrouter")
     assert ccrouter.credential == {"mode": "none", "targets": []}
     assert ccrouter.env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:3456"
     assert ccrouter.env["ANTHROPIC_AUTH_TOKEN"] == "ccrouter-proxy"
+    assert ccrouter.env["NO_PROXY"] == "127.0.0.1"
+    assert ccrouter.env["DISABLE_TELEMETRY"] == "true"
+    assert ccrouter.env["DISABLE_COST_WARNINGS"] == "true"
+    assert ccrouter.env_unset == ["CLAUDE_CODE_USE_BEDROCK"]
 
     cerebras = build_provider_env("cerebras")
     assert cerebras.credential == {"mode": "none", "targets": []}
@@ -291,6 +357,7 @@ def test_provider_config_writer_merges_zai_mcp_and_denies(tmp_path):
 
     assert result.settings_changed is True
     assert result.claude_config_changed is True
+    assert settings["forceLoginMethod"] == "console"
     assert "mcp__web_reader__webReader" in settings["permissions"]["deny"]
     assert sorted(config["mcpServers"]) == ["web-reader", "web-search-prime", "zai-mcp-server", "zread"]
     assert config["mcpServers"]["web-reader"]["headers"] == {
@@ -305,14 +372,22 @@ def test_provider_config_writer_merges_zai_mcp_and_denies(tmp_path):
 
 
 def test_provider_config_writer_preserves_existing_mcp_and_uses_env_refs(tmp_path):
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"env": {"EXISTING": "1"}, "theme": "dark", "forceLoginMethod": "claudeai"}),
+        encoding="utf-8",
+    )
     (tmp_path / ".claude.json").write_text(
         json.dumps({"mcpServers": {"user-mcp": {"command": "node", "args": ["server.js"]}}}),
         encoding="utf-8",
     )
 
     apply_provider_claude_config("zai", tmp_path)
+    settings = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
     config = json.loads((tmp_path / ".claude.json").read_text(encoding="utf-8"))
 
+    assert settings["env"] == {"EXISTING": "1"}
+    assert settings["theme"] == "dark"
+    assert settings["forceLoginMethod"] == "console"
     assert config["mcpServers"]["user-mcp"] == {"command": "node", "args": ["server.js"]}
     assert config["mcpServers"]["web-search-prime"]["headers"] == {
         "Authorization": "Bearer ${Z_AI_API_KEY}"
@@ -326,6 +401,7 @@ def test_provider_config_writer_adds_minimax_mcp(tmp_path):
     config = json.loads((tmp_path / ".claude.json").read_text(encoding="utf-8"))
 
     assert settings["permissions"]["deny"] == ["WebSearch"]
+    assert settings["forceLoginMethod"] == "console"
     assert config["mcpServers"]["MiniMax"]["command"] == "uvx"
     assert config["mcpServers"]["MiniMax"]["env"]["MINIMAX_API_KEY"] == "${MINIMAX_API_KEY}"
     assert "mini-secret" not in json.dumps(config)
@@ -336,6 +412,7 @@ def test_provider_config_writer_adds_selected_optional_mcp(tmp_path):
 
     config = json.loads((tmp_path / ".claude.json").read_text(encoding="utf-8"))
 
+    assert not (tmp_path / "settings.json").exists()
     assert sorted(config["mcpServers"]) == ["github"]
     assert config["mcpServers"]["github"]["type"] == "http"
     assert config["mcpServers"]["github"]["headers"] == {

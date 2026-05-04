@@ -91,7 +91,7 @@ def build_provider_env(
     _sync_compatibility_model_defaults(env, model_overrides or {})
     _validate_model_mapping(provider, env)
     _apply_extra_env(env, extra_env or [])
-    return ProviderEnv(env=env, secret_env=secret_env, credential=credential)
+    return ProviderEnv(env=env, env_unset=list(provider.env_unset), secret_env=secret_env, credential=credential)
 
 
 def provider_theme(provider_key: str) -> Dict:

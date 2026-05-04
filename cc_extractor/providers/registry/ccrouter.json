@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "key": "ccrouter",
   "label": "CC Router",
-  "description": "Generic local model gateway via Claude Code Router",
+  "description": "Local Claude Code Router service at 127.0.0.1:3456",
   "displayOrder": 110,
   "baseUrl": "http://127.0.0.1:3456",
   "auth": {
@@ -22,8 +22,14 @@
     "requiresModelMapping": false
   },
   "env": {
-    "API_TIMEOUT_MS": "3000000"
+    "API_TIMEOUT_MS": "3000000",
+    "NO_PROXY": "127.0.0.1",
+    "DISABLE_TELEMETRY": "true",
+    "DISABLE_COST_WARNINGS": "true"
   },
+  "envUnset": [
+    "CLAUDE_CODE_USE_BEDROCK"
+  ],
   "variant": {
     "splashStyle": "ccrouter",
     "noPromptPack": true,
@@ -46,13 +52,13 @@
     "features": [
       "Generic local gateway at 127.0.0.1:3456",
       "Models are configured in Claude Code Router",
-      "Optional router token with safe fallback"
+      "Optional router token must match CCR APIKEY when configured"
     ],
     "setupLinks": {
       "subscribe": "https://github.com/musistudio/claude-code-router#installation",
       "apiKey": "https://github.com/musistudio/claude-code-router#2-configuration",
       "docs": "https://musistudio.github.io/claude-code-router/docs/cli/config/basic/"
     },
-    "setupNote": "Install claude-code-router, configure ~/.claude-code-router/config.json, then start ccr."
+    "setupNote": "Install @musistudio/claude-code-router, configure ~/.claude-code-router/config.json, run ccr start, then create this setup. Override ANTHROPIC_BASE_URL for custom CCR ports."
   }
 }

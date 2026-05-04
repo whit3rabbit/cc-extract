@@ -215,6 +215,7 @@ def create_variant(
         },
         "modelOverrides": dict(model_overrides or {}),
         "env": safe_env,
+        "envUnset": list(provider_env.env_unset),
         "credential": provider_env.credential,
         "paths": {},
         "createdAt": existing.get("createdAt") if existing else now,

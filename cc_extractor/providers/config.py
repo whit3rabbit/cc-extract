@@ -30,12 +30,19 @@ def apply_provider_claude_config(
 ) -> ProviderConfigResult:
     provider = get_provider(provider_key)
     config_dir = Path(config_dir)
-    settings_changed = _merge_settings_permissions(
+    settings_changed = _merge_settings_values(
+        config_dir,
+        _provider_runtime_settings(provider_key),
+        read_json=read_json,
+        write_json=write_json,
+    )
+    permissions_changed = _merge_settings_permissions(
         config_dir,
         provider.settings_permissions_deny,
         read_json=read_json,
         write_json=write_json,
     )
+    settings_changed = settings_changed or permissions_changed
     mcp_servers = dict(provider.mcp_servers)
     mcp_servers.update(optional_mcp_servers(optional_mcp_ids or []))
     claude_config_changed = _merge_mcp_servers(
@@ -46,6 +53,35 @@ def apply_provider_claude_config(
         write_json=write_json,
     )
     return ProviderConfigResult(settings_changed, claude_config_changed)
+
+
+def provider_auth_bootstrap_enabled(provider_key: str) -> bool:
+    provider = get_provider(provider_key)
+    return provider.key != "mirror" and provider.auth_mode != "none"
+
+
+def _provider_runtime_settings(provider_key: str) -> Dict[str, object]:
+    if provider_auth_bootstrap_enabled(provider_key):
+        return {"forceLoginMethod": "console"}
+    return {}
+
+
+def _merge_settings_values(config_dir: Path, values: Dict[str, object], *, read_json, write_json) -> bool:
+    if not values:
+        return False
+    settings_path = config_dir / "settings.json"
+    existing = _read(settings_path, read_json)
+
+    changed = False
+    for key, value in values.items():
+        if existing.get(key) != value:
+            existing[key] = value
+            changed = True
+    if not changed:
+        return False
+
+    _write(settings_path, existing, write_json)
+    return True
 
 
 def _merge_settings_permissions(config_dir: Path, deny_tools, *, read_json, write_json) -> bool:

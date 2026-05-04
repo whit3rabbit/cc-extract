@@ -22,9 +22,34 @@ Based in part on work by https://github.com/vicnaum/bun-demincer. Theme and prom
 
 ## Install
 
+For local development from a clone:
+
 ```bash
-pip install -e .
-pip install -e '.[dev]'
+python3 -m pip install -e .
+python3 -m pip install -e '.[dev]'
+```
+
+For a normal user install from GitHub, use `pipx` to keep the CLI isolated from
+your system Python:
+
+```bash
+pipx install git+https://github.com/whit3rabbit/cc-extract.git
+cc-extractor --help
+```
+
+If `cc-extractor` is not found after install, run `pipx ensurepath` and restart
+your shell.
+
+To run once from GitHub without installing a persistent command:
+
+```bash
+pipx run --spec git+https://github.com/whit3rabbit/cc-extract.git cc-extractor --help
+```
+
+`uv` is optional. If you already use it, the equivalent one-shot command is:
+
+```bash
+uv tool run --from git+https://github.com/whit3rabbit/cc-extract.git cc-extractor --help
 ```
 
 ## Usage
@@ -183,6 +208,27 @@ cc-extractor variant remove my-cc --yes                  # remove a variant
 | `--extra-env` | Additional `KEY=VALUE` env entries (repeatable). |
 | `--force` | Overwrite an existing variant. |
 | Model overrides | `--opus`, `--sonnet`, `--haiku`, `--default`, `--small-fast`, `--subagent`. |
+
+**CC Router provider:**
+
+The `ccrouter` provider points an isolated Claude Code setup at a local
+Claude Code Router service. Install CCR, configure it, and start the service
+before running the cc-extractor wrapper:
+
+```bash
+npm install -g @musistudio/claude-code-router
+# edit ~/.claude-code-router/config.json
+ccr start
+cc-extractor variant create --name ccrouter --provider ccrouter
+```
+
+If CCR config sets `APIKEY`, expose the same value as `CCROUTER_AUTH_TOKEN`
+when creating or running the variant. Custom CCR ports require overriding
+`ANTHROPIC_BASE_URL` with `--extra-env ANTHROPIC_BASE_URL=http://127.0.0.1:<port>`.
+cc-extractor does not start `ccr`, call `ccr code`, or write CCR's global
+config. See the [CCR README](https://github.com/musistudio/claude-code-router),
+[basic config docs](https://musistudio.github.io/claude-code-router/docs/cli/config/basic/),
+and CCR's `ccr activate`/`ccr env` behavior for the upstream environment model.
 
 ### Pack
 

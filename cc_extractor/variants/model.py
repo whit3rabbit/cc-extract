@@ -4,7 +4,7 @@ from dataclasses import dataclass, field as dataclass_field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .._utils import make_kebab_id
+from .._utils import make_kebab_id, require_env_name
 from ..workspace import PATCH_ID_RE, workspace_root
 
 
@@ -116,6 +116,15 @@ def validate_variant_manifest(manifest: Dict) -> None:
         from ..providers import normalize_mcp_ids
 
         normalize_mcp_ids(selected_mcp)
+    env_unset = manifest.get("envUnset", [])
+    if env_unset is None:
+        env_unset = []
+    if not isinstance(env_unset, list):
+        raise ValueError("variant envUnset must be a list of strings")
+    for name in env_unset:
+        if not isinstance(name, str):
+            raise ValueError("variant envUnset must be a list of strings")
+        require_env_name(name, label="variant envUnset item")
     for field in ("createdAt", "updatedAt"):
         if not isinstance(manifest.get(field), str) or not manifest[field]:
             raise ValueError(f"variant {field} must be a non-empty string")
@@ -139,6 +148,7 @@ def list_variant_providers() -> List[Dict[str, object]]:
                 "authTokenFallback": provider.auth_token_fallback or "",
                 "noPromptPack": provider.no_prompt_pack,
                 "models": dict(provider.models),
+                "envUnset": list(provider.env_unset),
                 "mcpServers": sorted(provider.mcp_servers),
                 "settingsPermissionsDeny": list(provider.settings_permissions_deny),
                 "tui": dict(provider.tui),

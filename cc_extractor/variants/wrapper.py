@@ -10,6 +10,7 @@ from .._utils import atomic_write_text_no_symlink, require_env_name, utc_now as 
 from ..providers import (
     apply_provider_claude_config,
     get_provider,
+    provider_auth_bootstrap_enabled,
     provider_patch_config,
 )
 from ..workspace import read_json, write_json
@@ -115,6 +116,9 @@ def write_wrapper(manifest: Dict) -> Path:
     for key, value in sorted(manifest.get("env", {}).items()):
         env_key = require_env_name(key, label="wrapper env key")
         lines.append(f"export {env_key}={shlex.quote(str(value))}")
+    for key in manifest.get("envUnset") or []:
+        env_key = require_env_name(key, label="wrapper unset env key")
+        lines.append(f"unset {env_key}")
     credential = manifest.get("credential", {})
     if credential.get("mode") == "stored":
         lines.extend(
@@ -143,6 +147,8 @@ def write_wrapper(manifest: Dict) -> Path:
         lines.append(f": ${{{source}:?Set {source} for variant {manifest['id']}}}")
         for target in targets:
             lines.append(f"export {target}=\"${{{source}}}\"")
+    if provider_auth_bootstrap_enabled(manifest["provider"]["key"]):
+        lines.extend(_api_key_approval_bootstrap_lines())
     lines.extend(shell_splash_lines())
     if manifest.get("runtime", "native") == "node":
         lines.extend(
@@ -172,6 +178,56 @@ def write_wrapper(manifest: Dict) -> Path:
         lines.append(f"exec {shlex.quote(paths['binary'])} \"$@\"")
     atomic_write_text_no_symlink(wrapper_path, "\n".join(lines) + "\n", mode=0o755)
     return wrapper_path
+
+
+def _api_key_approval_bootstrap_lines():
+    return [
+        'if [ -n "${ANTHROPIC_API_KEY:-}" ] && command -v python3 >/dev/null 2>&1; then',
+        '  python3 - "$CLAUDE_CONFIG_DIR/.claude.json" <<\'PY\' >/dev/null 2>&1 || true',
+        "import json",
+        "import os",
+        "import pathlib",
+        "import stat",
+        "import sys",
+        "",
+        'key = os.environ.get("ANTHROPIC_API_KEY", "")',
+        "suffix = key[-20:]",
+        "if not suffix:",
+        "    raise SystemExit(0)",
+        "path = pathlib.Path(sys.argv[1])",
+        "if path.exists() or path.is_symlink():",
+        "    mode = path.lstat().st_mode",
+        "    if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):",
+        "        raise SystemExit(0)",
+        "    try:",
+        "        data = json.loads(path.read_text(encoding=\"utf-8\"))",
+        "    except Exception:",
+        "        raise SystemExit(0)",
+        "else:",
+        "    data = {}",
+        "responses = data.get(\"customApiKeyResponses\")",
+        "if not isinstance(responses, dict):",
+        "    responses = {}",
+        "approved = responses.get(\"approved\")",
+        "if not isinstance(approved, list):",
+        "    approved = []",
+        "rejected = responses.get(\"rejected\")",
+        "if not isinstance(rejected, list):",
+        "    rejected = []",
+        "if suffix not in approved:",
+        "    approved.append(suffix)",
+        "responses[\"approved\"] = approved",
+        "responses[\"rejected\"] = [item for item in rejected if item != suffix]",
+        "data[\"customApiKeyResponses\"] = responses",
+        "path.parent.mkdir(parents=True, exist_ok=True)",
+        "tmp = path.with_name(f\".{path.name}.cc-extractor-auth.tmp\")",
+        "if tmp.exists() or tmp.is_symlink():",
+        "    tmp.unlink()",
+        "tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + \"\\n\", encoding=\"utf-8\")",
+        "os.replace(tmp, path)",
+        "PY",
+        "fi",
+    ]
 
 
 def write_secrets(path: Path, secret_env: Dict[str, str]) -> None:

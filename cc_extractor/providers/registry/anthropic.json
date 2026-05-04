@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "key": "anthropic",
+  "label": "Anthropic Console",
+  "description": "First-party Anthropic API key from the Anthropic Console",
+  "displayOrder": 135,
+  "baseUrl": "https://api.anthropic.com",
+  "auth": {
+    "mode": "apiKey",
+    "apiKeyLabel": "Anthropic API key",
+    "credentialEnv": "ANTHROPIC_API_KEY"
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "",
+    "sonnet": "",
+    "haiku": "",
+    "subagent": "",
+    "requiresModelMapping": false
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "splashStyle": "anthropic",
+    "noPromptPack": true,
+    "theme": {
+      "id": "anthropic-variant",
+      "name": "Anthropic Console",
+      "colors": {
+        "bashBorder": "rgb(215,119,87)",
+        "claude": "rgb(249,250,251)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "Anthropic Console API",
+    "features": [
+      "First-party Anthropic API endpoint",
+      "Uses an Anthropic Console API key",
+      "Keeps Claude Code model defaults unless overridden"
+    ],
+    "setupLinks": {
+      "subscribe": "https://console.anthropic.com/settings/plans",
+      "apiKey": "https://console.anthropic.com/settings/keys",
+      "docs": "https://docs.anthropic.com/en/api/overview"
+    },
+    "setupNote": "Create an Anthropic Console API key and expose it through ANTHROPIC_API_KEY."
+  }
+}

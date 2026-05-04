@@ -13,6 +13,7 @@ from cc_extractor.variants import (
     apply_variant,
     create_variant,
     doctor_variant,
+    list_variant_providers,
     load_variant,
     remove_variant,
     run_variant,
@@ -177,6 +178,8 @@ def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
     assert "CLAUDE_CONFIG_DIR" in wrapper
     assert "${Z_AI_API_KEY:?Set Z_AI_API_KEY for variant zai-test}" in wrapper
     assert "ANTHROPIC_API_KEY=\"${Z_AI_API_KEY}\"" in wrapper
+    credential_export = 'export ANTHROPIC_API_KEY="${Z_AI_API_KEY}"'
+    assert wrapper.index(credential_export) < wrapper.index("customApiKeyResponses") < wrapper.index("\nexec ")
     assert "ZAI CLOUD" in wrapper
     assert result.variant.manifest["env"]["CC_EXTRACTOR_SPLASH"] == "1"
     assert result.variant.manifest["env"]["CC_EXTRACTOR_SPLASH_STYLE"] == "zai"
@@ -195,10 +198,36 @@ def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
 
     settings = json.loads((root / "variants" / "zai-test" / "config" / "settings.json").read_text(encoding="utf-8"))
     claude_config = json.loads((root / "variants" / "zai-test" / "config" / ".claude.json").read_text(encoding="utf-8"))
+    assert settings["forceLoginMethod"] == "console"
     assert "mcp__web_reader__webReader" in settings["permissions"]["deny"]
     assert sorted(claude_config["mcpServers"]) == ["web-reader", "web-search-prime", "zai-mcp-server", "zread"]
     assert claude_config["mcpServers"]["web-reader"]["headers"] == {"Authorization": "Bearer ${Z_AI_API_KEY}"}
     assert result.variant.manifest["mcp"]["selected"] == []
+
+
+def test_create_ccrouter_variant_persists_env_unset_and_wrapper_unsets_bedrock(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+
+    result = create_variant(
+        name="CCR Test",
+        provider_key="ccrouter",
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+
+    wrapper = result.wrapper_path.read_text(encoding="utf-8")
+
+    assert result.variant.manifest["envUnset"] == ["CLAUDE_CODE_USE_BEDROCK"]
+    assert "unset CLAUDE_CODE_USE_BEDROCK" in wrapper
+    assert wrapper.index("export ANTHROPIC_BASE_URL=http://127.0.0.1:3456") < wrapper.index("unset CLAUDE_CODE_USE_BEDROCK") < wrapper.index("\nexec ")
+
+
+def test_variant_provider_payload_exposes_ccrouter_env_unset():
+    providers = {provider["key"]: provider for provider in list_variant_providers()}
+
+    assert providers["ccrouter"]["envUnset"] == ["CLAUDE_CODE_USE_BEDROCK"]
 
 
 def test_create_and_reapply_variant_preserves_selected_optional_mcp(tmp_path, monkeypatch):
@@ -604,6 +633,79 @@ def test_write_wrapper_rejects_unsafe_env_key(tmp_path):
 
     with pytest.raises(ValueError, match="wrapper env key"):
         write_wrapper(manifest)
+
+
+def test_write_wrapper_rejects_unsafe_env_unset_key(tmp_path):
+    manifest = wrapper_manifest(tmp_path, {})
+    manifest["envUnset"] = ["X; touch /tmp/pwn"]
+
+    with pytest.raises(ValueError, match="wrapper unset env key"):
+        write_wrapper(manifest)
+
+
+def test_write_wrapper_unsets_env_before_launch(tmp_path):
+    manifest = wrapper_manifest(tmp_path, {"ANTHROPIC_BASE_URL": "http://127.0.0.1:3456"})
+    manifest["envUnset"] = ["CLAUDE_CODE_USE_BEDROCK"]
+
+    wrapper = write_wrapper(manifest).read_text(encoding="utf-8")
+
+    assert wrapper.index("export ANTHROPIC_BASE_URL=http://127.0.0.1:3456") < wrapper.index("unset CLAUDE_CODE_USE_BEDROCK") < wrapper.index("\nexec ")
+
+
+def test_write_wrapper_bootstraps_api_key_approval_for_non_mirror(tmp_path):
+    manifest = wrapper_manifest(tmp_path, {})
+    manifest["provider"]["key"] = "minimax"
+    manifest["credential"] = {
+        "mode": "env",
+        "source": "MINIMAX_API_KEY",
+        "targets": ["ANTHROPIC_API_KEY", "MINIMAX_API_KEY"],
+    }
+
+    wrapper = write_wrapper(manifest).read_text(encoding="utf-8")
+
+    credential_export = 'export ANTHROPIC_API_KEY="${MINIMAX_API_KEY}"'
+    assert "customApiKeyResponses" in wrapper
+    assert "key[-20:]" in wrapper
+    assert credential_export in wrapper
+    assert wrapper.index(credential_export) < wrapper.index("customApiKeyResponses") < wrapper.index("\nexec ")
+
+
+def test_write_wrapper_skips_api_key_approval_bootstrap_for_mirror(tmp_path):
+    manifest = wrapper_manifest(tmp_path, {"ANTHROPIC_API_KEY": "already-present"})
+
+    wrapper = write_wrapper(manifest).read_text(encoding="utf-8")
+
+    assert "customApiKeyResponses" not in wrapper
+    assert "key[-20:]" not in wrapper
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX wrapper execution")
+def test_write_wrapper_approves_api_key_suffix_without_storing_key(tmp_path):
+    manifest = wrapper_manifest(tmp_path, {})
+    manifest["provider"]["key"] = "minimax"
+    manifest["credential"] = {
+        "mode": "env",
+        "source": "MINIMAX_API_KEY",
+        "targets": ["ANTHROPIC_API_KEY", "MINIMAX_API_KEY"],
+    }
+    wrapper = write_wrapper(manifest)
+    api_key = "mini-key-value-1234567890abcdef"
+
+    result = subprocess.run(
+        [str(wrapper)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "MINIMAX_API_KEY": api_key},
+    )
+
+    assert result.returncode == 0
+    config_path = Path(manifest["paths"]["configDir"]) / ".claude.json"
+    raw_config = config_path.read_text(encoding="utf-8")
+    config = json.loads(raw_config)
+    assert config["customApiKeyResponses"]["approved"] == [api_key[-20:]]
+    assert config["customApiKeyResponses"]["rejected"] == []
+    assert api_key not in raw_config
 
 
 def test_write_wrapper_splash_tty_and_machine_output_controls(tmp_path):

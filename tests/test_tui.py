@@ -28,6 +28,22 @@ def _package(patch_id="replace-before", version="0.1.0", name="Replace Before"):
     )
 
 
+class _FakeStdout:
+    def __init__(self, *, tty=True):
+        self.tty = tty
+        self.writes = []
+        self.flushed = False
+
+    def isatty(self):
+        return self.tty
+
+    def write(self, text):
+        self.writes.append(text)
+
+    def flush(self):
+        self.flushed = True
+
+
 def _profile(
     profile_id="daily-build",
     name="Daily Build",
@@ -1132,6 +1148,43 @@ def test_run_pending_setup_executes_wrapper(tmp_path):
 
     assert tui._run_pending_setup(state) == 0
     assert output.read_text(encoding="utf-8") == "ran\n"
+
+
+def test_clear_terminal_for_external_command_writes_clear_when_tty(monkeypatch):
+    stdout = _FakeStdout(tty=True)
+    monkeypatch.setattr(tui.sys, "stdout", stdout)
+
+    tui._clear_terminal_for_external_command()
+
+    assert stdout.writes == ["\033[2J\033[H"]
+    assert stdout.flushed is True
+
+
+def test_run_pending_setup_clears_before_wrapper(monkeypatch, tmp_path):
+    wrapper = tmp_path / "deepseek-main"
+    state = tui.TuiState(
+        pending_run_setup_id="deepseek-main",
+        pending_run_command=[str(wrapper)],
+    )
+    calls = []
+
+    def fake_clear():
+        calls.append("clear")
+
+    def fake_run(command, check=False):
+        calls.append(("run", command, check))
+
+        class Result:
+            returncode = 0
+
+        return Result()
+
+    monkeypatch.setattr(tui, "_clear_terminal_for_external_command", fake_clear)
+    monkeypatch.setattr(tui.subprocess, "run", fake_run)
+
+    assert tui._run_pending_setup(state) == 0
+
+    assert calls == ["clear", ("run", [str(wrapper)], False)]
 
 
 def test_setup_manager_search_filters_rows_and_keeps_create_action():
