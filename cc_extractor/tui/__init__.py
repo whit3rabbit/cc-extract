@@ -63,6 +63,7 @@ __all__ = [
     "_toggle_variant_store_secret", "_variant_api_key_for_create",
     "_variant_base_url_for_create", "_variant_credential_env_for_create",
     "_variant_model_overrides_for_create", "_variant_store_secret_for_create",
+    "_refresh_startup_download_index",
     "_run_inspect_delete", "_run_setup_health", "_run_setup_upgrade", "_run_setup_delete", "_route_startup",
     "_queue_setup_run", "_run_pending_setup",
     "_start_busy_action", "_poll_busy_action",
@@ -321,6 +322,7 @@ from .setup_actions import (
     _queue_setup_run,
     _refresh_models_editor_models,
     _refresh_state,
+    _refresh_startup_download_index,
     _refresh_variant_models,
     _result_stage_lines,
     _route_startup,
@@ -366,6 +368,7 @@ def run_tui():
     _load_saved_setup_list_preferences(state)
     if _refresh_state(state):
         _route_startup(state)
+        _refresh_startup_download_index(state)
 
     def render(term, app_state):
         width, height = term.size()

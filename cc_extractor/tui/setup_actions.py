@@ -36,8 +36,10 @@ provider_default_variant_name = _proxy('provider_default_variant_name')
 variant_id_from_name = _proxy('variant_id_from_name')
 create_variant = _proxy('create_variant')
 _models_pending_diff = _proxy('_models_pending_diff')
+download_versions = _proxy('download_versions')
+refresh_download_index = _proxy('refresh_download_index')
 
-__all__ = ['_refresh_state', '_route_startup', '_load_saved_setup_list_preferences', '_save_setup_list_preferences', '_log_lines', '_stage_log_lines', '_build_stage_lines', '_exception_stage_lines', '_result_stage_lines', '_append_backend_stages', '_stage_lines_from_log', '_copy_text_to_clipboard', '_copy_setup_command', '_copy_setup_config', '_queue_setup_run', '_clear_terminal_for_external_command', '_run_pending_setup', '_copy_logs', '_open_logs', '_open_help', '_health_status_from_report', '_yes_no', '_path_snapshot', '_path_changed', '_expected_setup_snapshot', '_variant_setup_snapshot', '_create_failure_summary', '_target_version_for_summary', '_has_cached_native_artifact', '_base_download_status', '_post_variant_snapshot', '_command_replaced_status', '_active_setup_status', '_run_setup_health', '_run_setup_upgrade', '_inspect_delete_artifact', '_run_inspect_delete', '_run_setup_delete', '_begin_tweak_apply_preview', '_run_tweak_apply', '_run_dashboard_build', '_refresh_variant_models', '_refresh_models_editor_models', '_models_editor_variant', '_models_editor_provider', '_models_editor_endpoint', '_models_editor_api_key', '_apply_models_choice', '_apply_models', '_discard_models', '_variant_model_discovery_api_key', '_run_variant_create']
+__all__ = ['_refresh_state', '_refresh_startup_download_index', '_route_startup', '_load_saved_setup_list_preferences', '_save_setup_list_preferences', '_log_lines', '_stage_log_lines', '_build_stage_lines', '_exception_stage_lines', '_result_stage_lines', '_append_backend_stages', '_stage_lines_from_log', '_copy_text_to_clipboard', '_copy_setup_command', '_copy_setup_config', '_queue_setup_run', '_clear_terminal_for_external_command', '_run_pending_setup', '_copy_logs', '_open_logs', '_open_help', '_health_status_from_report', '_yes_no', '_path_snapshot', '_path_changed', '_expected_setup_snapshot', '_variant_setup_snapshot', '_create_failure_summary', '_target_version_for_summary', '_has_cached_native_artifact', '_base_download_status', '_post_variant_snapshot', '_command_replaced_status', '_active_setup_status', '_run_setup_health', '_run_setup_upgrade', '_inspect_delete_artifact', '_run_inspect_delete', '_run_setup_delete', '_begin_tweak_apply_preview', '_run_tweak_apply', '_run_dashboard_build', '_refresh_variant_models', '_refresh_models_editor_models', '_models_editor_variant', '_models_editor_provider', '_models_editor_endpoint', '_models_editor_api_key', '_apply_models_choice', '_apply_models', '_discard_models', '_variant_model_discovery_api_key', '_run_variant_create']
 
 def _refresh_state(state):
     try:
@@ -47,6 +49,21 @@ def _refresh_state(state):
         prefix = f"{state.message} " if state.message else ""
         state.message = f"{prefix}Refresh failed: {exc}"
         return False
+
+def _refresh_startup_download_index(state):
+    if state.download_index_checked_live:
+        return True
+    state.download_index_checked_live = True
+    try:
+        index = refresh_download_index()
+    except Exception as exc:
+        prefix = f"{state.message} " if state.message else ""
+        state.message = f"{prefix}Version check failed: {exc}"
+        return False
+    state.download_index = index
+    state.download_versions = download_versions(index, "binary")
+    state.download_index_loaded = True
+    return True
 
 def _route_startup(state):
     if state.variants:

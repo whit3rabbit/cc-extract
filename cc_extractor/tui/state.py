@@ -40,6 +40,7 @@ class TuiState:
     download_index: dict = field(default_factory=dict)
     download_versions: List[str] = field(default_factory=list)
     download_index_loaded: bool = False
+    download_index_checked_live: bool = False
     selected_source_index: int = 0
     selected_patch_indexes: List[int] = field(default_factory=list)
     selected_dashboard_tweak_ids: List[str] = field(default_factory=list)

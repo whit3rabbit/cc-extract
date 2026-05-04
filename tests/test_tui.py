@@ -570,15 +570,31 @@ def test_version_list_loads_once_until_manual_refresh(monkeypatch, tmp_path):
     assert len(loads) == 1
     assert state.download_versions == ["2.1.121"]
 
+    live_checks = []
+
+    def fake_startup_refresh():
+        live_checks.append(True)
+        return {"binary": {"latest": "2.1.122", "versions": [{"version": "2.1.122"}]}}
+
+    monkeypatch.setattr(tui, "refresh_download_index", fake_startup_refresh)
+
+    tui._refresh_startup_download_index(state)
+    tui._refresh_startup_download_index(state)
+
+    assert len(live_checks) == 1
+    assert state.download_versions == ["2.1.122"]
+    assert state.download_index_checked_live is True
+
     monkeypatch.setattr(
         dashboard_module,
         "refresh_download_index",
-        lambda: {"binary": {"latest": "2.1.122", "versions": [{"version": "2.1.122"}]}},
+        lambda: {"binary": {"latest": "2.1.123", "versions": [{"version": "2.1.123"}]}},
     )
 
     tui._refresh_dashboard_index(state)
 
-    assert state.download_versions == ["2.1.122"]
+    assert live_checks == [True]
+    assert state.download_versions == ["2.1.123"]
     assert state.download_index_loaded is True
 
 
