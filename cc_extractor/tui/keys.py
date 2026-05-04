@@ -5,7 +5,7 @@
 former calls it; rebinding has to occur in the same module's globals.
 """
 
-from .options import selected_dashboard_option, selected_variant_option
+from .options import selected_dashboard_option, selected_models_edit_option, selected_variant_option
 
 
 def dashboard_accepts_profile_text(state) -> bool:
@@ -36,6 +36,13 @@ def variant_accepts_text(state) -> bool:
     }
 
 
+def models_accepts_text(state) -> bool:
+    if state.mode != "models-edit":
+        return False
+    option = selected_models_edit_option(state)
+    return option is not None and option.kind == "models-field"
+
+
 def variant_append_text(state, char: str) -> None:
     option = selected_variant_option(state)
     if option is None:
@@ -55,6 +62,14 @@ def variant_append_text(state, char: str) -> None:
         state.variant_model_overrides[key] = state.variant_model_overrides.get(key, "") + char
 
 
+def models_append_text(state, char: str) -> None:
+    option = selected_models_edit_option(state)
+    if option is None or option.kind != "models-field":
+        return
+    key = str(option.value)
+    state.models_pending[key] = state.models_pending.get(key, "") + char
+
+
 def variant_backspace(state) -> bool:
     if not variant_accepts_text(state):
         return False
@@ -72,4 +87,13 @@ def variant_backspace(state) -> bool:
     elif option.kind == "variant-model":
         key = str(option.value)
         state.variant_model_overrides[key] = state.variant_model_overrides.get(key, "")[:-1]
+    return True
+
+
+def models_backspace(state) -> bool:
+    if not models_accepts_text(state):
+        return False
+    option = selected_models_edit_option(state)
+    key = str(option.value)
+    state.models_pending[key] = state.models_pending.get(key, "")[:-1]
     return True

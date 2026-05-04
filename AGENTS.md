@@ -379,3 +379,7 @@ A new curated tweak is not complete until:
 - Dashboard/Tweaks visibility is intentional;
 - TUI MCP smoke test exists if the patch changes visible UI behavior;
 - real-binary smoke test is gated, not run by default.
+
+## Patch Source Code
+
+- When creating patches you can use @original as source of truth when creating patches. This is a reference only and will be to understand original code. Do not commit.

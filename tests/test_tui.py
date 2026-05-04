@@ -363,7 +363,7 @@ def test_compact_key_footer_fits_narrow_width():
     detail_screen = _render_screen(detail, 70, 24)
 
     assert "Keys: Q/Ctrl+C quit | Enter manage | Up/Down | X run | ? more" in manager_screen
-    assert "Keys: Q/Ctrl+C quit | Enter select | Esc | Up/Down | ? more" in detail_screen
+    assert "Keys: Q quit | Enter select | M models | Esc | Up/Down | ?" in detail_screen
 
 
 def test_footer_keys_match_variant_step():
@@ -1366,6 +1366,100 @@ def test_setup_manager_health_reports_doctor_failure(monkeypatch):
 
     assert state.message == "Health for setup mirror: broken"
     assert state.setup_health["mirror"]["status"] == "broken"
+
+
+def test_setup_detail_opens_model_editor_and_applies_changes(monkeypatch, tmp_path):
+    calls = []
+    variant = _variant("lm-local", "LM Local")
+    variant.manifest["provider"] = {"key": "lmstudio", "label": "LM Studio"}
+    variant.manifest["modelOverrides"] = {"opus": "old-model", "sonnet": "old-model", "haiku": "old-model"}
+    variant.manifest["env"] = {"ANTHROPIC_BASE_URL": "http://localhost:1234"}
+    variant.manifest["paths"]["wrapper"] = str(tmp_path / "lm-local")
+    provider = {
+        "key": "lmstudio",
+        "label": "LM Studio",
+        "baseUrl": "http://localhost:1234",
+        "models": {},
+        "modelDiscovery": {"enabled": True},
+        "requiresModelMapping": True,
+    }
+
+    def fake_update_models(variant_id, model_overrides, root=None):
+        calls.append((variant_id, model_overrides))
+        variant.manifest["modelOverrides"] = dict(model_overrides)
+        return variant
+
+    def fake_refresh(state_arg):
+        state_arg.variants = [variant]
+        return True
+
+    monkeypatch.setattr(tui, "update_variant_models", fake_update_models)
+    monkeypatch.setattr(tui, "doctor_variant", lambda name: [{"id": name, "ok": True, "checks": []}])
+    monkeypatch.setattr(tui, "_refresh_state", fake_refresh)
+    state = tui.TuiState(
+        mode="setup-detail",
+        variants=[variant],
+        selected_setup_id="lm-local",
+        variant_providers=[provider],
+    )
+
+    tui._handle_char_key(state, "m")
+
+    assert state.mode == "models-edit"
+    assert state.models_pending["opus"] == "old-model"
+    assert "Edit models: lm-local" in tui._screen_text(state)
+
+    state.selected_index = 2
+    state.models_pending["opus"] = ""
+    for char in "new-model":
+        tui._handle_char_key(state, char)
+    tui._apply_models(state)
+
+    assert calls[0][0] == "lm-local"
+    assert calls[0][1]["opus"] == "new-model"
+    assert calls[0][1]["sonnet"] == "old-model"
+    assert state.mode == "health-result"
+    assert "Binary rebuilt: no" in "\n".join(state.last_action_summary)
+
+
+def test_models_editor_refresh_applies_selected_model(monkeypatch):
+    variant = _variant("lm-local", "LM Local")
+    variant.manifest["provider"] = {"key": "lmstudio", "label": "LM Studio"}
+    variant.manifest["modelOverrides"] = {}
+    variant.manifest["env"] = {"ANTHROPIC_BASE_URL": "http://localhost:1234"}
+    provider = {
+        "key": "lmstudio",
+        "label": "LM Studio",
+        "baseUrl": "http://localhost:1234",
+        "models": {},
+        "modelDiscovery": {"enabled": True},
+        "requiresModelMapping": True,
+    }
+    calls = []
+
+    def fake_fetch(endpoint, api_key=None):
+        calls.append((endpoint, api_key))
+        return ["local/model-a", "local/model-b"]
+
+    monkeypatch.setattr(tui, "fetch_provider_models", fake_fetch)
+    state = tui.TuiState(
+        mode="models-edit",
+        variants=[variant],
+        selected_setup_id="lm-local",
+        models_variant_id="lm-local",
+        variant_providers=[provider],
+    )
+
+    tui._activate_models_edit(state)
+
+    assert calls == [("http://localhost:1234", None)]
+    assert state.models_choices == ["local/model-a", "local/model-b"]
+    assert state.selected_index == 1
+
+    tui._activate_models_edit(state)
+
+    assert all(state.models_pending[key] == "local/model-a" for key, _label in tui.VARIANT_MODEL_FIELDS)
+    assert state.message == "Model aliases set to local/model-a"
 
 
 # -- Tweaks tab tests ----------------------------------------------------------

@@ -87,6 +87,10 @@ class TuiState:
     tweak_search_active: bool = False
     tweak_apply_preview: bool = False
     last_tweak_result: Optional[Dict[str, Any]] = None
+    models_variant_id: Optional[str] = None
+    models_baseline: Dict[str, str] = field(default_factory=dict)
+    models_pending: Dict[str, str] = field(default_factory=dict)
+    models_choices: List[str] = field(default_factory=list)
     inspect_delete_confirm_path: str = ""
 
     def __post_init__(self):
@@ -138,6 +142,11 @@ class TuiState:
             self.tweaks_pending = []
             self.tweak_search_active = False
             self.tweak_apply_preview = False
+        if self.models_variant_id not in setup_ids and self.mode != "models-edit":
+            self.models_variant_id = None
+            self.models_baseline = {}
+            self.models_pending = {}
+            self.models_choices = []
         self.selected_patch_indexes = [
             index for index in self.selected_patch_indexes
             if 0 <= index < len(self.patch_packages)
@@ -169,6 +178,7 @@ class TuiState:
             setup_detail_options,
             setup_manager_options,
             tweaks_edit_options,
+            models_edit_options,
             variant_options,
         )
 
@@ -190,6 +200,8 @@ class TuiState:
             return len(self.variants)
         if self.mode in {"tweaks-edit", "tweak-editor"}:
             return len(tweaks_edit_options(self))
+        if self.mode == "models-edit":
+            return len(models_edit_options(self))
         return 1
 
     def move(self, offset):

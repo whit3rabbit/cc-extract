@@ -87,6 +87,12 @@ def go_back(state) -> None:
             state.tweak_search = ""
             state.tweak_search_active = False
             set_mode(state, "setup-detail" if state.selected_setup_id else "setup-manager")
+    elif state.mode == "models-edit":
+        state.models_variant_id = None
+        state.models_baseline = {}
+        state.models_pending = {}
+        state.models_choices = []
+        set_mode(state, "setup-detail" if state.selected_setup_id else "setup-manager")
 
 
 def toggle_patch(state) -> None:
