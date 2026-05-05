@@ -190,6 +190,9 @@ def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
         "prompt-overlays",
         "hide-startup-banner",
         "hide-startup-clawd",
+        "suppress-native-installer-warning",
+        "suppress-prompt-caching-warning",
+        "suppress-model-launch-notice",
         "mcp-non-blocking",
         "mcp-batch-size",
         "rtk-shell-prefix",
@@ -262,6 +265,41 @@ def test_variant_provider_payload_exposes_ccrouter_env_unset():
     providers = {provider["key"]: provider for provider in list_variant_providers()}
 
     assert providers["ccrouter"]["envUnset"] == ["CLAUDE_CODE_USE_BEDROCK"]
+    assert providers["ccrouter"]["splashStyle"] == "ccrouter"
+    assert "CC ROUTER" in providers["ccrouter"]["asciiArt"]
+    assert "\033" not in providers["ccrouter"]["asciiArt"]
+    assert providers["ccrouter"]["asciiArtQuoteBlock"].startswith("> +")
+
+
+def test_variant_cli_provider_quote_blocks(monkeypatch, capsys):
+    from cc_extractor import __main__ as cli
+    import sys
+
+    monkeypatch.setattr(
+        cli,
+        "list_variant_providers",
+        lambda: [
+            {
+                "key": "zai",
+                "label": "Zai Cloud",
+                "description": "Test provider",
+                "asciiArt": "+===+\n| Z |",
+                "asciiArtQuoteBlock": "> +===+\n> | Z |",
+            }
+        ],
+    )
+
+    old_argv = sys.argv
+    sys.argv = ["cc-extractor", "variant", "providers", "--quote-blocks"]
+    try:
+        cli.main()
+    finally:
+        sys.argv = old_argv
+
+    out = capsys.readouterr().out
+    assert "zai: Zai Cloud" in out
+    assert "> +===+" in out
+    assert "> | Z |" in out
 
 
 def test_create_and_reapply_variant_preserves_selected_optional_mcp(tmp_path, monkeypatch):
@@ -373,7 +411,7 @@ def test_macos_startup_regex_tweaks_use_in_place_binary_patch(tmp_path, monkeypa
             skipped_reason=None,
             missing_prompt_keys=[],
             resigned=False,
-            curated_applied=["hide-startup-banner", "hide-startup-clawd", "mcp-non-blocking"],
+            curated_applied=["hide-startup-banner", "hide-startup-clawd"],
             curated_skipped=[],
             curated_missed=[],
         )
@@ -419,7 +457,14 @@ def test_macos_default_startup_tweaks_do_not_force_node_runtime(tmp_path, monkey
             skipped_reason=None,
             missing_prompt_keys=[],
             resigned=False,
-            curated_applied=["hide-startup-banner", "hide-startup-clawd", "mcp-non-blocking"],
+            curated_applied=[
+                "hide-startup-banner",
+                "hide-startup-clawd",
+                "suppress-native-installer-warning",
+                "suppress-prompt-caching-warning",
+                "suppress-model-launch-notice",
+                "mcp-non-blocking",
+            ],
             curated_skipped=[],
             curated_missed=[],
         )
@@ -445,6 +490,9 @@ def test_macos_default_startup_tweaks_do_not_force_node_runtime(tmp_path, monkey
         "prompt-overlays",
         "hide-startup-banner",
         "hide-startup-clawd",
+        "suppress-native-installer-warning",
+        "suppress-prompt-caching-warning",
+        "suppress-model-launch-notice",
         "mcp-non-blocking",
         "mcp-batch-size",
         "rtk-shell-prefix",
@@ -460,6 +508,9 @@ def test_macos_default_startup_tweaks_do_not_force_node_runtime(tmp_path, monkey
     assert patch_calls[0].regex_tweaks == [
         "hide-startup-banner",
         "hide-startup-clawd",
+        "suppress-native-installer-warning",
+        "suppress-prompt-caching-warning",
+        "suppress-model-launch-notice",
         "mcp-non-blocking",
     ]
     assert result.variant.manifest["patchResults"]["appliedTweaks"] == [
@@ -467,6 +518,9 @@ def test_macos_default_startup_tweaks_do_not_force_node_runtime(tmp_path, monkey
         "prompt-overlays",
         "hide-startup-banner",
         "hide-startup-clawd",
+        "suppress-native-installer-warning",
+        "suppress-prompt-caching-warning",
+        "suppress-model-launch-notice",
         "mcp-non-blocking",
         "mcp-batch-size",
         "rtk-shell-prefix",

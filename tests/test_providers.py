@@ -18,7 +18,7 @@ from cc_extractor.providers import (
 )
 from cc_extractor.providers.schema import ProviderSchemaError, provider_from_json
 from cc_extractor.variants import list_variant_providers
-from cc_extractor.variants.splash import has_style
+from cc_extractor.variants.splash import has_style, splash_ascii_art, splash_quote_block
 
 
 def _minimal_provider_payload(mcp_servers):
@@ -252,6 +252,22 @@ def test_provider_splash_metadata_matches_art_registry():
         assert provider.env["CC_EXTRACTOR_SPLASH"] == "1"
         assert provider.env["CC_EXTRACTOR_PROVIDER_LABEL"] == provider.label
         assert has_style(provider.env["CC_EXTRACTOR_SPLASH_STYLE"])
+
+
+def test_provider_ascii_art_is_unique_plain_and_quoteable():
+    art_by_key = {}
+    for provider in list_providers():
+        style = provider.env["CC_EXTRACTOR_SPLASH_STYLE"]
+        art = splash_ascii_art(style)
+        quote_block = splash_quote_block(style)
+
+        assert art
+        assert "\033" not in art
+        assert all(line.startswith("> ") for line in quote_block.splitlines())
+        assert [line[2:] for line in quote_block.splitlines()] == art.splitlines()
+        art_by_key[provider.key] = art
+
+    assert len(set(art_by_key.values())) == len(art_by_key)
 
 
 def test_ported_provider_defaults_match_cc_mirror_update():

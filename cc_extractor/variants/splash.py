@@ -71,18 +71,41 @@ def splash_lines(style: str) -> Tuple[str, ...]:
     """Return ANSI-colored splash lines for a known provider style."""
     resolved = style if has_style(style) else "default"
     primary, secondary, accent, dim = PALETTES[resolved]
+    art = splash_ascii_lines(resolved)
+    return (
+        "",
+        f"{dim}{art[0]}{RESET}",
+        f"{primary}{art[1]}{RESET}",
+        f"{secondary}{art[2]}{RESET}",
+        f"{accent}{art[3]}{RESET}",
+        f"{dim}{art[4]}{RESET}",
+        "",
+    )
+
+
+def splash_ascii_lines(style: str) -> Tuple[str, ...]:
+    """Return uncolored provider splash art lines for copying or machine output."""
+    resolved = style if has_style(style) else "default"
     text = SPLASH_TEXT[resolved]
     width = max(len(line) for line in text) + 4
     rule = "=" * width
     return (
-        "",
-        f"{dim}+{rule}+{RESET}",
-        f"{primary}|  {text[0].ljust(width - 2)}|{RESET}",
-        f"{secondary}|  {text[1].ljust(width - 2)}|{RESET}",
-        f"{accent}|  {text[2].ljust(width - 2)}|{RESET}",
-        f"{dim}+{rule}+{RESET}",
-        "",
+        f"+{rule}+",
+        f"|  {text[0].ljust(width - 2)}|",
+        f"|  {text[1].ljust(width - 2)}|",
+        f"|  {text[2].ljust(width - 2)}|",
+        f"+{rule}+",
     )
+
+
+def splash_ascii_art(style: str) -> str:
+    """Return uncolored provider splash art as a copyable multi-line string."""
+    return "\n".join(splash_ascii_lines(style))
+
+
+def splash_quote_block(style: str) -> str:
+    """Return provider splash art formatted as a Markdown quote block."""
+    return "\n".join(f"> {line}" for line in splash_ascii_lines(style))
 
 
 def shell_splash_lines(styles: Iterable[str] = None) -> List[str]:

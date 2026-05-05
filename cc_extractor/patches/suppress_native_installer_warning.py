@@ -15,7 +15,11 @@ _WARNING = (
 def _apply(js: str, ctx: PatchContext) -> PatchOutcome:
     match = re.search(re.escape(_WARNING), js)
     if not match:
-        return PatchOutcome(js=js, status="missed")
+        return PatchOutcome(
+            js=js,
+            status="missed",
+            notes=("native installer warning already absent",),
+        )
     new_js = js[:match.start()] + js[match.end():]
     return PatchOutcome(js=new_js, status="applied")
 
@@ -27,5 +31,6 @@ PATCH = Patch(
     versions_supported=">=2.1.0,<3",
     versions_tested=(">=2.1.0,<2.2",),
     apply=_apply,
+    on_miss="skip",
     description="Remove the startup warning that prompts npm users to install the native Claude Code binary.",
 )

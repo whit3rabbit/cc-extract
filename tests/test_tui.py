@@ -302,7 +302,9 @@ def test_dashboard_first_run_lists_curated_tweaks_without_dead_end_continue():
 def test_dashboard_tweak_ids_include_first_wave_ports():
     ids = tui._dashboard_tweak_ids()
 
+    assert "suppress-model-launch-notice" in ids
     assert "suppress-native-installer-warning" in ids
+    assert "suppress-prompt-caching-warning" in ids
     assert "suppress-rate-limit-options" in ids
     assert "thinking-visibility" in ids
     assert "input-box-border" in ids

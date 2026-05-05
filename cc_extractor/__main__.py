@@ -56,6 +56,13 @@ def cmd_variant(args, variant_parser):
         providers = list_variant_providers()
         if args.json:
             print_json(providers)
+        elif args.ascii_art or args.quote_blocks:
+            art_key = "asciiArtQuoteBlock" if args.quote_blocks else "asciiArt"
+            for index, provider in enumerate(providers):
+                if index:
+                    print()
+                print(f"{provider['key']}: {provider['label']}")
+                print(provider.get(art_key) or "")
         else:
             for provider in providers:
                 print(f"{provider['key']}: {provider['label']} - {provider['description']}")

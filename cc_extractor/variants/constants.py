@@ -6,7 +6,14 @@ VARIANT_METADATA = "variant.json"
 
 _THEME_PROMPT_TWEAKS = ("themes", "prompt-overlays")
 _PROMPT_ONLY_TWEAKS = tuple(PROMPT_ONLY_TWEAK_IDS)
-_NATIVE_REGEX_TWEAKS = ("hide-startup-banner", "hide-startup-clawd", "mcp-non-blocking")
+_NATIVE_REGEX_TWEAKS = (
+    "hide-startup-banner",
+    "hide-startup-clawd",
+    "suppress-native-installer-warning",
+    "suppress-prompt-caching-warning",
+    "suppress-model-launch-notice",
+    "mcp-non-blocking",
+)
 _SETUP_ENV_ONLY_TWEAKS = tuple(SETUP_ENV_ONLY_TWEAK_IDS)
 _IN_PLACE_TWEAKS = (
     *_THEME_PROMPT_TWEAKS,

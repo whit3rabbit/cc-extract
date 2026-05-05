@@ -55,6 +55,9 @@ class PatchFailure:
 NATIVE_REGEX_TWEAK_IDS = {
     "hide-startup-banner",
     "hide-startup-clawd",
+    "suppress-native-installer-warning",
+    "suppress-prompt-caching-warning",
+    "suppress-model-launch-notice",
     "mcp-non-blocking",
     "mcp-batch-size",
 }

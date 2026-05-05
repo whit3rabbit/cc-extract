@@ -132,6 +132,7 @@ def validate_variant_manifest(manifest: Dict) -> None:
 
 def list_variant_providers() -> List[Dict[str, object]]:
     from ..providers import list_providers
+    from .splash import splash_ascii_art, splash_quote_block
 
     providers = []
     for provider in list_providers():
@@ -139,6 +140,7 @@ def list_variant_providers() -> List[Dict[str, object]]:
         model_discovery = provider.tui.get("modelDiscovery") or {}
         if not isinstance(model_discovery, dict):
             model_discovery = {}
+        splash_style = str(provider.env.get("CC_EXTRACTOR_SPLASH_STYLE") or "default")
         providers.append(
             {
                 "key": provider.key,
@@ -159,6 +161,9 @@ def list_variant_providers() -> List[Dict[str, object]]:
                 "modelDiscovery": dict(model_discovery),
                 "tui": dict(provider.tui),
                 "defaultVariantName": provider.default_variant_name or provider.key,
+                "splashStyle": splash_style,
+                "asciiArt": splash_ascii_art(splash_style),
+                "asciiArtQuoteBlock": splash_quote_block(splash_style),
             }
         )
     return providers

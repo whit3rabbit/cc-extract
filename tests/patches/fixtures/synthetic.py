@@ -24,10 +24,33 @@ SYNTHETIC = {
         'function fmt({content:C,startLine:S}){if(!C)return"";'
         'let L=C.split(/\\r?\\n/);return L.map(x=>x).join("\\n")}function next(){}'
     ),
+    "suppress-model-launch-notice": (
+        'function QK3(){if(dq()!=="firstParty")return!1;let H=I_();'
+        'if(H.unpinOpus47LaunchEffort)return!1;'
+        'if((H.opus47LaunchSeenCount??0)>=gK3)return!1;return!0}'
+    ),
     "suppress-native-installer-warning": (
         "Claude Code has switched from npm to native installer. Run `claude install` "
         "or see https://docs.anthropic.com/en/docs/claude-code/getting-started "
         "for more options."
+    ),
+    "suppress-prompt-caching-warning": (
+        'function VV8(){let H=hV8.c(5),_;'
+        'if(H[0]===Symbol.for("react.memo_cache_sentinel"))'
+        '_=["DISABLE_PROMPT_CACHING","DISABLE_PROMPT_CACHING_HAIKU",'
+        '"DISABLE_PROMPT_CACHING_OPUS","DISABLE_PROMPT_CACHING_SONNET"],H[0]=_;'
+        'else _=H[0];let q;if(H[1]===Symbol.for("react.memo_cache_sentinel"))'
+        'q=_.filter($43),H[1]=q;else q=H[1];let K=q;if(K.length===0)return null;'
+        'let O;if(H[2]===Symbol.for("react.memo_cache_sentinel"))'
+        'O=X8.createElement(v,{color:"error"},"\\u25CF "),H[2]=O;else O=H[2];'
+        'let T;if(H[3]===Symbol.for("react.memo_cache_sentinel"))'
+        'T=X8.createElement(v,{color:"error"},"Prompt caching disabled via ",K.join(", "),'
+        '". This will impact latency and token costs."),H[3]=T;else T=H[3];'
+        'let A;if(H[4]===Symbol.for("react.memo_cache_sentinel"))'
+        'A=X8.createElement(B,{flexDirection:"row"},O,X8.createElement(B,{flexDirection:"column"},'
+        'T,X8.createElement(v,{dimColor:!0},"We highly recommend disabling"," ",'
+        'K.length===1?"this environment variable":"these environment variables"))),H[4]=A;'
+        'else A=H[4];return A}'
     ),
     "suppress-rate-limit-options": (
         'R.createElement(X,{a:1}),showAllInTranscript:A,'

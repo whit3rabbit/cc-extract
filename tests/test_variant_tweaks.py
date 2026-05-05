@@ -61,7 +61,19 @@ def test_curated_tweak_ports_patch_fixture_patterns():
             'function inner(){return"\\u259B\\u2588\\u2588\\u2588\\u259C"}function wrapper(){return R.createElement(inner,{})}',
             'if(v&&P)p("tengu_external_editor_hint_shown",{})',
             'function fmt({content:C,startLine:S}){if(!C)return"";let L=C.split(/\\r?\\n/);return L.map(x=>x).join("\\n")}function next(){}',
+            'function QK3(){if(dq()!=="firstParty")return!1;let H=I_();if(H.unpinOpus47LaunchEffort)return!1;if((H.opus47LaunchSeenCount??0)>=gK3)return!1;return!0}',
             "Claude Code has switched from npm to native installer. Run `claude install` or see https://docs.anthropic.com/en/docs/claude-code/getting-started for more options.",
+            (
+                'function VV8(){let H=hV8.c(5),_;if(H[0]===Symbol.for("react.memo_cache_sentinel"))'
+                '_=["DISABLE_PROMPT_CACHING","DISABLE_PROMPT_CACHING_HAIKU","DISABLE_PROMPT_CACHING_OPUS","DISABLE_PROMPT_CACHING_SONNET"],H[0]=_;'
+                'else _=H[0];let q;if(H[1]===Symbol.for("react.memo_cache_sentinel"))q=_.filter($43),H[1]=q;else q=H[1];'
+                'let K=q;if(K.length===0)return null;let O;if(H[2]===Symbol.for("react.memo_cache_sentinel"))'
+                'O=X8.createElement(v,{color:"error"},"\\u25CF "),H[2]=O;else O=H[2];let T;'
+                'if(H[3]===Symbol.for("react.memo_cache_sentinel"))T=X8.createElement(v,{color:"error"},"Prompt caching disabled via ",K.join(", "),". This will impact latency and token costs."),H[3]=T;'
+                'else T=H[3];let A;if(H[4]===Symbol.for("react.memo_cache_sentinel"))'
+                'A=X8.createElement(B,{flexDirection:"row"},O,X8.createElement(B,{flexDirection:"column"},T,X8.createElement(v,{dimColor:!0},"We highly recommend disabling"," ",K.length===1?"this environment variable":"these environment variables"))),H[4]=A;'
+                'else A=H[4];return A}'
+            ),
             'R.createElement(X,{a:1}),showAllInTranscript:A,agentDefinitions:B,onOpenRateLimitOptions:C,other:true',
             'case"thinking":{if(!D&&!H)return null;let T=D&&H;isTranscriptMode:D,verbose:H,hideInTranscript:T}',
             'createElement(T,{color:V.bgColor},"\\u2500".repeat(W));borderColor:Y(),borderStyle:"round",borderLeft:!1,borderRight:!1,borderBottom:!0,width:"100%",borderText:Z();',
@@ -87,7 +99,9 @@ def test_curated_tweak_ports_patch_fixture_patterns():
             "hide-startup-clawd",
             "hide-ctrl-g-to-edit",
             "suppress-line-numbers",
+            "suppress-model-launch-notice",
             "suppress-native-installer-warning",
+            "suppress-prompt-caching-warning",
             "suppress-rate-limit-options",
             "thinking-visibility",
             "input-box-border",
@@ -110,7 +124,10 @@ def test_curated_tweak_ports_patch_fixture_patterns():
     assert "return null;" in result.js
     assert 'if(false)p("tengu_external_editor_hint_shown"' in result.js
     assert "return C}function next" in result.js
+    assert "cc-extractor:suppress-model-launch-notice" in result.js
     assert "Claude Code has switched from npm to native installer" not in result.js
+    assert "cc-extractor:suppress-prompt-caching-warning" in result.js
+    assert "Prompt caching disabled via" not in result.js
     assert "onOpenRateLimitOptions:()=>{}" in result.js
     assert "isTranscriptMode:true," in result.js
     assert "borderStyle:undefined" in result.js
@@ -154,6 +171,9 @@ def test_default_tweaks_include_mcp_startup_and_rtk_instruction():
         "prompt-overlays",
         "hide-startup-banner",
         "hide-startup-clawd",
+        "suppress-native-installer-warning",
+        "suppress-prompt-caching-warning",
+        "suppress-model-launch-notice",
         "mcp-non-blocking",
         "mcp-batch-size",
         "rtk-shell-prefix",

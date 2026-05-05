@@ -1,8 +1,6 @@
 """Append the provider label to the (Claude Code) version banner."""
 
 from . import Patch, PatchContext, PatchOutcome
-from ._pinned_default import DEFAULT_VERSION_RANGES
-
 
 def _apply(js: str, ctx: PatchContext) -> PatchOutcome:
     marker = " (Claude Code)"
@@ -19,7 +17,7 @@ PATCH = Patch(
     name="Patches-applied indication",
     group="ui",
     versions_supported=">=2.0.0,<3",
-    versions_tested=DEFAULT_VERSION_RANGES,
+    versions_tested=(">=2.0.20,<2.1", ">=2.1.0,<=2.1.128"),
     apply=_apply,
     description="Append the provider label after '(Claude Code)' in the version banner.",
 )

@@ -78,7 +78,14 @@ def build_parser():
 
 def _build_variant_subcommands(subparsers):
     providers = subparsers.add_parser("providers", help="List provider presets")
-    providers.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+    provider_formats = providers.add_mutually_exclusive_group()
+    provider_formats.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+    provider_formats.add_argument("--ascii-art", action="store_true", help="Print provider ASCII art")
+    provider_formats.add_argument(
+        "--quote-blocks",
+        action="store_true",
+        help="Print provider ASCII art as Markdown quote blocks",
+    )
 
     mcp = subparsers.add_parser("mcp", help="List provider and optional MCP servers")
     mcp.add_argument("--provider", help="Provider key for provider-owned MCP servers")
