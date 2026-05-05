@@ -3,6 +3,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 
+import pytest
+
 from cc_extractor.model_proxy import ModelProxyConfig, start_model_proxy
 
 
@@ -62,6 +64,18 @@ def _post_json(url, payload, headers=None):
     )
     with urlopen(request, timeout=5) as response:
         return response.read()
+
+
+def test_model_proxy_rejects_non_architect_mode():
+    with pytest.raises(ValueError, match="Architect Mode"):
+        start_model_proxy(
+            ModelProxyConfig(
+                mode="worker",
+                backend_url="https://backend.example/anthropic",
+                backend_auth="x-api-key",
+            ),
+            api_key="backend-key",
+        )
 
 
 def test_model_proxy_routes_backend_and_anthropic_with_expected_auth_and_body_filters():

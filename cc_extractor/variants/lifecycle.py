@@ -219,7 +219,7 @@ def _model_proxy_for_create(
     if model_proxy in (None, ""):
         return None, dict(provider_env.env), dict(provider_env.credential), dict(provider_env.secret_env)
     if model_proxy != "architect":
-        raise ValueError("model proxy must be architect")
+        raise ValueError("model proxy must be architect; this proxy is only for Architect Mode setups")
     if provider.auth_mode == "none":
         raise ValueError(f"{provider.label} cannot use a model proxy because it has no backend credentials")
 
@@ -369,6 +369,8 @@ def update_variants(
     source_platform: Optional[str] = None,
     root=None,
 ) -> List[VariantBuildResult]:
+    if source_platform is not None and source_binary is None:
+        raise ValueError("--source-platform requires --source-binary")
     if all_variants and source_binary is not None:
         raise ValueError("--source-binary can only be used when updating one variant")
     if all_variants:

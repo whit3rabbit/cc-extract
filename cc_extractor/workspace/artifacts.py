@@ -100,7 +100,7 @@ def import_local_native_binary(
     data = resolved.read_bytes()
     try:
         info = parse_bun_binary(data)
-    except BunFormatError as exc:
+    except (BunFormatError, ValueError) as exc:
         raise ValueError(f"source binary is not a Bun standalone binary: {binary_path}") from exc
     _validate_container_platform(info.platform, platform_key)
 

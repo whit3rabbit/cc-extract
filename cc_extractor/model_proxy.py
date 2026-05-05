@@ -1,8 +1,9 @@
-"""Architect-only local model proxy for OAuth-backed Claude Code setups.
+"""Architect Mode-only local model proxy for OAuth-backed Claude Code setups.
 
-This proxy requires a Claude Code account. Claude model requests still rely on
-the user's normal Claude Code OAuth/session path, while non-Claude model
-requests are forwarded to the configured backend provider credential.
+This proxy refuses every mode except ``architect``. It also requires a Claude
+Code account: Claude model requests still rely on the user's normal Claude Code
+OAuth/session path, while non-Claude model requests are forwarded to the
+configured backend provider credential.
 """
 
 import argparse
@@ -72,7 +73,7 @@ def load_config(path: os.PathLike) -> ModelProxyConfig:
 
 def validate_config(config: ModelProxyConfig) -> None:
     if config.mode != MODEL_PROXY_MODE:
-        raise ValueError("model proxy mode must be architect")
+        raise ValueError("model proxy mode must be architect; this proxy is only for Architect Mode setups")
     if not config.backend_url:
         raise ValueError("model proxy backend_url is required")
     if config.backend_auth not in {"x-api-key", "bearer"}:
@@ -367,11 +368,12 @@ def _parse_port(value: str) -> int:
 
 def main(argv: Optional[Iterable[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run the cc-extractor architect-only local model proxy",
+        description="Run the cc-extractor Architect Mode-only local model proxy",
         epilog=(
-            "Requires a Claude Code account. Claude model calls continue through "
-            "Claude Code OAuth/session auth; non-Claude model aliases are "
-            "forwarded to the configured backend provider."
+            "Requires an architect config and a Claude Code account. Claude "
+            "model calls continue through Claude Code OAuth/session auth; "
+            "non-Claude model aliases are forwarded to the configured backend "
+            "provider."
         ),
     )
     parser.add_argument("--config", required=True, help="Path to model proxy JSON config")

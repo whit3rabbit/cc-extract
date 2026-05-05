@@ -94,7 +94,7 @@ The default workspace is `.cc-extractor/` in the current working directory. Set 
 
 ## Downloads And Cache
 
-Setup creation and dashboard builds use centralized downloads. The TUI loads the local download index first, then refreshes the live Claude Code version index once at startup. If no live index is available yet, the packaged seed index is used until refresh succeeds.
+Normal setup creation and dashboard builds use centralized downloads. The TUI loads the local download index first, then refreshes the live Claude Code version index once at startup. If no live index is available yet, the packaged seed index is used until refresh succeeds.
 
 Native downloads are stored by version, platform, and checksum:
 
@@ -103,6 +103,8 @@ Native downloads are stored by version, platform, and checksum:
 ```
 
 Downloads are checksum-verified before they are stored. Existing cached binaries are reused when the checksum still matches. On non-Windows systems, stored native binaries are marked executable.
+
+Advanced CLI setup workflows can import a local Claude Code native binary into the same cache. This is for isolated or offline environments where the user already has a compatible `claude` or `claude.exe` file. The original file is not used after import. cc-extractor copies it into `.cc-extractor/downloads/native/...` and records the original path in artifact metadata.
 
 NPM tarballs are separate from native binaries and require `npm`:
 
@@ -180,10 +182,12 @@ cc-extractor variant mcp --provider kimi                            # list MCP c
 cc-extractor variant create --name my-cc --provider kimi            # create a setup
 cc-extractor variant create --name my-cc --provider kimi --credential-env KIMI_API_KEY
 cc-extractor variant create --name local --provider lmstudio --api-key token --store-secret
+cc-extractor variant create --name offline --provider mirror --claude-version 2.1.123 --source-binary /path/to/claude
 cc-extractor variant list                                           # list all setups
 cc-extractor variant show my-cc --json                              # show setup metadata
 cc-extractor variant apply my-cc                                    # rebuild from saved settings
 cc-extractor variant update my-cc                                   # update to latest version
+cc-extractor variant update offline --claude-version 2.1.124 --source-binary /path/to/claude
 cc-extractor variant update --all                                   # update all setups
 cc-extractor variant doctor my-cc                                   # health check
 cc-extractor variant doctor --all                                   # check all setups
@@ -198,6 +202,8 @@ cc-extractor variant remove my-cc --yes                             # remove set
 | `--name` | Setup name, also used as wrapper command. |
 | `--provider` | Provider preset key (required). |
 | `--claude-version` | Target version, `latest`, or `stable`. |
+| `--source-binary` | Advanced: import a local Claude Code native binary instead of downloading. Requires concrete `--claude-version`. |
+| `--source-platform` | Advanced: platform key for `--source-binary`. Defaults to the current host platform. |
 | `--patch-profile` | Apply a saved patch profile. |
 | `--tweak` | Curated tweak id (repeatable). |
 | `--mcp` | Optional MCP server id (repeatable). |
@@ -206,6 +212,28 @@ cc-extractor variant remove my-cc --yes                             # remove set
 | `--extra-env` | Additional `KEY=VALUE` env entries (repeatable). |
 | `--force` | Overwrite an existing setup. |
 | Model overrides | `--opus`, `--sonnet`, `--haiku`, `--default`, `--small-fast`, `--subagent`. |
+
+**Advanced local source override:**
+
+`--source-binary` is intentionally CLI-only. It is not shown in the TUI first-run setup wizard because it is an escape hatch for controlled local builds, not the normal setup path.
+
+```bash
+cc-extractor variant create \
+  --name offline \
+  --provider mirror \
+  --claude-version 2.1.123 \
+  --source-binary /path/to/claude \
+  --source-platform linux-x64
+```
+
+Rules:
+
+- `--claude-version` must be a concrete semver such as `2.1.123`. `latest` and `stable` are rejected because patch compatibility checks need a concrete version.
+- `--source-platform` may be omitted. When omitted, cc-extractor uses the current host platform key.
+- The binary must parse as a Bun standalone binary. Mach-O requires a `darwin-*` platform, ELF requires `linux-*`, and PE requires `win32-*`.
+- Rebuilds use the imported managed copy, not the original path.
+- If the managed copy is missing or its hash changes, re-import it with `variant update <name> --claude-version <version> --source-binary <path>`.
+- `variant update --all --source-binary ...` is rejected. Local binary replacement is only allowed for one setup at a time.
 
 ### Inspect
 
@@ -297,8 +325,9 @@ the patched Claude binary directly; it does not call `ccr code`. See the
 [basic config docs](https://musistudio.github.io/claude-code-router/docs/cli/config/basic/),
 and CCR's `ccr activate`/`ccr env` behavior for the upstream environment model.
 
-Advanced setups may also use `--model-proxy architect`. This requires a Claude
-Code account: Claude-owned requests still use the user's normal Claude Code
+Advanced setups may also use `--model-proxy architect` with the Architect Mode
+tweak (`--tweak opusplan1m`). This requires a Claude Code account and login:
+`claude-*` planner/Opus requests still use the user's normal Claude Code
 OAuth/session path, while non-Claude worker model aliases are forwarded to the
 configured provider backend. See [docs/CCR.md](docs/CCR.md#architect-model-proxy).
 

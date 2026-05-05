@@ -129,10 +129,12 @@ Managed CCR setups add CCR-specific setup detail rows for status, start, stop,
 restart, opening the CCR UI, and copying the setup-local CCR config path. The
 detail panel also shows the setup-local CCR config and installed CCR package.
 
-Setups with `--model-proxy architect` show that the model proxy requires a
-Claude Code login for Claude-owned requests. The proxy is architect-only:
-Claude model calls continue through the user's Claude Code account/session,
-while non-Claude model aliases are forwarded to the configured backend.
+Cloud provider detail panes mention the CLI-only Architect model proxy option
+for providers that can supply backend credentials. Setups with
+`--model-proxy architect` show that the model proxy requires an Architect Mode
+setup plus a Claude Code login. Claude model calls continue through the user's
+Claude Code account/session, while non-Claude model aliases are forwarded to
+the configured backend.
 
 ## First-Run Setup
 
@@ -149,6 +151,8 @@ The wizard reuses provider registry defaults:
 - Successful create refreshes state, runs `doctor_variant()`, and shows command, setup config, and health.
 
 Credential env validation checks whether required env vars are present before create. Raw API keys are not accepted in the TUI text input path.
+
+The local source binary override is intentionally not part of the first-run setup wizard. `--source-binary` is an advanced CLI-only escape hatch for isolated or offline builds where the user imports a known local Claude Code native binary into the managed download cache.
 
 ## Upgrade
 
@@ -168,6 +172,8 @@ The preview shows:
 - Tweak count.
 - Command path.
 - Rebuild yes/no.
+
+The TUI upgrade flow does not expose `--source-binary` or `--source-platform`. Local source replacement is a single-setup CLI operation through `variant update <name> --claude-version <version> --source-binary <path>`.
 
 On success, the result reports old version to new version, tweaks reapplied, command rebuilt path, and health.
 

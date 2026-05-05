@@ -356,7 +356,7 @@ def test_create_variant_with_source_binary_imports_without_download(tmp_path, mo
     result = create_variant(
         name="Local Source",
         provider_key="mirror",
-        claude_version="2.1.123",
+        claude_version="2.1.122",
         source_binary=artifact.path,
         source_platform="linux-x64",
         root=root,
@@ -367,7 +367,7 @@ def test_create_variant_with_source_binary_imports_without_download(tmp_path, mo
     stage_names = [stage.name for stage in result.stages]
 
     assert source["type"] == "local-binary"
-    assert source["version"] == "2.1.123"
+    assert source["version"] == "2.1.122"
     assert source["platform"] == "linux-x64"
     assert source["importedFrom"] == str(artifact.path.resolve())
     assert Path(source["path"]).is_file()
@@ -384,7 +384,7 @@ def test_apply_variant_reuses_imported_source_binary_offline(tmp_path, monkeypat
     result = create_variant(
         name="Offline Local",
         provider_key="mirror",
-        claude_version="2.1.123",
+        claude_version="2.1.122",
         source_binary=artifact.path,
         source_platform="linux-x64",
         root=root,
@@ -409,7 +409,7 @@ def test_apply_variant_reports_missing_or_changed_imported_source(tmp_path):
     result = create_variant(
         name="Missing Local",
         provider_key="mirror",
-        claude_version="2.1.123",
+        claude_version="2.1.122",
         source_binary=artifact.path,
         source_platform="linux-x64",
         root=root,
@@ -424,7 +424,7 @@ def test_apply_variant_reports_missing_or_changed_imported_source(tmp_path):
     result = create_variant(
         name="Changed Local",
         provider_key="mirror",
-        claude_version="2.1.123",
+        claude_version="2.1.122",
         source_binary=artifact.path,
         source_platform="linux-x64",
         root=root,
@@ -456,7 +456,7 @@ def test_update_variant_can_replace_local_source_binary(tmp_path):
     create_variant(
         name="Replace Local",
         provider_key="mirror",
-        claude_version="2.1.123",
+        claude_version="2.1.121",
         source_binary=first.path,
         source_platform="linux-x64",
         root=root,
@@ -465,7 +465,7 @@ def test_update_variant_can_replace_local_source_binary(tmp_path):
 
     updated = update_variants(
         "replace-local",
-        claude_version="2.1.124",
+        claude_version="2.1.122",
         source_binary=second_path,
         source_platform="linux-x64",
         root=root,
@@ -473,7 +473,7 @@ def test_update_variant_can_replace_local_source_binary(tmp_path):
 
     source = updated.variant.manifest["source"]
     assert source["type"] == "local-binary"
-    assert source["version"] == "2.1.124"
+    assert source["version"] == "2.1.122"
     assert source["importedFrom"] == str(second_path.resolve())
     assert Path(source["path"]).read_bytes() == second_path.read_bytes()
 
@@ -484,7 +484,7 @@ def test_update_all_rejects_source_binary(tmp_path):
     with pytest.raises(ValueError, match="only be used when updating one variant"):
         update_variants(
             all_variants=True,
-            claude_version="2.1.123",
+            claude_version="2.1.122",
             source_binary=source,
             root=tmp_path / ".cc-extractor",
         )

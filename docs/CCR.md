@@ -87,32 +87,63 @@ CCR config path.
 
 ## Architect Model Proxy
 
-`--model-proxy architect` is separate from CCR. It starts a setup-local
-Anthropic-compatible proxy that can route non-Claude model aliases to the
-provider backend while preserving Claude model calls for Claude Code.
+`--model-proxy architect` is separate from CCR. It is a managed, setup-local
+Anthropic-compatible proxy for Architect Mode setups. The proxy refuses every
+mode except `architect`; use it with the Architect Mode tweak so Claude Code can
+split planner/Claude calls from worker/backend calls.
 
-This mode requires a Claude Code account. The proxy forwards Claude model calls
-to Anthropic using the user's normal Claude Code OAuth/session path, and sends
-non-Claude model calls to the configured provider backend using the provider
-credential. That means the setup still needs a valid Claude Code login for
-Claude-owned requests, even when worker models are routed elsewhere.
+This mode requires a Claude Code account and a valid Claude Code login. The
+wrapper starts the proxy on `127.0.0.1`, points `ANTHROPIC_BASE_URL` at that
+local proxy, and unsets Claude API/auth token variables before launching Claude
+Code so the normal OAuth/session path remains active.
 
-Create with architect proxy:
+How requests route:
+
+- model names beginning with `claude-` go to Anthropic using the user's Claude
+  Code OAuth/session headers;
+- other model names go to the configured provider backend using the backend
+  credential;
+- the backend credential is passed only to the proxy process, then removed from
+  the wrapper environment before Claude Code starts;
+- the proxy stops when the setup command exits.
+
+Create with the Architect Mode tweak:
 
 ```bash
 cc-extractor variant create \
   --name architect-proxy \
-  --provider zai \
-  --credential-env Z_AI_API_KEY \
-  --model-proxy architect
+  --provider deepseek \
+  --credential-env DEEPSEEK_API_KEY \
+  --model-proxy architect \
+  --tweak opusplan1m
+```
+
+OpenRouter example with explicit worker models:
+
+```bash
+cc-extractor variant create \
+  --name openrouter-architect \
+  --provider openrouter \
+  --credential-env OPENROUTER_API_KEY \
+  --model-proxy architect \
+  --model-opus claude-opus-4-6 \
+  --model-sonnet deepseek/deepseek-v4-pro \
+  --model-haiku deepseek/deepseek-v4-pro \
+  --tweak opusplan1m
 ```
 
 Rules:
 
 - `--model-proxy` only accepts `architect`.
 - The provider must have backend credentials.
-- `--model-opus` must stay a `claude-*` model, because Opus/architect calls
-  are kept on Claude.
+- You need a Claude Code account because `claude-*` planner/Opus requests are
+  still served by Anthropic through Claude Code OAuth.
+- `--model-opus` must stay a `claude-*` model, or be left unset, because
+  Opus/architect calls are kept on Claude.
 - Worker/default model aliases can point at backend models.
+- Complete the normal Claude Code login flow before using the wrapper if this
+  machine is not already logged in.
 - The wrapper starts the proxy for the lifetime of the setup command and stops
   it on exit.
+- `remote-control` and other Claude Code subcommands run through the generated
+  setup wrapper, for example `<setup-command> remote-control`.

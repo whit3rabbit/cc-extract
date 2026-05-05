@@ -919,6 +919,9 @@ def test_provider_selector_screen_text_includes_highlighted_details():
     assert "Credential env: Z_AI_API_KEY" in screen
     assert "MCP servers: web-reader" in screen
     assert "Settings deny: mcp__zai__web_search" in screen
+    assert "Architect model proxy" in screen
+    assert "--model-proxy architect --tweak opusplan1m" in screen
+    assert "Requires a Claude Code login" in screen
     assert "docs: https://z.ai/docs" in screen
 
 
@@ -1920,7 +1923,9 @@ def test_setup_detail_explains_model_proxy_account_requirement():
     screen = tui._screen_text(state)
 
     assert "Model proxy: architect" in screen
-    assert "requires Claude Code login" in screen
+    assert "Architect Mode setup plus Claude Code login" in screen
+    assert "claude-* requests use Claude Code OAuth/session" in screen
+    assert "non-Claude model aliases use the provider backend" in screen
     assert "Model proxy backend: https://example.test/anthropic" in screen
 
 

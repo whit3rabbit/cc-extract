@@ -240,6 +240,10 @@ def variant_provider_detail_lines(state):
     if features:
         lines.extend(["", "Features", *[f"- {feature}" for feature in features]])
 
+    model_proxy_lines = _provider_model_proxy_lines(provider)
+    if model_proxy_lines:
+        lines.extend(["", "Architect model proxy", *model_proxy_lines])
+
     setup_note = str(tui.get("setupNote") or "").strip()
     if setup_note:
         lines.extend(["", "Setup note", setup_note])
@@ -251,6 +255,18 @@ def variant_provider_detail_lines(state):
             lines.append(f"{key}: {value}")
 
     return lines
+
+def _provider_model_proxy_lines(provider):
+    section = str(provider.get("section") or _default_provider_section(provider.get("key")))
+    if section != "cloud":
+        return []
+    if provider.get("authMode") not in {"apiKey", "authToken"}:
+        return []
+    return [
+        "- CLI: --model-proxy architect --tweak opusplan1m",
+        "- Requires a Claude Code login; claude-* calls use OAuth/session",
+        "- Non-Claude worker aliases route to this provider backend",
+    ]
 
 def _variant_provider_row_label(provider):
     if not provider:

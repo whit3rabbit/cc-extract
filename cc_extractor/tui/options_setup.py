@@ -199,7 +199,9 @@ def setup_detail_lines(state):
     if isinstance(model_proxy, dict):
         lines.extend([
             f"Model proxy: {model_proxy.get('mode') or 'unknown'}",
-            "Model proxy account: requires Claude Code login for Claude-owned requests",
+            "Model proxy requirement: Architect Mode setup plus Claude Code login",
+            "Model proxy account: claude-* requests use Claude Code OAuth/session",
+            "Model proxy routing: non-Claude model aliases use the provider backend",
             f"Model proxy backend: {model_proxy.get('backendUrl') or '(not set)'}",
         ])
     return lines
