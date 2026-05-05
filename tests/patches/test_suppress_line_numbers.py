@@ -12,6 +12,31 @@ def test_synthetic_applies(cli_js_synthetic):
     assert "return C}function next" in outcome.js
 
 
+def test_linux_2_1_128_indexof_helper_applies():
+    js = """function GN$({content:H,startLine:$}){if(!H)return"";let q=[],K=$,_=0,A=H.indexOf(`
+`);while(A!==-1)q.push(Pqq(H.slice(_,A),K++)),_=A+1,A=H.indexOf(`
+`,_);return q.push(Pqq(H.slice(_),K)),q.join(`
+`)}function Pqq(H,$){let q=H.endsWith("\\r")?H.slice(0,-1):H;return`${$}\t${q}`}function next(){}"""
+    outcome = PATCH.apply(js, PatchContext(claude_version="2.1.128"))
+
+    assert outcome.status == "applied"
+    assert 'function GN$({content:H,startLine:$}){if(!H)return"";return H}' in outcome.js
+    assert "function next(){}" in outcome.js
+
+
+def test_indexof_helper_with_setup_call_applies_without_invalid_let_return():
+    js = """function sN8(){return!G$("tengu_compact_line_prefix_killswitch",!1)}function uk$({content:H,startLine:$}){if(!H)return"";let q=sN8(),K=[],_=$,A=0,z=H.indexOf(`
+`);while(z!==-1)K.push(n8q(H.slice(A,z),_++,q)),A=z+1,z=H.indexOf(`
+`,A);return K.push(n8q(H.slice(A),_,q)),K.join(`
+`)}function n8q(H,$,q){let K=H.endsWith("\\r")?H.slice(0,-1):H;if(q)return`${$}\t${K}`;let _=String($);return _.length>=6?`${_}\\u2192${K}`:`${_.padStart(6," ")}\\u2192${K}`}function next(){}"""
+    outcome = PATCH.apply(js, PatchContext(claude_version="2.1.126"))
+
+    assert outcome.status == "applied"
+    assert 'function uk$({content:H,startLine:$}){if(!H)return"";return H}' in outcome.js
+    assert "let q=sN8(),return H" not in outcome.js
+    assert "function next(){}" in outcome.js
+
+
 def test_metadata():
     assert PATCH.id == "suppress-line-numbers"
     assert PATCH.group == "ui"

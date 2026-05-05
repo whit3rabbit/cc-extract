@@ -38,6 +38,8 @@ def parse_bun_binary(data):
     modules_off = struct.unpack_from("<I", data, offsets_start + 8)[0]
     modules_len = struct.unpack_from("<I", data, offsets_start + 12)[0]
     entry_point_id = struct.unpack_from("<I", data, offsets_start + 16)[0]
+    exec_argv_offset = struct.unpack_from("<I", data, offsets_start + 20)[0]
+    exec_argv_length = struct.unpack_from("<I", data, offsets_start + 24)[0]
     flags = struct.unpack_from("<I", data, offsets_start + 28)[0]
 
     if byte_count > MAX_BUNDLE_BYTES:
@@ -98,6 +100,8 @@ def parse_bun_binary(data):
         modules=modules,
         entry_point_id=entry_point_id,
         flags=flags,
+        exec_argv_offset=exec_argv_offset,
+        exec_argv_length=exec_argv_length,
         section_offset=section_offset,
         section_size=section_size,
         has_code_signature=has_code_signature,
@@ -183,10 +187,14 @@ def _read_module_table(data, data_start, modules_off, modules_len, module_size, 
         format_byte = data[base + flags_base + 2]
         side_byte = data[base + flags_base + 3]
 
+        raw_name = name_bytes.decode("utf-8")
         modules.append(
             BunModule(
                 index=index,
-                name=_strip_bunfs(name_bytes.decode("utf-8")),
+                name=_strip_bunfs(raw_name),
+                raw_name=raw_name,
+                name_off=name_off,
+                name_len=name_len,
                 cont_off=cont_off,
                 cont_len=cont_len,
                 smap_off=smap_off,

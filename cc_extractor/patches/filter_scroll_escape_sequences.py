@@ -23,6 +23,14 @@ return _origStdoutWrite.call(process.stdout,filtered,encoding,cb);
 
 
 def _insertion_index(js: str) -> int:
+    bun_cjs = js.find("@bun-cjs")
+    if bun_cjs != -1:
+        line_end = js.find("\n", bun_cjs)
+        function_start = js.find("(function", line_end if line_end != -1 else bun_cjs)
+        open_brace = js.find("{", function_start)
+        if function_start != -1 and open_brace != -1 and open_brace - function_start < 256:
+            return open_brace + 1
+
     lines = js.splitlines(keepends=True)
     index = 0
     for line in lines:

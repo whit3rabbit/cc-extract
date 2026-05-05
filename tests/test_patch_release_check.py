@@ -104,6 +104,85 @@ def test_check_version_omits_local_binary_path(tmp_path, monkeypatch):
     assert report["binary"] == {"entryModule": "cli.js", "entryBytes": 2}
     assert "binaryPath" not in report
     assert "platform" not in report
+    assert "smoke" not in report
+
+
+def test_check_version_can_include_runtime_smoke(tmp_path, monkeypatch):
+    binary = tmp_path / "claude"
+    binary.write_bytes(b"binary")
+    patch = _patch(tested=(">=2.1.0,<=2.1.128",))
+
+    monkeypatch.setattr(
+        check_patch_releases,
+        "extract_entry_js",
+        lambda _path: ("js", {"entryModule": "cli.js", "entryBytes": 2}),
+    )
+
+    def smoke_runner(path, version, *, registry, timeout):
+        assert path == binary
+        assert version == "2.1.128"
+        assert registry == {patch.id: patch}
+        assert timeout == 12
+        return {"ok": True, "status": "passed", "stdout": "2.1.128\n"}
+
+    report = check_patch_releases.check_version(
+        "2.1.128",
+        registry={patch.id: patch},
+        downloader=lambda version: str(binary),
+        run_smoke=True,
+        smoke_timeout=12,
+        smoke_runner=smoke_runner,
+    )
+
+    assert report["ok"] is True
+    assert report["smoke"]["status"] == "passed"
+
+
+def test_check_version_smoke_failure_fails_report(tmp_path, monkeypatch):
+    binary = tmp_path / "claude"
+    binary.write_bytes(b"binary")
+    patch = _patch(tested=(">=2.1.0,<=2.1.128",))
+
+    monkeypatch.setattr(
+        check_patch_releases,
+        "extract_entry_js",
+        lambda _path: ("js", {"entryModule": "cli.js", "entryBytes": 2}),
+    )
+
+    report = check_patch_releases.check_version(
+        "2.1.128",
+        registry={patch.id: patch},
+        downloader=lambda version: str(binary),
+        run_smoke=True,
+        smoke_runner=lambda *args, **kwargs: {"ok": False, "status": "failed"},
+    )
+
+    assert report["summary"]["failed"] == 0
+    assert report["ok"] is False
+    assert report["smoke"]["status"] == "failed"
+
+
+def test_check_version_smoke_blocked_keeps_patch_report_ok(tmp_path, monkeypatch):
+    binary = tmp_path / "claude"
+    binary.write_bytes(b"binary")
+    patch = _patch(tested=(">=2.1.0,<=2.1.128",))
+
+    monkeypatch.setattr(
+        check_patch_releases,
+        "extract_entry_js",
+        lambda _path: ("js", {"entryModule": "cli.js", "entryBytes": 2}),
+    )
+
+    report = check_patch_releases.check_version(
+        "2.1.128",
+        registry={patch.id: patch},
+        downloader=lambda version: str(binary),
+        run_smoke=True,
+        smoke_runner=lambda *args, **kwargs: {"ok": None, "status": "blocked"},
+    )
+
+    assert report["ok"] is True
+    assert report["smoke"]["status"] == "blocked"
 
 
 def test_run_versions_writes_version_report_and_index(tmp_path, monkeypatch):
@@ -123,10 +202,12 @@ def test_run_versions_writes_version_report_and_index(tmp_path, monkeypatch):
         all=False,
         max_versions=None,
         reports_dir=tmp_path / "reports",
+        run_smoke=False,
+        smoke_timeout=60,
         stop_on_error=False,
     )
 
-    monkeypatch.setattr(check_patch_releases, "check_version", lambda version: report)
+    monkeypatch.setattr(check_patch_releases, "check_version", lambda version, **_kwargs: report)
 
     results = check_patch_releases.run_versions(args)
 
@@ -150,6 +231,8 @@ def test_run_versions_with_no_new_versions_keeps_existing_index(tmp_path, monkey
         all=False,
         max_versions=None,
         reports_dir=reports_dir,
+        run_smoke=False,
+        smoke_timeout=60,
         stop_on_error=False,
     )
 

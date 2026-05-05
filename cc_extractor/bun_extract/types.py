@@ -11,6 +11,9 @@ ScalarName = Union[int, str]
 class BunModule:
     index: int
     name: str
+    raw_name: str
+    name_off: int
+    name_len: int
     cont_off: int
     cont_len: int
     smap_off: int
@@ -34,6 +37,8 @@ class BunBinaryInfo:
     modules: List[BunModule]
     entry_point_id: int
     flags: int
+    exec_argv_offset: int = 0
+    exec_argv_length: int = 0
     section_offset: Optional[int] = None
     section_size: Optional[int] = None
     has_code_signature: bool = False

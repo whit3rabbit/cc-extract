@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      run_docker_smoke:
+        description: "Run Docker patch smoke after unit tests"
+        type: boolean
+        default: false
+      smoke_versions:
+        description: "Optional space-separated Claude Code versions. Empty uses latest."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install project
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e '.[dev]'
+          .venv/bin/python -m pip install ruff
+
+      - name: Ruff
+        run: |
+          .venv/bin/ruff check cc_extractor tests tools
+
+      - name: Pytest
+        run: |
+          .venv/bin/python -m pytest -q
+
+  docker-patch-smoke:
+    name: Docker Patch Smoke
+    runs-on: ubuntu-latest
+    needs: test
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_docker_smoke }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run Docker patch smoke
+        env:
+          SMOKE_VERSIONS: ${{ inputs.smoke_versions }}
+        run: |
+          if [ -n "$SMOKE_VERSIONS" ]; then
+            # shellcheck disable=SC2086
+            tools/run_patch_smoke_docker.sh --versions $SMOKE_VERSIONS --run-smoke --smoke-timeout 60
+          else
+            tools/run_patch_smoke_docker.sh --latest --run-smoke --smoke-timeout 60
+          fi
+
+      - name: Upload patch reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: patch-compat-reports
+          path: reports/patch-compat/
+          if-no-files-found: ignore

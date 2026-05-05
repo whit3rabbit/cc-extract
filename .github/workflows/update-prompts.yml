@@ -36,9 +36,9 @@ jobs:
         run: |
           .venv/bin/python tools/extract_prompt_versions.py --since-existing-latest
 
-      - name: Check patch compatibility
+      - name: Check patch compatibility with Docker smoke
         run: |
-          .venv/bin/python tools/check_patch_releases.py --since-existing-latest
+          tools/run_patch_smoke_docker.sh --since-existing-latest --run-smoke --smoke-timeout 60
 
       - name: Apply suggested prompt metadata
         run: |

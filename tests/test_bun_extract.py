@@ -176,6 +176,9 @@ def test_path_prefixes_are_stripped():
 
     assert info.modules[0].name == "src/main.js"
     assert info.modules[1].name == "lib/x.js"
+    assert info.modules[0].raw_name == "/$bunfs/root/src/main.js"
+    assert info.modules[0].name_off == 0
+    assert info.modules[0].name_len == len("/$bunfs/root/src/main.js")
 
 
 def test_extract_all_writes_files_and_manifest(tmp_path):
@@ -191,6 +194,11 @@ def test_extract_all_writes_files_and_manifest(tmp_path):
     assert manifest["moduleSize"] == 52
     assert manifest["entryPoint"] == "src/entrypoints/cli.js"
     assert manifest["byteCount"] == info.byte_count
+    assert manifest["execArgvOffset"] == info.exec_argv_offset
+    assert manifest["execArgvLength"] == info.exec_argv_length
+    assert manifest["modules"][0]["rawName"] == "src/entrypoints/cli.js"
+    assert manifest["modules"][0]["nameOffset"] == info.modules[0].name_off
+    assert manifest["modules"][0]["nameSize"] == info.modules[0].name_len
 
 
 def test_extract_all_enforces_file_count_limit(tmp_path, monkeypatch):

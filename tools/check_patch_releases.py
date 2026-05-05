@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
+import tempfile
+import time
 import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,11 +21,17 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from cc_extractor.bun_extract import parse_bun_binary
+from cc_extractor._utils import atomic_write_text_no_symlink
+from cc_extractor.bundler import pack_bundle
+from cc_extractor.binary_patcher.codesign import try_adhoc_sign
 from cc_extractor.downloader import (
     download_binary,
     fetch_latest_binary_version,
+    get_platform_key,
     list_available_binary_versions,
 )
+from cc_extractor.extractor import extract_all
+from cc_extractor.patch_workflow import _entry_path
 from cc_extractor.patches import (
     Patch,
     PatchAnchorMissError,
@@ -36,6 +46,8 @@ from cc_extractor.patches._versions import SemverRangeError, version_in_range
 
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 DEFAULT_REPORTS_DIR = Path("reports") / "patch-compat"
+DEFAULT_SMOKE_TIMEOUT_SECONDS = 60
+OUTPUT_LIMIT = 4000
 DEFAULT_CONFIG = {
     "settings": {
         "themes": [
@@ -51,6 +63,15 @@ DEFAULT_CONFIG = {
     },
 }
 DEFAULT_OVERLAYS = {"webfetch": "Patch compatibility smoke overlay."}
+SMOKE_ENV_DEFAULTS = {
+    "CI": "1",
+    "NO_COLOR": "1",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_SKIP_PROMPT_HISTORY": "1",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+}
 
 
 @dataclass
@@ -74,6 +95,7 @@ class VersionReport:
     output_path: Path
     summary: Dict[str, int]
     error: Optional[str] = None
+    smoke: Optional[Dict[str, Any]] = None
 
 
 def is_version(value: str) -> bool:
@@ -169,6 +191,16 @@ def extract_entry_js(binary_path: Path) -> Tuple[str, Dict[str, Any]]:
     }
 
 
+def file_sha256(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def patch_supported(patch: Patch, version: str) -> bool:
     try:
         return version_in_range(version, patch.versions_supported)
@@ -184,6 +216,262 @@ def patch_tested(patch: Patch, version: str) -> bool:
         except SemverRangeError:
             continue
     return False
+
+
+def smoke_patch_ids(registry: Mapping[str, Patch], version: str) -> List[str]:
+    return [
+        patch.id
+        for patch in registry.values()
+        if patch_supported(patch, version)
+    ]
+
+
+def _sanitize_output(
+    value: Optional[str],
+    replacements: Sequence[Tuple[str, str]] = (),
+) -> str:
+    text = value or ""
+    for old, new in replacements:
+        if old:
+            text = text.replace(old, new)
+    if len(text) <= OUTPUT_LIMIT:
+        return text
+    return f"{text[:OUTPUT_LIMIT]}...<truncated>"
+
+
+def smoke_environment(root: Path) -> Dict[str, str]:
+    env: Dict[str, str] = {}
+    for key in ("PATH", "TMPDIR", "TEMP", "TMP", "SystemRoot", "WINDIR"):
+        if key in os.environ:
+            env[key] = os.environ[key]
+
+    home = root / "home"
+    config = root / "config"
+    cache = root / "cache"
+    data = root / "data"
+    workspace = root / "workspace"
+    for path in (home, config, cache, data, workspace):
+        path.mkdir(parents=True, exist_ok=True)
+
+    env.update(SMOKE_ENV_DEFAULTS)
+    env.update(
+        {
+            "HOME": str(home),
+            "XDG_CONFIG_HOME": str(config),
+            "XDG_CACHE_HOME": str(cache),
+            "XDG_DATA_HOME": str(data),
+            "CLAUDE_CONFIG_DIR": str(config / "claude"),
+            "CLAUDE_CODE_CONFIG_DIR": str(config / "claude-code"),
+            "CC_EXTRACTOR_WORKSPACE": str(workspace),
+        }
+    )
+    return env
+
+
+def run_smoke_command(
+    binary_path: Path,
+    temp_root: Path,
+    *,
+    timeout: int,
+    label: str,
+    replacements: Sequence[Tuple[str, str]],
+) -> Dict[str, Any]:
+    proc = subprocess.run(
+        [str(binary_path), "--version"],
+        env=smoke_environment(temp_root),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=timeout,
+    )
+    stdout = _sanitize_output(proc.stdout, replacements)
+    stderr = _sanitize_output(proc.stderr, replacements)
+    ok = proc.returncode == 0 and bool((proc.stdout or "").strip())
+    return {
+        "ok": ok,
+        "command": [label, "--version"],
+        "exitCode": proc.returncode,
+        "stdout": stdout,
+        "stderr": stderr,
+    }
+
+
+def run_binary_smoke(
+    binary_path: Path,
+    version: str,
+    *,
+    registry: Mapping[str, Patch] = REGISTRY,
+    timeout: int = DEFAULT_SMOKE_TIMEOUT_SECONDS,
+) -> Dict[str, Any]:
+    started = time.monotonic()
+    stage = "prepare"
+    replacements: List[Tuple[str, str]] = []
+    patch_ids = smoke_patch_ids(registry, version)
+    platform_key = get_platform_key()
+    if not patch_ids:
+        return {
+            "ok": False,
+            "status": "failed",
+            "stage": stage,
+            "platformKey": platform_key,
+            "detail": "no supported patches selected for smoke",
+            "durationMs": int((time.monotonic() - started) * 1000),
+            "patchIds": [],
+        }
+
+    try:
+        with tempfile.TemporaryDirectory(prefix=f"patch-smoke-{version}-") as temp_dir:
+            temp_root = Path(temp_dir)
+            extract_dir = temp_root / "bundle"
+            baseline_binary = temp_root / f"baseline-{binary_path.name}"
+            patched_binary = temp_root / binary_path.name
+            replacements = [
+                (str(baseline_binary), "<baseline-binary>"),
+                (str(patched_binary), "<patched-binary>"),
+                (str(temp_root), "<temp>"),
+            ]
+
+            stage = "extract"
+            manifest_data = extract_all(
+                str(binary_path),
+                str(extract_dir),
+                source_version=version,
+            )
+            entry_path = _entry_path(extract_dir, manifest_data)
+            js = entry_path.read_text(encoding="utf-8")
+
+            stage = "baseline-pack"
+            pack_bundle(str(extract_dir), str(baseline_binary), str(binary_path))
+            if os.name != "nt":
+                os.chmod(baseline_binary, 0o755)
+
+            stage = "baseline-run"
+            baseline = run_smoke_command(
+                baseline_binary,
+                temp_root,
+                timeout=timeout,
+                label="<baseline-binary>",
+                replacements=replacements,
+            )
+            if not baseline["ok"]:
+                return {
+                    "ok": None,
+                    "status": "blocked",
+                    "stage": stage,
+                    "platformKey": platform_key,
+                    "detail": "unpatched repack failed before patch smoke",
+                    "baseline": baseline,
+                    "durationMs": int((time.monotonic() - started) * 1000),
+                    "outputSha256": file_sha256(baseline_binary),
+                    "patchIds": patch_ids,
+                }
+
+            stage = "patch"
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                patch_result = apply_patches(
+                    js,
+                    patch_ids,
+                    PatchContext(
+                        claude_version=version,
+                        provider_label="Patch compatibility smoke",
+                        config=DEFAULT_CONFIG,
+                        overlays=DEFAULT_OVERLAYS,
+                    ),
+                    registry=registry,
+                )
+            atomic_write_text_no_symlink(entry_path, patch_result.js)
+
+            stage = "pack"
+            pack_bundle(str(extract_dir), str(patched_binary), str(binary_path))
+            if os.name != "nt":
+                os.chmod(patched_binary, 0o755)
+
+            stage = "codesign"
+            sign_result = try_adhoc_sign(str(patched_binary))
+            sign_detail = _sanitize_output(sign_result.detail, replacements)
+            if sign_result.reason == "failed":
+                return {
+                    "ok": None,
+                    "status": "blocked",
+                    "stage": stage,
+                    "platformKey": platform_key,
+                    "detail": sign_detail,
+                    "durationMs": int((time.monotonic() - started) * 1000),
+                    "outputSha256": file_sha256(patched_binary),
+                    "codesign": {
+                        "signed": sign_result.signed,
+                        "reason": sign_result.reason,
+                        "detail": sign_detail,
+                    },
+                    "patches": {
+                        "attempted": patch_ids,
+                        "applied": list(patch_result.applied),
+                        "skipped": list(patch_result.skipped),
+                        "missed": list(patch_result.missed),
+                        "warnings": [str(item.message) for item in caught],
+                    },
+                }
+
+            stage = "run"
+            run_result = run_smoke_command(
+                patched_binary,
+                temp_root,
+                timeout=timeout,
+                label="<patched-binary>",
+                replacements=replacements,
+            )
+            ok = bool(run_result["ok"])
+            return {
+                "ok": ok,
+                "status": "passed" if ok else "failed",
+                "stage": stage,
+                "platformKey": platform_key,
+                **run_result,
+                "durationMs": int((time.monotonic() - started) * 1000),
+                "outputSha256": file_sha256(patched_binary),
+                "codesign": {
+                    "signed": sign_result.signed,
+                    "reason": sign_result.reason,
+                    "detail": sign_detail,
+                },
+                "patches": {
+                    "attempted": patch_ids,
+                    "applied": list(patch_result.applied),
+                    "skipped": list(patch_result.skipped),
+                    "missed": list(patch_result.missed),
+                    "warnings": [str(item.message) for item in caught],
+                },
+            }
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "ok": False,
+            "status": "timeout",
+            "stage": stage,
+            "platformKey": platform_key,
+            "command": ["<patched-binary>", "--version"],
+            "timeoutSeconds": timeout,
+            "stdout": _sanitize_output(
+                exc.stdout if isinstance(exc.stdout, str) else "",
+                replacements,
+            ),
+            "stderr": _sanitize_output(
+                exc.stderr if isinstance(exc.stderr, str) else "",
+                replacements,
+            ),
+            "durationMs": int((time.monotonic() - started) * 1000),
+            "patchIds": patch_ids,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "error",
+            "stage": stage,
+            "platformKey": platform_key,
+            "detail": _sanitize_output(str(exc), replacements),
+            "durationMs": int((time.monotonic() - started) * 1000),
+            "patchIds": patch_ids,
+        }
 
 
 def check_patch(
@@ -304,6 +592,9 @@ def check_version(
     *,
     registry: Mapping[str, Patch] = REGISTRY,
     downloader=download_binary,
+    run_smoke: bool = False,
+    smoke_timeout: int = DEFAULT_SMOKE_TIMEOUT_SECONDS,
+    smoke_runner=None,
 ) -> Dict[str, Any]:
     binary_path = Path(downloader(version=version))
     js, binary = extract_entry_js(binary_path)
@@ -312,7 +603,7 @@ def check_version(
         for patch in registry.values()
     ]
     summary = summarize_checks(checks)
-    return {
+    report = {
         "schemaVersion": 1,
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "version": version,
@@ -335,6 +626,18 @@ def check_version(
             for check in checks
         ],
     }
+    if run_smoke:
+        runner = smoke_runner or run_binary_smoke
+        smoke = runner(
+            binary_path,
+            version,
+            registry=registry,
+            timeout=smoke_timeout,
+        )
+        report["smoke"] = smoke
+        if smoke.get("ok") is False:
+            report["ok"] = False
+    return report
 
 
 def write_json(path: Path, data: Mapping[str, Any]) -> None:
@@ -346,17 +649,27 @@ def write_run_index(reports_dir: Path, reports: Sequence[Dict[str, Any]]) -> Non
     payload = {
         "schemaVersion": 1,
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "reports": [
-            {
-                "version": report["version"],
-                "ok": report["ok"],
-                "summary": report["summary"],
-                "path": f"{report['version']}.json",
-            }
-            for report in reports
-        ],
+        "reports": [index_entry(report) for report in reports],
     }
     write_json(reports_dir / "index.json", payload)
+
+
+def index_entry(report: Mapping[str, Any]) -> Dict[str, Any]:
+    entry = {
+        "version": report["version"],
+        "ok": report["ok"],
+        "summary": report["summary"],
+        "path": f"{report['version']}.json",
+    }
+    smoke = report.get("smoke")
+    if isinstance(smoke, Mapping):
+        entry["smoke"] = {
+            "ok": smoke.get("ok"),
+            "status": smoke.get("status"),
+            "stage": smoke.get("stage"),
+            "platformKey": smoke.get("platformKey"),
+        }
+    return entry
 
 
 def run_versions(args: argparse.Namespace) -> List[VersionReport]:
@@ -370,7 +683,11 @@ def run_versions(args: argparse.Namespace) -> List[VersionReport]:
         print(f"[*] Checking patches against Claude Code {version}")
         output_path = report_path(args.reports_dir, version)
         try:
-            report = check_version(version)
+            report = check_version(
+                version,
+                run_smoke=args.run_smoke,
+                smoke_timeout=args.smoke_timeout,
+            )
             write_json(output_path, report)
             reports.append(report)
             results.append(
@@ -379,6 +696,7 @@ def run_versions(args: argparse.Namespace) -> List[VersionReport]:
                     ok=bool(report["ok"]),
                     output_path=output_path,
                     summary=dict(report["summary"]),
+                    smoke=report.get("smoke"),
                 )
             )
             print_result_summary(results[-1])
@@ -416,10 +734,13 @@ def run_versions(args: argparse.Namespace) -> List[VersionReport]:
 def print_result_summary(result: VersionReport) -> None:
     summary = result.summary
     status = "ok" if result.ok else "failed"
+    smoke = ""
+    if result.smoke:
+        smoke = f", smoke {result.smoke.get('status', 'unknown')}"
     print(
         f"[+] {result.version}: {status}, "
         f"{summary.get('ok', 0)}/{summary.get('total', 0)} patches ok, "
-        f"{summary.get('untested', 0)} untested -> {result.output_path}"
+        f"{summary.get('untested', 0)} untested{smoke} -> {result.output_path}"
     )
 
 
@@ -443,6 +764,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     parser.add_argument("--max-versions", type=int, help="Limit processed version count")
     parser.add_argument("--reports-dir", type=Path, default=DEFAULT_REPORTS_DIR)
+    parser.add_argument(
+        "--run-smoke",
+        action="store_true",
+        help="Build a temporary patched binary and run '<binary> --version'",
+    )
+    parser.add_argument(
+        "--smoke-timeout",
+        type=int,
+        default=DEFAULT_SMOKE_TIMEOUT_SECONDS,
+        help="Seconds to wait for each runtime smoke command",
+    )
     parser.add_argument("--stop-on-error", action="store_true")
     args = parser.parse_args(argv)
 

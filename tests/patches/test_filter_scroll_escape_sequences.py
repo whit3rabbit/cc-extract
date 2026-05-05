@@ -13,6 +13,16 @@ def test_synthetic_applies_after_header(cli_js_synthetic):
     assert outcome.js.index("SCROLLING FIX PATCH START") < outcome.js.index('console.log("ready")')
 
 
+def test_bun_cjs_wrapper_is_preserved():
+    js = "// @bun @bytecode @bun-cjs\n(function(exports, require, module, __filename, __dirname) {console.log('ready');})\n"
+    outcome = PATCH.apply(js, PatchContext(claude_version=None))
+
+    assert outcome.status == "applied"
+    assert outcome.js.startswith("// @bun @bytecode @bun-cjs\n(function(exports, require, module, __filename, __dirname) {")
+    assert outcome.js.rstrip().endswith("})")
+    assert outcome.js.index("SCROLLING FIX PATCH START") > outcome.js.index("__dirname) {")
+
+
 def test_synthetic_skips_if_already_applied(cli_js_synthetic):
     js = cli_js_synthetic("filter-scroll-escape-sequences")
     once = PATCH.apply(js, PatchContext(claude_version=None))

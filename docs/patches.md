@@ -82,6 +82,12 @@ released Claude Code binaries:
 
 # Check specific releases
 .venv/bin/python tools/check_patch_releases.py --versions 2.1.128
+
+# Also build a temporary patched binary and run `<binary> --version`
+.venv/bin/python tools/check_patch_releases.py --versions 2.1.128 --run-smoke
+
+# Preferred committed smoke path: run inside Docker on linux/amd64
+tools/run_patch_smoke_docker.sh --all --max-versions 10 --run-smoke --smoke-timeout 60
 ```
 
 Reports are written to `reports/patch-compat/<version>.json`, with a run index at
@@ -91,6 +97,30 @@ successfully and still be marked untested when the release is outside
 `versions_tested`; treat that as a validation task before widening metadata.
 Patches outside `versions_supported` are reported as `unsupported`, but they do
 not fail the run because the metadata already says not to apply them.
+
+`--run-smoke` adds a runtime check to each report. It extracts the binary,
+applies every patch whose `versions_supported` includes the release, repacks a
+temporary binary, ad-hoc signs it on macOS when possible, and runs
+`<patched-binary> --version` with isolated HOME/config/cache/workspace
+directories. A smoke failure makes the version report fail, even when all
+individual anchor checks passed. If the runtime check cannot produce an
+executable temporary binary, for example macOS rejects the repacked Mach-O during
+ad-hoc signing or an unpatched Linux repack does not boot, the smoke status is
+`blocked` and the report records the reason without treating it as a patch
+failure.
+
+For committed smoke reports, prefer `tools/run_patch_smoke_docker.sh`. It builds
+`docker/patch-smoke/Dockerfile`, mounts the repository at `/work`, keeps Linux
+downloads in `.cc-extractor/docker-linux`, writes reports back to
+`reports/patch-compat`, and defaults to `DOCKER_PLATFORM=linux/amd64` for stable
+runtime results. Set `DOCKER_PLATFORM=linux/arm64` only when intentionally
+checking that platform.
+
+CI uses the same path for release-tracking reports. The daily prompt update
+workflow runs Docker smoke for releases newer than the newest committed report,
+then commits prompt catalog and patch report changes. The normal CI workflow runs
+ruff and the full pytest suite on pull requests and pushes; its Docker smoke job
+is manual-only because it downloads and executes upstream native binaries.
 
 ## Test tiers
 

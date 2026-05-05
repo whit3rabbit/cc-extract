@@ -52,6 +52,10 @@ Use `.venv/bin/python` from the repository root.
 .venv/bin/python -m pytest -q
 ruff check cc_extractor/
 ruff check --fix cc_extractor/
+
+# Docker runtime smoke, linux/amd64 by default
+tools/run_patch_smoke_docker.sh --latest --run-smoke --smoke-timeout 60
+tools/run_patch_smoke_docker.sh --all --max-versions 10 --run-smoke --smoke-timeout 60
 ```
 
 Do not document `python main.py ...` as canonical unless `main.py` is restored.
@@ -102,14 +106,39 @@ Preferred update commands:
 
 # Regenerate known reports intentionally
 .venv/bin/python tools/check_patch_releases.py --versions <v1> <v2>
+
+# Add runtime smoke coverage to any report command
+.venv/bin/python tools/check_patch_releases.py --versions <v1> <v2> --run-smoke
+
+# Run runtime smoke reports inside Docker on linux/amd64
+tools/run_patch_smoke_docker.sh --all --max-versions 10 --run-smoke --smoke-timeout 60
 ```
 
 Rules:
 
 * Run `tools/check_patch_releases.py --since-existing-latest` with the daily prompt catalog update.
+* Use `--run-smoke` for release-prep reports when native binary execution is acceptable. It builds a temporary patched binary, runs `<binary> --version` in an isolated temp environment, and records the result in each version report. A `blocked` smoke status is infrastructure evidence, such as unpatched repack failure, not patch proof.
+* Prefer `tools/run_patch_smoke_docker.sh` for committed smoke reports. It defaults to `DOCKER_PLATFORM=linux/amd64` so runtime results are reproducible across developer machines. Override `DOCKER_PLATFORM` only when intentionally producing a platform-specific report.
+* Docker smoke uses `.cc-extractor/docker-linux` for downloaded Linux binaries and writes JSON reports to `reports/patch-compat`. Do not commit `.cc-extractor/`.
+* The smoke flow intentionally packs and runs an unpatched baseline before applying patches. If baseline fails, fix extract/repack infrastructure before blaming a patch.
+* Passing smoke reports are proof for that report artifact, but do not automatically widen `versions_tested`. Keep metadata pinned until fixture tests or targeted real-version tests prove the specific patch.
 * Treat failed patch reports as release blockers. `unsupported` means the patch is intentionally outside `versions_supported` and does not fail the run.
 * Treat untested warnings as validation work. Do not widen `versions_tested` until the report proves the patch against that concrete Claude Code version.
 * Patch compatibility reports may be committed with daily prompt catalog updates because both are release-tracking artifacts. Keep them separate from unrelated patch, TUI, or feature changes.
+
+## CI
+
+GitHub Actions workflows:
+
+* `.github/workflows/ci.yml` runs on push and pull request. It installs `.[dev]`, installs `ruff`, runs `ruff check cc_extractor tests tools`, then runs the full `pytest -q` suite on Python 3.11.
+* The `CI` workflow also has a manual Docker patch smoke job. Run it with `workflow_dispatch`, set `run_docker_smoke=true`, and optionally pass space-separated `smoke_versions`. If no versions are provided, it smokes the latest release and uploads `reports/patch-compat` as an artifact.
+* `.github/workflows/update-prompts.yml` is the daily release-tracking workflow. It updates prompt catalogs, runs Docker patch smoke for releases newer than the newest local report, validates prompt/report tooling, and commits prompt/report changes.
+
+CI rules:
+
+* Keep Docker smoke out of normal PR CI unless explicitly requested. It downloads and executes upstream native binaries, so it is slower and network-dependent.
+* If Docker smoke fails with `status=blocked`, treat it as infrastructure failure. If it fails at `stage=run`, inspect `smoke.stderr`, the attempted patch list, and run single-patch bisection before changing version metadata.
+* The daily workflow should not use raw local smoke results. Commit reproducible Docker reports instead.
 
 ## Architecture
 
@@ -195,6 +224,8 @@ Important distinctions:
 * `parse_bun_binary` is the single source of truth for binary layout.
 * Use `info.entry_point_id` to find the entry module. Do not assume entry names like `claude` or `cli.js`.
 * Bun module bytes use `cont_off` and `cont_len`; do not invent `data_offset` or `data_size`.
+* Manifest `name` is the sanitized display/extract path. Manifest `rawName` is the runtime Bun module name and may include `/$bunfs/root/`. Repacking must preserve `rawName`.
+* Manifest offsets such as `nameOffset`, `contentOffset`, `bytecodeOffset`, and `execArgvOffset` are not decorative. Use them to relocate the original payload when repacking.
 * `extractor.py` and `bundler.py` are compatibility wrappers, not independent implementations.
 * Keep `patcher.py` separate from `binary_patcher`; it handles legacy extracted-text patch manifests.
 * `cc_extractor.patches.apply_patches` applies curated regex tweaks.
@@ -203,8 +234,12 @@ Important distinctions:
 * `patch_workflow.apply_dashboard_tweaks_to_native` applies curated tweak IDs directly for Dashboard builds.
 * Theme anchor misses are fatal structured failures.
 * Prompt anchor misses are recorded and non-fatal.
+* Real ELF payloads can contain unreferenced prefix bytes before the first module name. Do not rebuild full bundle payloads from concatenated manifest files when a base binary is available. Use the base payload as the template and replace relocated ranges.
+* For a no-op extract and pack from a real ELF binary, the rebuilt binary should be byte-identical or at minimum the unpatched baseline should execute `<binary> --version` before any patch smoke result is trusted.
 * On Mach-O, prompt overlays that grow the entry module must force the unpacked Node runtime fallback even if a later shrink tweak makes the final byte length fit. Do not let net shrinkage mask intermediate prompt-overlay growth.
 * Bun CJS entry modules must keep a valid `// @bun ... @bun-cjs` function wrapper. Same-size shrink padding must not be appended after the closing wrapper.
+* Patches that add top-level runtime code to Bun CJS entries must inject inside the existing function wrapper, immediately after the opening `{`, not before the `// @bun` header. Bun may fall back from bytecode to source after repack, and pre-wrapper code can fail with `Expected CommonJS module to have a function wrapper`.
+* Text-level parse tests are not enough for entry patches that change byte lengths or wrapper shape. Pair anchor tests with Docker runtime smoke before using a report as release signal.
 * Mach-O signing is explicit and soft-failing through `binary_patcher/codesign.py`.
 * Unpacked fallback supports both Python `.bundle_manifest.json` and TS-style `manifest.json`.
 * Unpacked Node runtime entry JS must be passed through `binary_patcher.bun_compat.ensure_bun_node_compat` after stripping the Bun wrapper and after any later variant-only JS tweak writes. Preserve the `cc-extractor:bun-node-compat` marker.
@@ -322,6 +357,9 @@ Use layered validation for patch work.
 
 # Full suite
 .venv/bin/python -m pytest -q
+
+# Runtime smoke against released Linux binaries
+tools/run_patch_smoke_docker.sh --all --max-versions 10 --run-smoke --smoke-timeout 60
 ```
 
 Patch test expectations:
@@ -331,6 +369,7 @@ Patch test expectations:
 * L3 real-binary boot smoke tests must be gated behind `CC_EXTRACTOR_REAL_BINARY=1`.
 * L4 TUI/MCP behavioral tests must be gated behind `CC_EXTRACTOR_TUI_MCP=1`.
 * Real download/patch/execute integration tests must be separately gated behind `CC_EXTRACTOR_RUN_REAL_BINARY_TEST=1`.
+* Docker patch smoke is the preferred release-prep runtime proof. It downloads Linux binaries, extracts them, confirms an unpatched repack boots, applies all supported patches, repacks again, and runs `<patched-binary> --version`.
 * Expected environment-gated skips are not failures. Use `pytest -q -rs` to verify skip reasons.
 
 Before updating `versions_tested`, prove the patch against a concrete Claude Code version. Do not widen `versions_tested` just because `versions_supported` is broad. Avoid open-ended future minor ranges for regex anchors unless the future releases are intentionally treated as already verified.
