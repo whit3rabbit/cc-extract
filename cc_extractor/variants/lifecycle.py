@@ -7,11 +7,15 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from ..binary_patcher.bun_compat import has_bun_node_compat
-from .._utils import safe_read_json as _safe_read_json, utc_now as _utc_now
+from .._utils import require_env_name, safe_read_json as _safe_read_json, utc_now as _utc_now
 from ..providers import build_provider_env, get_provider, normalize_mcp_ids, provider_default_variant_name
-from ..workspace import NativeArtifact, read_json, workspace_root
+from ..workspace import NativeArtifact, SEMVER_RE, import_local_native_binary, read_json, workspace_root
 from .builder import patch_refs_for_profile as _patch_refs_for_profile
 from .constants import VARIANT_METADATA
+from .ccrouter import (
+    ccrouter_doctor_checks,
+    ccrouter_manifest_for_create,
+)
 from .model import (
     Variant,
     VariantBuildResult,
@@ -91,6 +95,15 @@ def create_variant(
     extra_env: Optional[List[str]] = None,
     tweak_options: Optional[Dict[str, str]] = None,
     mcp_ids: Optional[Iterable[str]] = None,
+    ccrouter_mode: Optional[str] = None,
+    ccrouter_config: Optional[str] = None,
+    ccrouter_package: Optional[str] = None,
+    ccrouter_port: Optional[object] = None,
+    ccrouter_autostart: Optional[bool] = None,
+    model_proxy: Optional[str] = None,
+    model_proxy_port: Optional[object] = None,
+    source_binary: Optional[os.PathLike] = None,
+    source_platform: Optional[str] = None,
     root=None,
     source_artifact: Optional[NativeArtifact] = None,
 ) -> VariantBuildResult:
@@ -100,6 +113,17 @@ def create_variant(
     path = variant_root(variant_id, root=root)
     if path.exists() and not force:
         raise ValueError(f"Variant {variant_id} already exists")
+    if source_binary is not None and source_artifact is not None:
+        raise ValueError("Pass either source_binary or source_artifact, not both")
+    if source_platform is not None and source_binary is None:
+        raise ValueError("--source-platform requires --source-binary")
+    if source_binary is not None:
+        source_artifact = _import_source_binary_for_version(
+            source_binary,
+            claude_version,
+            source_platform=source_platform,
+            root=root,
+        )
 
     provider_env = build_provider_env(
         provider_key,
@@ -110,13 +134,30 @@ def create_variant(
         model_overrides=model_overrides,
         extra_env=extra_env,
     )
+    model_proxy_payload, safe_env, credential, secret_env = _model_proxy_for_create(
+        provider,
+        provider_env,
+        model_proxy=model_proxy,
+        model_proxy_port=model_proxy_port,
+        base_url=base_url,
+        api_key=api_key,
+        model_overrides=model_overrides or {},
+    )
     tweak_ids = normalize_tweak_ids(tweaks or default_tweak_ids_for_provider(provider.key))
     selected_mcp_ids = normalize_mcp_ids(mcp_ids or [])
-    safe_env = dict(provider_env.env)
     safe_env.update(env_for_tweaks(tweak_ids, tweak_options))
     now = _utc_now()
     existing = _safe_read_json(path / VARIANT_METADATA)
     patch_refs = _patch_refs_for_profile(patch_profile_id, root=root)
+    ccrouter_config_payload = ccrouter_manifest_for_create(
+        provider.key,
+        path,
+        mode=ccrouter_mode,
+        config_mode=ccrouter_config,
+        package_spec=ccrouter_package,
+        port=ccrouter_port,
+        auto_start=ccrouter_autostart,
+    )
 
     manifest = {
         "schemaVersion": 1,
@@ -126,9 +167,7 @@ def create_variant(
             "key": provider.key,
             "label": provider.label,
         },
-        "source": {
-            "version": claude_version or "latest",
-        },
+        "source": _source_manifest_for_create(source_artifact, claude_version),
         "patchProfile": patch_profile_id,
         "patches": patch_refs,
         "tweaks": tweak_ids,
@@ -139,16 +178,20 @@ def create_variant(
         "modelOverrides": dict(model_overrides or {}),
         "env": safe_env,
         "envUnset": list(provider_env.env_unset),
-        "credential": provider_env.credential,
+        "credential": credential,
         "paths": {},
         "createdAt": existing.get("createdAt") if existing else now,
         "updatedAt": now,
     }
+    if ccrouter_config_payload is not None:
+        manifest["ccrouter"] = ccrouter_config_payload
+    if model_proxy_payload is not None:
+        manifest["modelProxy"] = model_proxy_payload
     validate_variant_manifest(manifest)
 
     path.mkdir(parents=True, exist_ok=True)
-    if provider_env.secret_env:
-        _write_secrets(path / SECRETS_FILE, provider_env.secret_env)
+    if secret_env:
+        _write_secrets(path / SECRETS_FILE, secret_env)
         manifest["credential"] = dict(manifest["credential"])
         manifest["credential"]["secretsPath"] = str(path / SECRETS_FILE)
     elif (path / SECRETS_FILE).exists():
@@ -161,15 +204,149 @@ def create_variant(
         source_artifact=source_artifact,
     )
 
-def apply_variant(variant_id: str, *, claude_version: Optional[str] = None, root=None) -> VariantBuildResult:
-    variant = load_variant(variant_id, root=root)
-    return _apply_variant_manifest(variant.manifest, claude_version=claude_version, root=root)
+_MODEL_PROXY_AUTH_ENV = {"ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"}
 
-def _apply_variant_manifest(manifest: Dict, *, claude_version: Optional[str] = None, root=None) -> VariantBuildResult:
+def _model_proxy_for_create(
+    provider,
+    provider_env,
+    *,
+    model_proxy: Optional[str],
+    model_proxy_port: Optional[object],
+    base_url: Optional[str],
+    api_key: Optional[str],
+    model_overrides: Dict[str, str],
+):
+    if model_proxy in (None, ""):
+        return None, dict(provider_env.env), dict(provider_env.credential), dict(provider_env.secret_env)
+    if model_proxy != "architect":
+        raise ValueError("model proxy must be architect")
+    if provider.auth_mode == "none":
+        raise ValueError(f"{provider.label} cannot use a model proxy because it has no backend credentials")
+
+    backend_url = str(base_url if base_url is not None else provider.base_url).strip()
+    if not backend_url:
+        raise ValueError(f"{provider.label} model proxy requires ANTHROPIC_BASE_URL or --base-url")
+    source_env = _model_proxy_credential_source(provider, provider_env)
+    credential, secret_env = _model_proxy_credential(provider_env, source_env, api_key=api_key)
+    safe_env = _model_proxy_safe_env(provider_env.env, model_overrides)
+    payload = {
+        "mode": "architect",
+        "port": _model_proxy_port(model_proxy_port),
+        "backendUrl": backend_url,
+        "backendAuth": "bearer" if provider.auth_mode == "authToken" else "x-api-key",
+        "credentialEnv": source_env,
+        "anthropicUrl": "https://api.anthropic.com",
+    }
+    return payload, safe_env, credential, secret_env
+
+
+def _model_proxy_credential_source(provider, provider_env) -> str:
+    credential = provider_env.credential or {}
+    if credential.get("mode") == "env" and credential.get("source"):
+        return require_env_name(credential["source"], label="model proxy credential source")
+    if provider.credential_env:
+        return require_env_name(provider.credential_env, label="model proxy credential source")
+    targets = [target for target in credential.get("targets", []) if target not in _MODEL_PROXY_AUTH_ENV]
+    if targets:
+        return require_env_name(targets[0], label="model proxy credential source")
+    if provider.auth_mode == "apiKey":
+        return "ANTHROPIC_API_KEY"
+    raise ValueError(f"{provider.label} model proxy requires a provider credential env")
+
+
+def _model_proxy_credential(provider_env, source_env: str, *, api_key: Optional[str]):
+    source_env = require_env_name(source_env, label="model proxy credential source")
+    mode = (provider_env.credential or {}).get("mode")
+    if mode == "env":
+        return {"mode": "env", "source": source_env, "targets": []}, {}
+    if mode == "stored":
+        value = (api_key or "").strip()
+        if not value:
+            for secret_value in (provider_env.secret_env or {}).values():
+                if secret_value:
+                    value = secret_value
+                    break
+        if not value:
+            raise ValueError("model proxy stored credential is missing")
+        return {"mode": "stored", "targets": [source_env]}, {source_env: value}
+    raise ValueError("model proxy requires backend credentials or a credential env var")
+
+
+def _model_proxy_safe_env(env: Dict[str, str], model_overrides: Dict[str, str]) -> Dict[str, str]:
+    safe_env = {
+        key: value
+        for key, value in dict(env).items()
+        if key not in _MODEL_PROXY_AUTH_ENV
+    }
+    opus_override = str(model_overrides.get("opus") or "").strip()
+    if opus_override and not opus_override.startswith("claude-"):
+        raise ValueError("--model-opus must be a claude-* model when --model-proxy architect is used")
+    if not opus_override:
+        safe_env.pop("ANTHROPIC_DEFAULT_OPUS_MODEL", None)
+    default_override = str(model_overrides.get("default") or "").strip()
+    if not default_override:
+        worker_default = safe_env.get("ANTHROPIC_DEFAULT_SONNET_MODEL") or safe_env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL")
+        if worker_default:
+            safe_env["ANTHROPIC_MODEL"] = worker_default
+    return safe_env
+
+
+def _model_proxy_port(value: Optional[object]):
+    if value in (None, "", "auto"):
+        return "auto"
+    try:
+        port = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("model proxy port must be auto or an integer") from exc
+    if port < 1 or port > 65535:
+        raise ValueError("model proxy port must be between 1 and 65535")
+    return port
+
+def apply_variant(
+    variant_id: str,
+    *,
+    claude_version: Optional[str] = None,
+    source_binary: Optional[os.PathLike] = None,
+    source_platform: Optional[str] = None,
+    root=None,
+) -> VariantBuildResult:
+    variant = load_variant(variant_id, root=root)
+    return _apply_variant_manifest(
+        variant.manifest,
+        claude_version=claude_version,
+        source_binary=source_binary,
+        source_platform=source_platform,
+        root=root,
+    )
+
+def _apply_variant_manifest(
+    manifest: Dict,
+    *,
+    claude_version: Optional[str] = None,
+    source_binary: Optional[os.PathLike] = None,
+    source_platform: Optional[str] = None,
+    root=None,
+) -> VariantBuildResult:
     manifest = dict(manifest)
-    if claude_version:
-        manifest["source"] = dict(manifest["source"])
-        manifest["source"]["version"] = claude_version
+    source_artifact = None
+    if source_platform is not None and source_binary is None:
+        raise ValueError("--source-platform requires --source-binary")
+    if source_binary is not None:
+        source_artifact = _import_source_binary_for_version(
+            source_binary,
+            claude_version,
+            source_platform=source_platform,
+            root=root,
+        )
+        manifest["source"] = {
+            "type": "local-binary",
+            "version": source_artifact.version,
+        }
+    elif claude_version:
+        manifest["source"] = {
+            "type": "download",
+            "version": claude_version,
+        }
     manifest["env"] = sync_tweak_env(
         manifest.get("env", {}),
         manifest.get("tweaks", []),
@@ -180,6 +357,7 @@ def _apply_variant_manifest(manifest: Dict, *, claude_version: Optional[str] = N
         manifest,
         root=root,
         bin_dir=default_bin_dir(root),
+        source_artifact=source_artifact,
     )
 
 def update_variants(
@@ -187,8 +365,12 @@ def update_variants(
     *,
     all_variants: bool = False,
     claude_version: Optional[str] = None,
+    source_binary: Optional[os.PathLike] = None,
+    source_platform: Optional[str] = None,
     root=None,
 ) -> List[VariantBuildResult]:
+    if all_variants and source_binary is not None:
+        raise ValueError("--source-binary can only be used when updating one variant")
     if all_variants:
         return [
             _apply_variant_manifest(variant.manifest, claude_version=claude_version, root=root)
@@ -196,7 +378,58 @@ def update_variants(
         ]
     if not name:
         raise ValueError("Pass a variant name or --all")
-    return [apply_variant(variant_id_from_name(name), claude_version=claude_version, root=root)]
+    return [
+        apply_variant(
+            variant_id_from_name(name),
+            claude_version=claude_version,
+            source_binary=source_binary,
+            source_platform=source_platform,
+            root=root,
+        )
+    ]
+
+def _import_source_binary_for_version(
+    source_binary: os.PathLike,
+    claude_version: Optional[str],
+    *,
+    source_platform: Optional[str],
+    root=None,
+) -> NativeArtifact:
+    if not isinstance(claude_version, str) or not SEMVER_RE.match(claude_version):
+        raise ValueError("--source-binary requires --claude-version with a concrete semver")
+    return import_local_native_binary(
+        source_binary,
+        claude_version,
+        platform_key=source_platform,
+        root=root,
+    )
+
+def _source_manifest_for_create(
+    source_artifact: Optional[NativeArtifact],
+    claude_version: Optional[str],
+) -> Dict[str, str]:
+    if source_artifact is None:
+        return {
+            "type": "download",
+            "version": claude_version or "latest",
+        }
+    source_type = source_artifact.metadata.get("sourceType")
+    if source_type != "local-binary":
+        return {
+            "type": "download",
+            "version": source_artifact.version,
+        }
+    payload = {
+        "type": "local-binary",
+        "version": source_artifact.version,
+        "platform": source_artifact.platform,
+        "sha256": source_artifact.sha256,
+        "path": str(source_artifact.path),
+    }
+    imported_from = source_artifact.metadata.get("importedFrom")
+    if imported_from:
+        payload["importedFrom"] = str(imported_from)
+    return payload
 
 def remove_variant(name: str, *, yes: bool = False, root=None) -> bool:
     if not yes:
@@ -245,6 +478,8 @@ def doctor_variant(name: Optional[str] = None, *, all_variants: bool = False, ro
             )
         else:
             checks.append({"name": "binary", "ok": binary.is_file(), "path": str(binary)})
+        checks.extend(ccrouter_doctor_checks(variant.manifest))
+        checks.extend(_model_proxy_doctor_checks(variant.manifest))
         credential = variant.manifest.get("credential", {})
         if credential.get("mode") == "stored":
             secrets_path = Path(credential.get("secretsPath") or secrets_path)
@@ -271,6 +506,23 @@ def _node_entry_bun_compat_ok(entry: Path) -> bool:
     except OSError:
         return False
     return "Bun." not in js or has_bun_node_compat(js)
+
+
+def _model_proxy_doctor_checks(manifest: Dict) -> List[Dict[str, object]]:
+    config = manifest.get("modelProxy")
+    if not isinstance(config, dict):
+        return []
+    config_path = Path(str(config.get("runtimeConfigPath") or ""))
+    log_path = Path(str(config.get("logPath") or ""))
+    python_path = Path(str(config.get("pythonExecutable") or ""))
+    port = config.get("port", "auto")
+    port_ok = port == "auto" or isinstance(port, int)
+    return [
+        {"name": "model-proxy-config", "ok": config_path.is_file(), "path": str(config_path)},
+        {"name": "model-proxy-log-dir", "ok": bool(log_path.parent) and log_path.parent.is_dir(), "path": str(log_path.parent)},
+        {"name": "model-proxy-python", "ok": python_path.is_file() and os.access(python_path, os.X_OK), "path": str(python_path)},
+        {"name": "model-proxy-port", "ok": port_ok, "path": str(config_path), "detail": str(port)},
+    ]
 
 def run_variant(name: str, args: Optional[List[str]] = None, root=None) -> int:
     variant_id = variant_id_from_name(name)

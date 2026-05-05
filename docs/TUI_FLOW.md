@@ -125,6 +125,15 @@ Setup detail keeps the selected setup in context and exposes the same lifecycle 
 
 Logs and result screens support `C` to copy log text.
 
+Managed CCR setups add CCR-specific setup detail rows for status, start, stop,
+restart, opening the CCR UI, and copying the setup-local CCR config path. The
+detail panel also shows the setup-local CCR config and installed CCR package.
+
+Setups with `--model-proxy architect` show that the model proxy requires a
+Claude Code login for Claude-owned requests. The proxy is architect-only:
+Claude model calls continue through the user's Claude Code account/session,
+while non-Claude model aliases are forwarded to the configured backend.
+
 ## First-Run Setup
 
 With zero variants, startup routes to first-run setup and says no Claude Code setups were found.

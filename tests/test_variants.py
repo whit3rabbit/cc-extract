@@ -27,6 +27,9 @@ from cc_extractor.variants import (
     update_variant_models,
 )
 from cc_extractor.variants.model import Variant
+from cc_extractor.variants.ccrouter import (
+    CCR_PACKAGE_DEFAULT,
+)
 from cc_extractor.variants.builder import patch_entry_js
 from cc_extractor.variants.wrapper import write_wrapper
 from cc_extractor.variants.wrapper import write_secrets
@@ -90,6 +93,31 @@ def read_entry(binary_path):
     info = parse_bun_binary(data)
     entry = info.modules[info.entry_point_id]
     return data[info.data_start + entry.cont_off : info.data_start + entry.cont_off + entry.cont_len].decode("utf-8")
+
+
+def stub_ccrouter_npm(monkeypatch):
+    import cc_extractor.variants.ccrouter as ccrouter_module
+
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[0] == "npm":
+            runtime_dir = Path(command[command.index("--prefix") + 1])
+            package_dir = runtime_dir / "node_modules" / "@musistudio" / "claude-code-router"
+            package_dir.mkdir(parents=True, exist_ok=True)
+            (package_dir / "package.json").write_text('{"version":"2.0.0"}\n', encoding="utf-8")
+            bin_dir = runtime_dir / "node_modules" / ".bin"
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            ccr = bin_dir / "ccr"
+            ccr.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            ccr.chmod(0o755)
+        if command[0] == "node":
+            return SimpleNamespace(returncode=0, stdout="v20.0.0\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(ccrouter_module.subprocess, "run", fake_run)
+    return calls
 
 
 def run_in_pty(command):
@@ -314,9 +342,166 @@ def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
     assert result.variant.manifest["mcp"]["selected"] == []
 
 
-def test_create_ccrouter_variant_persists_env_unset_and_wrapper_unsets_bedrock(tmp_path):
+def test_create_variant_with_source_binary_imports_without_download(tmp_path, monkeypatch):
+    import cc_extractor.variants as variants_module
+
     root = tmp_path / ".cc-extractor"
     artifact = write_source_artifact(tmp_path)
+
+    def fail_download(*_args, **_kwargs):
+        raise AssertionError("source_binary should not download")
+
+    monkeypatch.setattr(variants_module, "download_binary", fail_download)
+
+    result = create_variant(
+        name="Local Source",
+        provider_key="mirror",
+        claude_version="2.1.123",
+        source_binary=artifact.path,
+        source_platform="linux-x64",
+        root=root,
+        force=True,
+    )
+
+    source = result.variant.manifest["source"]
+    stage_names = [stage.name for stage in result.stages]
+
+    assert source["type"] == "local-binary"
+    assert source["version"] == "2.1.123"
+    assert source["platform"] == "linux-x64"
+    assert source["importedFrom"] == str(artifact.path.resolve())
+    assert Path(source["path"]).is_file()
+    assert Path(source["path"]) != artifact.path
+    assert artifact.path.exists()
+    assert "download source" not in stage_names
+
+
+def test_apply_variant_reuses_imported_source_binary_offline(tmp_path, monkeypatch):
+    import cc_extractor.variants as variants_module
+
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+    result = create_variant(
+        name="Offline Local",
+        provider_key="mirror",
+        claude_version="2.1.123",
+        source_binary=artifact.path,
+        source_platform="linux-x64",
+        root=root,
+        force=True,
+    )
+    artifact.path.unlink()
+
+    def fail_download(*_args, **_kwargs):
+        raise AssertionError("local-binary apply should not download")
+
+    monkeypatch.setattr(variants_module, "_download_source_artifact", fail_download)
+
+    reapplied = apply_variant("offline-local", root=root)
+
+    assert reapplied.variant.manifest["source"]["path"] == result.variant.manifest["source"]["path"]
+    assert reapplied.variant.manifest["source"]["type"] == "local-binary"
+
+
+def test_apply_variant_reports_missing_or_changed_imported_source(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+    result = create_variant(
+        name="Missing Local",
+        provider_key="mirror",
+        claude_version="2.1.123",
+        source_binary=artifact.path,
+        source_platform="linux-x64",
+        root=root,
+        force=True,
+    )
+    managed_source = Path(result.variant.manifest["source"]["path"])
+    managed_source.unlink()
+
+    with pytest.raises(VariantBuildError, match="local source binary is missing"):
+        apply_variant("missing-local", root=root)
+
+    result = create_variant(
+        name="Changed Local",
+        provider_key="mirror",
+        claude_version="2.1.123",
+        source_binary=artifact.path,
+        source_platform="linux-x64",
+        root=root,
+        force=True,
+    )
+    managed_source = Path(result.variant.manifest["source"]["path"])
+    managed_source.write_bytes(b"changed")
+
+    with pytest.raises(VariantBuildError, match="hash changed"):
+        apply_variant("changed-local", root=root)
+
+
+def test_update_variant_can_replace_local_source_binary(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    first_dir = tmp_path / "first"
+    first_dir.mkdir()
+    first = write_source_artifact(first_dir)
+    second_dir = tmp_path / "second"
+    second_dir.mkdir()
+    second_fixture = build_bun_fixture(
+        platform="elf",
+        module_struct_size=52,
+        modules=[{"name": "src/cli.js", "content": ENTRY_JS + "\nconsole.log('second');"}],
+        entry_point_id=0,
+    )
+    second_path = second_dir / "claude"
+    second_path.write_bytes(second_fixture["buf"])
+
+    create_variant(
+        name="Replace Local",
+        provider_key="mirror",
+        claude_version="2.1.123",
+        source_binary=first.path,
+        source_platform="linux-x64",
+        root=root,
+        force=True,
+    )
+
+    updated = update_variants(
+        "replace-local",
+        claude_version="2.1.124",
+        source_binary=second_path,
+        source_platform="linux-x64",
+        root=root,
+    )[0]
+
+    source = updated.variant.manifest["source"]
+    assert source["type"] == "local-binary"
+    assert source["version"] == "2.1.124"
+    assert source["importedFrom"] == str(second_path.resolve())
+    assert Path(source["path"]).read_bytes() == second_path.read_bytes()
+
+
+def test_update_all_rejects_source_binary(tmp_path):
+    source = write_source_artifact(tmp_path).path
+
+    with pytest.raises(ValueError, match="only be used when updating one variant"):
+        update_variants(
+            all_variants=True,
+            claude_version="2.1.123",
+            source_binary=source,
+            root=tmp_path / ".cc-extractor",
+        )
+
+
+def test_create_ccrouter_variant_prepares_managed_runtime_and_isolated_config(tmp_path, monkeypatch):
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+    home = tmp_path / "home"
+    global_config = home / ".claude-code-router" / "config.json"
+    global_config.parent.mkdir(parents=True)
+    global_config.write_text(
+        json.dumps({"PORT": 3456, "APIKEY": "global-token", "API_TIMEOUT_MS": 12345, "Providers": [], "Router": {}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+    npm_calls = stub_ccrouter_npm(monkeypatch)
 
     result = create_variant(
         name="CCR Test",
@@ -327,10 +512,32 @@ def test_create_ccrouter_variant_persists_env_unset_and_wrapper_unsets_bedrock(t
     )
 
     wrapper = result.wrapper_path.read_text(encoding="utf-8")
+    manifest = result.variant.manifest
+    ccrouter = manifest["ccrouter"]
+    isolated_config = Path(ccrouter["configPath"])
+    isolated_payload = json.loads(isolated_config.read_text(encoding="utf-8"))
+    global_payload = json.loads(global_config.read_text(encoding="utf-8"))
 
+    assert npm_calls and npm_calls[0][:4] == ["npm", "install", "--prefix", str(root / "variants" / "ccr-test" / "ccr-runtime")]
+    assert ccrouter["mode"] == "managed"
+    assert ccrouter["configMode"] == "copy-global"
+    assert ccrouter["packageSpec"] == CCR_PACKAGE_DEFAULT
+    assert ccrouter["installedVersion"] == "2.0.0"
+    assert ccrouter["homeDir"] == str(root / "variants" / "ccr-test" / "ccr-home")
+    assert ccrouter["tmpDir"] == str(root / "variants" / "ccr-test" / "tmp")
+    assert isolated_payload["APIKEY"] == "global-token"
+    assert isolated_payload["PORT"] == ccrouter["port"]
+    assert global_payload["PORT"] == 3456
+    assert manifest["env"]["ANTHROPIC_BASE_URL"] == f"http://127.0.0.1:{ccrouter['port']}"
+    assert manifest["env"]["ANTHROPIC_AUTH_TOKEN"] == "global-token"
     assert result.variant.manifest["envUnset"] == ["CLAUDE_CODE_USE_BEDROCK"]
     assert "unset CLAUDE_CODE_USE_BEDROCK" in wrapper
-    assert wrapper.index("export ANTHROPIC_BASE_URL=http://127.0.0.1:3456") < wrapper.index("unset CLAUDE_CODE_USE_BEDROCK") < wrapper.index("\nexec ")
+    assert f"export HOME={ccrouter['homeDir']}" in wrapper
+    assert "ccr start" in wrapper
+    assert "ccr code" not in wrapper
+    assert "eval $(" not in wrapper
+    assert 'python3 - "$CCR_CONFIG"' in wrapper
+    assert wrapper.index("unset CLAUDE_CODE_USE_BEDROCK") < wrapper.index("ccr start") < wrapper.index("\nexec ")
 
 
 def test_create_variant_persists_base_url_override(tmp_path):
@@ -518,6 +725,7 @@ def test_macos_startup_regex_tweaks_use_in_place_binary_patch(tmp_path, monkeypa
         name="Mac Banner",
         provider_key="ccrouter",
         tweaks=["hide-startup-banner", "hide-startup-clawd"],
+        ccrouter_mode="external",
         root=root,
         source_artifact=artifact,
         force=True,
@@ -654,6 +862,7 @@ def test_macos_non_native_regex_tweak_uses_unpacked_node_runtime_not_in_place_bi
         name="Mac Patches Indication",
         provider_key="ccrouter",
         tweaks=["patches-applied-indication"],
+        ccrouter_mode="external",
         root=root,
         source_artifact=artifact,
         force=True,
@@ -737,6 +946,119 @@ def test_create_variant_stored_secret_is_not_in_metadata(tmp_path):
     assert 'SECRET_FILE="$VARIANT_ROOT/secrets.env"' in wrapper
     assert 'stat -f %Lp "$SECRET_FILE"' in wrapper
     assert result.variant.manifest["credential"]["mode"] == "stored"
+
+
+def test_create_model_proxy_architect_variant_uses_oauth_safe_env(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+
+    result = create_variant(
+        name="Deep Proxy",
+        provider_key="deepseek",
+        credential_env="DEEPSEEK_API_KEY",
+        model_proxy="architect",
+        model_proxy_port=4567,
+        tweaks=["themes"],
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+
+    manifest = result.variant.manifest
+    model_proxy = manifest["modelProxy"]
+    wrapper = result.wrapper_path.read_text(encoding="utf-8")
+    settings = json.loads((root / "variants" / "deep-proxy" / "config" / "settings.json").read_text(encoding="utf-8"))
+    proxy_config = json.loads(Path(model_proxy["runtimeConfigPath"]).read_text(encoding="utf-8"))
+    doctor_checks = {check["name"]: check for check in doctor_variant("deep-proxy", root=root)[0]["checks"]}
+
+    assert model_proxy["mode"] == "architect"
+    assert model_proxy["port"] == 4567
+    assert model_proxy["backendUrl"] == "https://api.deepseek.com/anthropic"
+    assert model_proxy["backendAuth"] == "x-api-key"
+    assert model_proxy["credentialEnv"] == "DEEPSEEK_API_KEY"
+    assert manifest["credential"] == {"mode": "env", "source": "DEEPSEEK_API_KEY", "targets": []}
+    assert "ANTHROPIC_BASE_URL" not in manifest["env"]
+    assert "ANTHROPIC_API_KEY" not in manifest["env"]
+    assert "ANTHROPIC_AUTH_TOKEN" not in manifest["env"]
+    assert "ANTHROPIC_DEFAULT_OPUS_MODEL" not in manifest["env"]
+    assert manifest["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"] == "deepseek-v4-flash"
+    assert manifest["env"]["ANTHROPIC_MODEL"] == "deepseek-v4-flash"
+    assert "forceLoginMethod" not in settings
+    assert proxy_config == {
+        "anthropicUrl": "https://api.anthropic.com",
+        "backendAuth": "x-api-key",
+        "backendUrl": "https://api.deepseek.com/anthropic",
+        "mode": "architect",
+    }
+    assert "customApiKeyResponses" not in wrapper
+    assert 'export ANTHROPIC_API_KEY="${DEEPSEEK_API_KEY}"' not in wrapper
+    assert "cc_extractor.model_proxy" in wrapper
+    assert "unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN" in wrapper
+    assert "cleanup_model_proxy" in wrapper
+    assert "exec " not in wrapper.split('cc_extractor.model_proxy', 1)[1]
+    assert doctor_checks["model-proxy-config"]["ok"] is True
+    assert doctor_checks["model-proxy-python"]["ok"] is True
+
+
+def test_create_model_proxy_stores_only_backend_secret(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+
+    result = create_variant(
+        name="Deep Proxy Secret",
+        provider_key="deepseek",
+        api_key="actual-secret-token",
+        store_secret=True,
+        model_proxy="architect",
+        tweaks=["themes"],
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+
+    variant_dir = root / "variants" / "deep-proxy-secret"
+    metadata_text = (variant_dir / "variant.json").read_text(encoding="utf-8")
+    proxy_config_text = (variant_dir / "config" / "model-proxy.json").read_text(encoding="utf-8")
+    secrets_text = (variant_dir / "secrets.env").read_text(encoding="utf-8")
+
+    assert "actual-secret-token" not in metadata_text
+    assert "actual-secret-token" not in proxy_config_text
+    assert "DEEPSEEK_API_KEY" in secrets_text
+    assert "actual-secret-token" in secrets_text
+    assert "ANTHROPIC_API_KEY" not in secrets_text
+    assert result.variant.manifest["credential"]["mode"] == "stored"
+    assert result.variant.manifest["credential"]["targets"] == ["DEEPSEEK_API_KEY"]
+
+
+def test_create_model_proxy_openrouter_uses_bearer_backend_auth(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+
+    result = create_variant(
+        name="OpenRouter Proxy",
+        provider_key="openrouter",
+        credential_env="OPENROUTER_API_KEY",
+        model_proxy="architect",
+        model_overrides={
+            "opus": "claude-opus-4-6",
+            "sonnet": "deepseek/deepseek-v4-pro",
+            "haiku": "deepseek/deepseek-v4-pro",
+        },
+        tweaks=["themes"],
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+
+    manifest = result.variant.manifest
+
+    assert manifest["modelProxy"]["backendAuth"] == "bearer"
+    assert manifest["modelProxy"]["credentialEnv"] == "OPENROUTER_API_KEY"
+    assert manifest["credential"] == {"mode": "env", "source": "OPENROUTER_API_KEY", "targets": []}
+    assert manifest["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "claude-opus-4-6"
+    assert manifest["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"] == "deepseek/deepseek-v4-pro"
+    assert manifest["env"]["ANTHROPIC_MODEL"] == "deepseek/deepseek-v4-pro"
+    assert "ANTHROPIC_AUTH_TOKEN" not in manifest["env"]
 
 
 def test_write_secrets_rewrites_existing_file_with_private_mode(tmp_path):
@@ -835,6 +1157,40 @@ def test_doctor_variant_fails_unmarked_node_entry_with_bun_globals(tmp_path):
     assert checks["node-bun-compat"]["ok"] is False
 
 
+def test_doctor_variant_reports_managed_ccrouter_running_and_missing_bin(tmp_path, monkeypatch):
+    import cc_extractor.variants.ccrouter as ccrouter_module
+
+    monkeypatch.setattr(ccrouter_module, "node_version_ok", lambda: (True, "node 20.0.0"))
+    root = _write_managed_ccrouter_variant(tmp_path, pid=os.getpid())
+
+    report = doctor_variant("ccr-managed", root=root)[0]
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert checks["ccrouter-bin"]["ok"] is True
+    assert checks["ccrouter-running"]["ok"] is True
+
+    (root / "variants" / "ccr-managed" / "ccr-runtime" / "node_modules" / ".bin" / "ccr").unlink()
+    report = doctor_variant("ccr-managed", root=root)[0]
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is False
+    assert checks["ccrouter-bin"]["ok"] is False
+
+
+def test_doctor_variant_reports_managed_ccrouter_stopped_and_bad_config(tmp_path, monkeypatch):
+    import cc_extractor.variants.ccrouter as ccrouter_module
+
+    monkeypatch.setattr(ccrouter_module, "node_version_ok", lambda: (True, "node 20.0.0"))
+    root = _write_managed_ccrouter_variant(tmp_path, config_text="{not json", pid=None)
+
+    report = doctor_variant("ccr-managed", root=root)[0]
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is False
+    assert checks["ccrouter-config-valid"]["ok"] is False
+    assert checks["ccrouter-running"]["ok"] is False
+
+
 def _write_node_variant(tmp_path, entry_js):
     root = tmp_path / ".cc-extractor"
     variant_dir = root / "variants" / "node-compat"
@@ -865,6 +1221,59 @@ def _write_node_variant(tmp_path, entry_js):
             "binary": str(binary),
             "entryPath": str(entry_path),
             "unpackedDir": str(variant_dir / "unpacked"),
+        },
+        "createdAt": "2026-05-04T00:00:00Z",
+        "updatedAt": "2026-05-04T00:00:00Z",
+    }
+    (variant_dir / "variant.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return root
+
+
+def _write_managed_ccrouter_variant(tmp_path, *, config_text=None, pid=None):
+    root = tmp_path / ".cc-extractor"
+    variant_dir = root / "variants" / "ccr-managed"
+    wrapper = root / "bin" / "ccr-managed"
+    settings = variant_dir / "config" / "settings.json"
+    binary = variant_dir / "native" / "claude"
+    home_dir = variant_dir / "ccr-home"
+    config_dir = home_dir / ".claude-code-router"
+    runtime_bin = variant_dir / "ccr-runtime" / "node_modules" / ".bin"
+    for path in (wrapper.parent, settings.parent, binary.parent, config_dir, runtime_bin):
+        path.mkdir(parents=True, exist_ok=True)
+    wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
+    settings.write_text("{}\n", encoding="utf-8")
+    binary.write_text("binary\n", encoding="utf-8")
+    ccr = runtime_bin / "ccr"
+    ccr.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    ccr.chmod(0o755)
+    config_path = config_dir / "config.json"
+    config_path.write_text(config_text or json.dumps({"PORT": 4567, "Providers": [], "Router": {}}), encoding="utf-8")
+    if pid is not None:
+        (config_dir / ".claude-code-router.pid").write_text(str(pid), encoding="utf-8")
+    manifest = {
+        "schemaVersion": 1,
+        "id": "ccr-managed",
+        "name": "CCR Managed",
+        "provider": {"key": "ccrouter", "label": "CC Router"},
+        "source": {"version": "2.1.128"},
+        "runtime": "native",
+        "paths": {
+            "root": str(variant_dir),
+            "wrapper": str(wrapper),
+            "configDir": str(settings.parent),
+            "binary": str(binary),
+        },
+        "ccrouter": {
+            "mode": "managed",
+            "packageSpec": CCR_PACKAGE_DEFAULT,
+            "configMode": "empty",
+            "autoStart": True,
+            "port": 4567,
+            "homeDir": str(home_dir),
+            "runtimeDir": str(variant_dir / "ccr-runtime"),
+            "tmpDir": str(variant_dir / "tmp"),
+            "configPath": str(config_path),
+            "binPath": str(ccr),
         },
         "createdAt": "2026-05-04T00:00:00Z",
         "updatedAt": "2026-05-04T00:00:00Z",
@@ -1371,6 +1780,10 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
             "themes",
             "--mcp",
             "github",
+            "--model-proxy",
+            "architect",
+            "--model-proxy-port",
+            "4321",
             "--json",
         ]
         cli.main()
@@ -1380,6 +1793,57 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
         assert calls[0]["base_url"] == "https://example.test/anthropic"
         assert calls[0]["tweaks"] == ["themes"]
         assert calls[0]["mcp_ids"] == ["github"]
+        assert calls[0]["model_proxy"] == "architect"
+        assert calls[0]["model_proxy_port"] == "4321"
+
+        sys.argv = [
+            "cc-extractor",
+            "variant",
+            "create",
+            "--name",
+            "Local",
+            "--provider",
+            "mirror",
+            "--claude-version",
+            "2.1.123",
+            "--source-binary",
+            str(tmp_path / "claude"),
+            "--source-platform",
+            "linux-x64",
+            "--json",
+        ]
+        cli.main()
+        json.loads(capsys.readouterr().out)
+        assert calls[-1]["source_binary"] == str(tmp_path / "claude")
+        assert calls[-1]["source_platform"] == "linux-x64"
+
+        sys.argv = [
+            "cc-extractor",
+            "variant",
+            "create",
+            "--name",
+            "CCR",
+            "--provider",
+            "ccrouter",
+            "--ccrouter-mode",
+            "managed",
+            "--ccrouter-config",
+            "empty",
+            "--ccrouter-package",
+            "@musistudio/claude-code-router@2.0.0",
+            "--ccrouter-port",
+            "4567",
+            "--no-ccrouter-autostart",
+            "--json",
+        ]
+        cli.main()
+        json.loads(capsys.readouterr().out)
+        assert calls[-1]["provider_key"] == "ccrouter"
+        assert calls[-1]["ccrouter_mode"] == "managed"
+        assert calls[-1]["ccrouter_config"] == "empty"
+        assert calls[-1]["ccrouter_package"] == "@musistudio/claude-code-router@2.0.0"
+        assert calls[-1]["ccrouter_port"] == "4567"
+        assert calls[-1]["ccrouter_autostart"] is False
 
         sys.argv = [
             "cc-extractor",
@@ -1432,3 +1896,63 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
         assert uninstall_payload["removedWorkspace"] is True
     finally:
         sys.argv = old_argv
+
+
+def test_variant_cli_update_passes_source_binary_args(monkeypatch, tmp_path, capsys):
+    from cc_extractor import __main__ as cli
+    import sys
+
+    calls = []
+
+    class FakeVariant:
+        manifest = {
+            "schemaVersion": 1,
+            "id": "fake",
+            "name": "Fake",
+            "provider": {"key": "mirror"},
+            "source": {"version": "1.2.3"},
+            "paths": {"wrapper": str(tmp_path / "fake")},
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+        }
+        variant_id = "fake"
+
+    class FakeResult:
+        variant = FakeVariant()
+        binary_path = tmp_path / "claude"
+        wrapper_path = tmp_path / "fake"
+        output_sha256 = "a" * 64
+        applied_tweaks = []
+        skipped_tweaks = []
+        missing_prompt_keys = []
+
+    def fake_update_variants(*args, **kwargs):
+        calls.append((args, kwargs))
+        return [FakeResult()]
+
+    monkeypatch.setattr(cli, "update_variants", fake_update_variants)
+    old_argv = sys.argv
+    sys.argv = [
+        "cc-extractor",
+        "variant",
+        "update",
+        "Fake",
+        "--claude-version",
+        "2.1.123",
+        "--source-binary",
+        str(tmp_path / "claude"),
+        "--source-platform",
+        "linux-x64",
+        "--json",
+    ]
+    try:
+        cli.main()
+    finally:
+        sys.argv = old_argv
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["id"] == "fake"
+    assert calls[0][0] == ("Fake",)
+    assert calls[0][1]["claude_version"] == "2.1.123"
+    assert calls[0][1]["source_binary"] == str(tmp_path / "claude")
+    assert calls[0][1]["source_platform"] == "linux-x64"

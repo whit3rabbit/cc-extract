@@ -103,15 +103,30 @@ def setup_detail_options(state):
     setup_id = selected_setup_id(state)
     if setup_id is None:
         return [MenuOption("setup-action-new", "Create new setup")]
-    return [
+    options = [
         MenuOption("setup-action-run", "Run Claude", setup_id),
         MenuOption("setup-action-health", "Run health check", setup_id),
         MenuOption("setup-action-upgrade", "Upgrade Claude Code", setup_id),
         MenuOption("setup-action-models", "Edit models", setup_id),
         MenuOption("setup-action-tweaks", "Edit tweaks", setup_id),
+    ]
+    variant = selected_setup_variant(state)
+    if _managed_ccrouter(variant):
+        options.extend(
+            [
+                MenuOption("setup-action-ccrouter-status", "CCR status", setup_id),
+                MenuOption("setup-action-ccrouter-start", "Start CCR", setup_id),
+                MenuOption("setup-action-ccrouter-stop", "Stop CCR", setup_id),
+                MenuOption("setup-action-ccrouter-restart", "Restart CCR", setup_id),
+                MenuOption("setup-action-ccrouter-ui", "Open CCR UI", setup_id),
+                MenuOption("setup-action-ccrouter-copy-config", "Copy CCR config path", setup_id),
+            ]
+        )
+    options.extend([
         MenuOption("setup-action-delete", "Delete setup", setup_id),
         MenuOption("setup-action-new", "Create new setup"),
-    ]
+    ])
+    return options
 
 def setup_row_label(state, variant):
     manifest = variant.manifest or {}
@@ -164,7 +179,7 @@ def setup_detail_lines(state):
     provider = (manifest.get("provider") or {}).get("key") or "?"
     version = (manifest.get("source") or {}).get("version") or "?"
     tweak_count = len(manifest.get("tweaks", []) or [])
-    return [
+    lines = [
         f"Setup: {variant.variant_id}",
         f"Provider: {provider}",
         f"Claude Code: {version}",
@@ -173,4 +188,24 @@ def setup_detail_lines(state):
         f"Setup config: {variant.path / 'variant.json'}",
         f"Enabled tweaks: {tweak_count}",
     ]
+    ccrouter = manifest.get("ccrouter") if provider == "ccrouter" else None
+    if isinstance(ccrouter, dict):
+        lines.extend([
+            f"CCR mode: {ccrouter.get('mode') or 'external'}",
+            f"CCR config: {ccrouter.get('configPath') or '(external)'}",
+            f"CCR package: {ccrouter.get('installedVersion') or ccrouter.get('packageSpec') or '(external)'}",
+        ])
+    model_proxy = manifest.get("modelProxy")
+    if isinstance(model_proxy, dict):
+        lines.extend([
+            f"Model proxy: {model_proxy.get('mode') or 'unknown'}",
+            "Model proxy account: requires Claude Code login for Claude-owned requests",
+            f"Model proxy backend: {model_proxy.get('backendUrl') or '(not set)'}",
+        ])
+    return lines
 
+
+def _managed_ccrouter(variant):
+    manifest = variant.manifest if variant is not None else {}
+    ccrouter = manifest.get("ccrouter") if isinstance(manifest, dict) else None
+    return isinstance(ccrouter, dict) and ccrouter.get("mode") == "managed"

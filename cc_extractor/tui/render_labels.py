@@ -190,6 +190,7 @@ def create_preview_labels(state):
         f"Claude Code: {state.variant_claude_version or 'latest'}",
         f"Command: {command}",
         *_create_preview_install_lines(state, setup_id),
+        *_create_preview_ccrouter_lines(state, provider),
         *_create_preview_endpoint_lines(state, provider),
         f"Credential env: {_create_preview_credential(state, provider)}",
         f"API key storage: {_create_preview_api_key_storage(state)}",
@@ -211,6 +212,22 @@ def _create_preview_install_lines(state, setup_id):
     if install_dir is None:
         return ["Install command: yes (no install directory found)"]
     return [f"Install command: yes ({install_dir / setup_id})"]
+
+
+def _create_preview_ccrouter_lines(state, provider):
+    if provider.get("key") != "ccrouter":
+        return []
+    lines = [f"CCR mode: {state.variant_ccrouter_mode}"]
+    if state.variant_ccrouter_mode == "managed":
+        lines.extend(
+            [
+                f"CCR config: {state.variant_ccrouter_config}",
+                f"CCR package: {state.variant_ccrouter_package}",
+                f"CCR port: {state.variant_ccrouter_port or 'auto'}",
+                f"CCR auto-start: {'yes' if state.variant_ccrouter_autostart else 'no'}",
+            ]
+        )
+    return lines
 
 def _create_preview_endpoint_lines(state, provider):
     if provider.get("authMode") == "none":

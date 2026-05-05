@@ -43,6 +43,8 @@ def variant_factory(tmp_path):
             "--provider", provider,
             "--claude-version", claude_version,
         ] + [arg for tweak in tweak_ids for arg in ("--tweak", tweak)]
+        if provider == "ccrouter":
+            cmd.extend(["--ccrouter-mode", "external"])
         proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300)
         if proc.returncode != 0:
             pytest.skip(f"variant create failed: {proc.stderr}")

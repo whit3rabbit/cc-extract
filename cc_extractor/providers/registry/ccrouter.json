@@ -53,13 +53,15 @@
     "features": [
       "Generic local gateway at 127.0.0.1:3456",
       "Models are configured in Claude Code Router",
+      "Managed mode keeps CCR npm install and HOME under this setup",
       "Optional router token must match CCR APIKEY when configured"
     ],
     "setupLinks": {
       "subscribe": "https://github.com/musistudio/claude-code-router#installation",
       "apiKey": "https://github.com/musistudio/claude-code-router#2-configuration",
-      "docs": "https://musistudio.github.io/claude-code-router/docs/cli/config/basic/"
+      "docs": "https://musistudio.github.io/claude-code-router/docs/cli/config/basic/",
+      "cc-extractor": "docs/CCR.md"
     },
-    "setupNote": "Install @musistudio/claude-code-router, configure ~/.claude-code-router/config.json, run ccr start, then create this setup. Override ANTHROPIC_BASE_URL for custom CCR ports."
+    "setupNote": "Managed mode installs CCR locally, sets HOME to the setup-local CCR home, copies or seeds config, and auto-starts the router. Edit the setup-local config shown after create. Use external mode only when you want to run a global CCR service yourself."
   }
 }

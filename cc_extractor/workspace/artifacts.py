@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from .._utils import safe_read_json as _safe_read_json, utc_now as _utc_now, version_sort_key as _version_sort_key
+from ..bun_extract import BunFormatError, parse_bun_binary
 from .models import (
     ExtractionArtifact,
     NativeArtifact,
@@ -17,8 +18,10 @@ from .models import (
 from .paths import (
     ARTIFACT_METADATA,
     PATCHED_METADATA,
+    SEMVER_RE,
     extraction_metadata_path,
     file_sha256,
+    native_binary_filename,
     native_download_path,
     npm_download_path,
     read_json,
@@ -69,6 +72,89 @@ def store_native_download(
         },
     )
     return final_path
+
+
+def import_local_native_binary(
+    binary_path: os.PathLike,
+    version: str,
+    platform_key: Optional[str] = None,
+    root: Optional[os.PathLike] = None,
+) -> NativeArtifact:
+    if not isinstance(version, str) or not SEMVER_RE.match(version):
+        raise ValueError("local source binary requires a concrete Claude Code semver version")
+    if platform_key is None:
+        from ..downloader import get_platform_key
+
+        platform_key = get_platform_key()
+    if not isinstance(platform_key, str) or not platform_key:
+        raise ValueError("source platform must be a non-empty string")
+
+    source = Path(binary_path).expanduser()
+    try:
+        resolved = source.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"source binary does not exist: {binary_path}") from exc
+    if not resolved.is_file():
+        raise ValueError(f"source binary is not a file: {binary_path}")
+
+    data = resolved.read_bytes()
+    try:
+        info = parse_bun_binary(data)
+    except BunFormatError as exc:
+        raise ValueError(f"source binary is not a Bun standalone binary: {binary_path}") from exc
+    _validate_container_platform(info.platform, platform_key)
+
+    sha256 = hashlib.sha256(data).hexdigest()
+    workspace = workspace_root(root)
+    tmp_root = workspace / "tmp"
+    tmp_root.mkdir(parents=True, exist_ok=True)
+    filename = native_binary_filename(platform_key)
+    staged_path = tmp_root / f"local-{version}-{platform_key}-{sha256[:12]}-{filename}"
+    shutil.copy2(resolved, staged_path)
+    try:
+        final_path = store_native_download(
+            staged_path,
+            version,
+            platform_key,
+            sha256,
+            source_url=None,
+            root=root,
+            filename=filename,
+        )
+    finally:
+        if staged_path != resolved and staged_path.exists():
+            staged_path.unlink()
+
+    metadata = _safe_read_json(final_path.parent / ARTIFACT_METADATA)
+    metadata.update(
+        {
+            "sourceType": "local-binary",
+            "importedFrom": str(resolved),
+            "container": info.platform,
+        }
+    )
+    write_artifact_metadata(final_path, metadata)
+    size = final_path.stat().st_size
+    return NativeArtifact(
+        version=version,
+        platform=platform_key,
+        sha256=sha256,
+        path=final_path,
+        metadata=_safe_read_json(final_path.parent / ARTIFACT_METADATA),
+        size=size,
+    )
+
+
+def _validate_container_platform(container: str, platform_key: str) -> None:
+    if container == "macho" and platform_key.startswith("darwin-"):
+        return
+    if container == "elf" and platform_key.startswith("linux-"):
+        return
+    if container == "pe" and platform_key.startswith("win32-"):
+        return
+    raise ValueError(
+        f"source binary container {container!r} is not compatible with platform {platform_key!r}"
+    )
 
 
 def store_npm_download(

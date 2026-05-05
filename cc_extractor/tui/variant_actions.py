@@ -2,6 +2,7 @@
 
 from urllib.parse import urlparse
 
+from ..variants import CCR_PACKAGE_DEFAULT, default_ccrouter_config_mode
 from ..providers import normalize_mcp_ids, provider_default_variant_name
 from ..variant_tweaks import CURATED_TWEAK_IDS, DEFAULT_TWEAK_IDS, default_tweak_ids_for_provider
 from ._const import VARIANT_MODEL_FIELDS, VARIANT_STEPS
@@ -25,6 +26,11 @@ def reset_variant(state):
     state.variant_credential_env = ""
     state.variant_api_key = ""
     state.variant_store_secret = False
+    state.variant_ccrouter_mode = "managed"
+    state.variant_ccrouter_config = default_ccrouter_config_mode()
+    state.variant_ccrouter_package = CCR_PACKAGE_DEFAULT
+    state.variant_ccrouter_port = "auto"
+    state.variant_ccrouter_autostart = True
     state.variant_model_overrides = {}
     state.variant_model_choices = []
     state.variant_install_command = False
@@ -35,17 +41,22 @@ def reset_variant(state):
 
 
 def set_variant_provider_defaults(state, provider):
+    provider_key = str(provider.get("key") or "") if provider else ""
     state.variant_name = provider_default_variant_name(provider["key"]) if provider else ""
     state.variant_base_url = str(provider.get("baseUrl") or "") if provider else ""
     state.variant_credential_env = str(provider.get("credentialEnv") or "") if provider else ""
     state.variant_api_key = ""
     state.variant_store_secret = False
+    state.variant_ccrouter_mode = "managed"
+    state.variant_ccrouter_config = default_ccrouter_config_mode()
+    state.variant_ccrouter_package = CCR_PACKAGE_DEFAULT
+    state.variant_ccrouter_port = "auto"
+    state.variant_ccrouter_autostart = True
     state.variant_model_overrides = {}
     state.variant_model_choices = []
     state.variant_install_command = False
     state.variant_install_choice_initialized = False
     state.selected_variant_mcp_ids = []
-    provider_key = str(provider.get("key") or "") if provider else ""
     state.selected_variant_tweaks = default_tweak_ids_for_provider(provider_key)
 
 
@@ -120,6 +131,35 @@ def variant_model_overrides_for_create(state):
         for key, value in state.variant_model_overrides.items()
         if value.strip()
     }
+
+
+def variant_ccrouter_options_for_create(state, provider):
+    if not provider or provider.get("key") != "ccrouter":
+        return {}
+    return {
+        "ccrouter_mode": state.variant_ccrouter_mode,
+        "ccrouter_config": state.variant_ccrouter_config,
+        "ccrouter_package": state.variant_ccrouter_package.strip() or CCR_PACKAGE_DEFAULT,
+        "ccrouter_port": state.variant_ccrouter_port.strip() or "auto",
+        "ccrouter_autostart": bool(state.variant_ccrouter_autostart),
+    }
+
+
+def cycle_variant_ccrouter_mode(state):
+    state.variant_ccrouter_mode = "external" if state.variant_ccrouter_mode == "managed" else "managed"
+    state.message = f"CCR mode: {state.variant_ccrouter_mode}"
+
+
+def cycle_variant_ccrouter_config(state):
+    order = ["copy-global", "empty", "shared-home"]
+    current = state.variant_ccrouter_config if state.variant_ccrouter_config in order else default_ccrouter_config_mode()
+    state.variant_ccrouter_config = order[(order.index(current) + 1) % len(order)]
+    state.message = f"CCR config: {state.variant_ccrouter_config}"
+
+
+def toggle_variant_ccrouter_autostart(state):
+    state.variant_ccrouter_autostart = not state.variant_ccrouter_autostart
+    state.message = "CCR auto-start: yes" if state.variant_ccrouter_autostart else "CCR auto-start: no"
 
 
 def toggle_variant_store_secret(state):

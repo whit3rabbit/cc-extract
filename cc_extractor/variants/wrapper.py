@@ -24,9 +24,21 @@ def write_variant_config(manifest: Dict) -> None:
     paths = manifest["paths"]
     env = dict(manifest.get("env", {}))
     write_json(Path(paths["configDir"]) / "settings.json", {"env": env})
+    model_proxy = manifest.get("modelProxy")
+    if isinstance(model_proxy, dict) and model_proxy.get("mode") == "architect":
+        write_json(
+            Path(model_proxy["runtimeConfigPath"]),
+            {
+                "mode": "architect",
+                "backendUrl": model_proxy["backendUrl"],
+                "backendAuth": model_proxy["backendAuth"],
+                "anthropicUrl": model_proxy.get("anthropicUrl") or "https://api.anthropic.com",
+            },
+        )
     apply_provider_claude_config(
         manifest["provider"]["key"],
         paths["configDir"],
+        auth_bootstrap=not (isinstance(model_proxy, dict) and model_proxy.get("mode") == "architect"),
         optional_mcp_ids=(manifest.get("mcp") or {}).get("selected", []),
         read_json=read_json,
         write_json=write_json,
@@ -113,6 +125,10 @@ def write_wrapper(manifest: Dict) -> Path:
         'export DISABLE_AUTOUPDATER="${DISABLE_AUTOUPDATER:-1}"',
         'export DISABLE_AUTO_MIGRATE_TO_NATIVE="${DISABLE_AUTO_MIGRATE_TO_NATIVE:-1}"',
     ]
+    managed_ccrouter = _managed_ccrouter_config(manifest)
+    model_proxy = _model_proxy_config(manifest)
+    if managed_ccrouter:
+        lines.extend(_ccrouter_home_lines(manifest, managed_ccrouter))
     for key, value in sorted(manifest.get("env", {}).items()):
         env_key = require_env_name(key, label="wrapper env key")
         lines.append(f"export {env_key}={shlex.quote(str(value))}")
@@ -145,10 +161,15 @@ def write_wrapper(manifest: Dict) -> Path:
         source = require_env_name(credential.get("source"), label="credential source")
         targets = [require_env_name(target, label="credential target") for target in credential.get("targets", [])]
         lines.append(f": ${{{source}:?Set {source} for variant {manifest['id']}}}")
-        for target in targets:
-            lines.append(f"export {target}=\"${{{source}}}\"")
-    if provider_auth_bootstrap_enabled(manifest["provider"]["key"]):
+        if not model_proxy:
+            for target in targets:
+                lines.append(f"export {target}=\"${{{source}}}\"")
+    if provider_auth_bootstrap_enabled(manifest["provider"]["key"]) and not model_proxy:
         lines.extend(_api_key_approval_bootstrap_lines())
+    if managed_ccrouter:
+        lines.extend(_ccrouter_runtime_lines(manifest, managed_ccrouter))
+    if model_proxy:
+        lines.extend(_model_proxy_runtime_lines(manifest, model_proxy))
     lines.extend(shell_splash_lines())
     launch_args = _launch_args(manifest)
     if manifest.get("runtime", "native") == "node":
@@ -172,13 +193,156 @@ def write_wrapper(manifest: Dict) -> Path:
                 "fi",
                 f"ENTRY_PATH={shlex.quote(paths['entryPath'])}",
                 'if [ ! -f "$ENTRY_PATH" ]; then echo "Variant entry is missing: $ENTRY_PATH" >&2; exit 127; fi',
-                f'exec "$NODE_BIN" "$ENTRY_PATH"{launch_args} "$@"',
             ]
         )
+        if model_proxy:
+            lines.extend(_preserve_exit_launch_lines(f'"$NODE_BIN" "$ENTRY_PATH"{launch_args} "$@"'))
+        else:
+            lines.append(f'exec "$NODE_BIN" "$ENTRY_PATH"{launch_args} "$@"')
     else:
-        lines.append(f"exec {shlex.quote(paths['binary'])}{launch_args} \"$@\"")
+        command = f"{shlex.quote(paths['binary'])}{launch_args} \"$@\""
+        if model_proxy:
+            lines.extend(_preserve_exit_launch_lines(command))
+        else:
+            lines.append(f"exec {command}")
     atomic_write_text_no_symlink(wrapper_path, "\n".join(lines) + "\n", mode=0o755)
     return wrapper_path
+
+
+def _managed_ccrouter_config(manifest: Dict) -> Optional[Dict]:
+    if (manifest.get("provider") or {}).get("key") != "ccrouter":
+        return None
+    config = manifest.get("ccrouter")
+    if not isinstance(config, dict) or config.get("mode") != "managed":
+        return None
+    return config
+
+
+def _model_proxy_config(manifest: Dict) -> Optional[Dict]:
+    config = manifest.get("modelProxy")
+    if not isinstance(config, dict) or config.get("mode") != "architect":
+        return None
+    return config
+
+
+def _ccrouter_home_lines(manifest: Dict, config: Dict) -> list:
+    paths = manifest["paths"]
+    runtime_bin = Path(str(config.get("runtimeDir") or "")) / "node_modules" / ".bin"
+    return [
+        f"export HOME={shlex.quote(str(config['homeDir']))}",
+        'export USERPROFILE="$HOME"',
+        f"export TMPDIR={shlex.quote(paths['tmpDir'])}",
+        f"export PATH={shlex.quote(str(runtime_bin))}:$PATH",
+    ]
+
+
+def _ccrouter_runtime_lines(manifest: Dict, config: Dict) -> list:
+    auto_start = "1" if config.get("autoStart", True) else "0"
+    return [
+        f"CCR_CONFIG={shlex.quote(str(config.get('configPath') or Path(str(config['homeDir'])) / '.claude-code-router' / 'config.json'))}",
+        f"CCR_PID_FILE={shlex.quote(str(Path(str(config['homeDir'])) / '.claude-code-router' / '.claude-code-router.pid'))}",
+        f"CCR_LOG={shlex.quote(str(Path(manifest['paths']['tmpDir']) / 'ccrouter.log'))}",
+        f"CCR_AUTOSTART={auto_start}",
+        'if [ ! -f "$CCR_CONFIG" ]; then echo "CCR config is missing: $CCR_CONFIG" >&2; exit 127; fi',
+        'if ! command -v ccr >/dev/null 2>&1; then echo "Managed CCR command is missing. Reapply this setup." >&2; exit 127; fi',
+        '_ccr_running() {',
+        '  [ -f "$CCR_PID_FILE" ] || return 1',
+        '  _ccr_pid="$(cat "$CCR_PID_FILE" 2>/dev/null || true)"',
+        '  [ -n "$_ccr_pid" ] || return 1',
+        '  kill -0 "$_ccr_pid" 2>/dev/null',
+        '}',
+        'if [ "$CCR_AUTOSTART" = "1" ] && ! _ccr_running; then',
+        '  ccr start >>"$CCR_LOG" 2>&1 &',
+        '  _ccr_wait=0',
+        '  while [ "$_ccr_wait" -lt 50 ]; do',
+        '    _ccr_running && break',
+        '    _ccr_wait=$((_ccr_wait + 1))',
+        '    sleep 0.2',
+        '  done',
+        "fi",
+        'if ! _ccr_running; then echo "CCR service is not running. See $CCR_LOG" >&2; exit 127; fi',
+        '_ccr_env_file="$VARIANT_ROOT/tmp/ccrouter-env.sh"',
+        'python3 - "$CCR_CONFIG" >"$_ccr_env_file" <<\'PY\'',
+        "import json",
+        "import shlex",
+        "import sys",
+        "",
+        "with open(sys.argv[1], encoding=\"utf-8\") as handle:",
+        "    config = json.load(handle)",
+        "if not isinstance(config, dict):",
+        "    raise SystemExit(\"CCR config must be a JSON object\")",
+        "port = int(config.get(\"PORT\") or 3456)",
+        "if port < 1 or port > 65535:",
+        "    raise SystemExit(\"CCR PORT must be between 1 and 65535\")",
+        "env = {",
+        "    \"ANTHROPIC_BASE_URL\": f\"http://127.0.0.1:{port}\",",
+        "    \"ANTHROPIC_AUTH_TOKEN\": str(config.get(\"APIKEY\") or \"ccrouter-proxy\"),",
+        "    \"NO_PROXY\": \"127.0.0.1\",",
+        "    \"DISABLE_TELEMETRY\": \"true\",",
+        "    \"DISABLE_COST_WARNINGS\": \"true\",",
+        "    \"API_TIMEOUT_MS\": str(config.get(\"API_TIMEOUT_MS\") or \"600000\"),",
+        "}",
+        "for key, value in env.items():",
+        "    print(f\"export {key}={shlex.quote(value)}\")",
+        "PY",
+        '. "$_ccr_env_file"',
+    ]
+
+
+def _model_proxy_runtime_lines(manifest: Dict, config: Dict) -> list:
+    source = require_env_name(config.get("credentialEnv"), label="model proxy credential env")
+    port = str(config.get("port") or "auto")
+    if port == "0":
+        port = "auto"
+    return [
+        'MODEL_PROXY_PID=""',
+        "cleanup_model_proxy() {",
+        '  if [ -n "${MODEL_PROXY_PID:-}" ] && kill -0 "$MODEL_PROXY_PID" 2>/dev/null; then',
+        '    kill "$MODEL_PROXY_PID" 2>/dev/null || true',
+        '    wait "$MODEL_PROXY_PID" 2>/dev/null || true',
+        "  fi",
+        "}",
+        "trap cleanup_model_proxy EXIT INT TERM",
+        f"MODEL_PROXY_CONFIG={shlex.quote(str(config['runtimeConfigPath']))}",
+        f"MODEL_PROXY_PORT_FILE={shlex.quote(str(config['portFilePath']))}",
+        f"MODEL_PROXY_LOG={shlex.quote(str(config['logPath']))}",
+        'mkdir -p "$(dirname "$MODEL_PROXY_PORT_FILE")" "$(dirname "$MODEL_PROXY_LOG")"',
+        'rm -f "$MODEL_PROXY_PORT_FILE"',
+        f": ${{{source}:?Set {source} for variant {manifest['id']}}}",
+        f'CC_EXTRACTOR_MODEL_PROXY_API_KEY="${{{source}}}"',
+        "export CC_EXTRACTOR_MODEL_PROXY_API_KEY",
+        (
+            f"{shlex.quote(str(config.get('pythonExecutable') or 'python3'))} -m cc_extractor.model_proxy "
+            f'--config "$MODEL_PROXY_CONFIG" --port {shlex.quote(port)} --port-file "$MODEL_PROXY_PORT_FILE" '
+            '>>"$MODEL_PROXY_LOG" 2>&1 &'
+        ),
+        "MODEL_PROXY_PID=$!",
+        "unset CC_EXTRACTOR_MODEL_PROXY_API_KEY",
+        f"unset {source}",
+        "_model_proxy_wait=0",
+        'while [ "$_model_proxy_wait" -lt 50 ]; do',
+        '  [ -s "$MODEL_PROXY_PORT_FILE" ] && break',
+        '  if ! kill -0 "$MODEL_PROXY_PID" 2>/dev/null; then echo "Model proxy exited early. See $MODEL_PROXY_LOG" >&2; exit 127; fi',
+        '  _model_proxy_wait=$((_model_proxy_wait + 1))',
+        "  sleep 0.2",
+        "done",
+        'if [ ! -s "$MODEL_PROXY_PORT_FILE" ]; then echo "Model proxy did not start. See $MODEL_PROXY_LOG" >&2; exit 127; fi',
+        'MODEL_PROXY_ACTUAL_PORT="$(cat "$MODEL_PROXY_PORT_FILE")"',
+        'export ANTHROPIC_BASE_URL="http://127.0.0.1:$MODEL_PROXY_ACTUAL_PORT"',
+        "unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN",
+        'case "${NO_PROXY:-}" in *127.0.0.1*) ;; "") export NO_PROXY=127.0.0.1,localhost ;; *) export NO_PROXY="127.0.0.1,localhost,$NO_PROXY" ;; esac',
+    ]
+
+
+def _preserve_exit_launch_lines(command: str) -> list:
+    return [
+        "set +e",
+        command,
+        "_cc_status=$?",
+        "set -e",
+        "cleanup_model_proxy",
+        'exit "$_cc_status"',
+    ]
 
 
 def _launch_args(manifest: Dict) -> str:

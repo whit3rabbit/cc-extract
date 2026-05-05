@@ -10,7 +10,7 @@ have those patches apply to the dispatch site.
 
 import sys
 
-from .cli import build_parser, inspect_binary  # noqa: F401 — re-exported for test imports
+from .cli import build_parser, inspect_binary  # noqa: F401, re-exported for test imports
 from .cli import handlers as _handlers
 from .providers import list_mcp_catalog
 from .cli.payloads import (
@@ -106,6 +106,15 @@ def cmd_variant(args, variant_parser):
             extra_env=args.extra_env,
             tweak_options=tweak_options_from_args(args),
             mcp_ids=args.mcp,
+            ccrouter_mode=args.ccrouter_mode,
+            ccrouter_config=args.ccrouter_config,
+            ccrouter_package=args.ccrouter_package,
+            ccrouter_port=args.ccrouter_port,
+            ccrouter_autostart=args.ccrouter_autostart,
+            model_proxy=args.model_proxy,
+            model_proxy_port=args.model_proxy_port,
+            source_binary=args.source_binary,
+            source_platform=args.source_platform,
         )
         install_result = None
         if args.install:
@@ -166,6 +175,8 @@ def cmd_variant(args, variant_parser):
             args.name,
             all_variants=args.all,
             claude_version=args.claude_version,
+            source_binary=args.source_binary,
+            source_platform=args.source_platform,
         )
         if args.json:
             print_json([variant_result_payload(result) for result in results])

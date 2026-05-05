@@ -7,6 +7,7 @@ from ..download_index import download_versions, load_download_index
 from ..providers import normalize_mcp_ids
 from ..variant_tweaks import DEFAULT_TWEAK_IDS
 from ..variant_tweaks import DASHBOARD_TWEAK_IDS
+from ..variants import CCR_PACKAGE_DEFAULT
 from ..variants import list_variant_providers, scan_variants
 from ..variants.model import Variant
 from ..workspace import (
@@ -60,6 +61,11 @@ class TuiState:
     variant_credential_env: str = ""
     variant_api_key: str = ""
     variant_store_secret: bool = False
+    variant_ccrouter_mode: str = "managed"
+    variant_ccrouter_config: str = "empty"
+    variant_ccrouter_package: str = CCR_PACKAGE_DEFAULT
+    variant_ccrouter_port: str = "auto"
+    variant_ccrouter_autostart: bool = True
     variant_model_overrides: Dict[str, str] = field(default_factory=dict)
     variant_model_choices: List[str] = field(default_factory=list)
     variant_install_command: bool = False

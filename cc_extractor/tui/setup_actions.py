@@ -36,11 +36,12 @@ provider_default_variant_name = _proxy('provider_default_variant_name')
 variant_id_from_name = _proxy('variant_id_from_name')
 create_variant = _proxy('create_variant')
 install_variant_command = _proxy('install_variant_command')
+run_ccrouter_command = _proxy('run_ccrouter_command')
 _models_pending_diff = _proxy('_models_pending_diff')
 download_versions = _proxy('download_versions')
 refresh_download_index = _proxy('refresh_download_index')
 
-__all__ = ['_refresh_state', '_refresh_startup_download_index', '_route_startup', '_load_saved_setup_list_preferences', '_save_setup_list_preferences', '_log_lines', '_stage_log_lines', '_build_stage_lines', '_exception_stage_lines', '_result_stage_lines', '_append_backend_stages', '_stage_lines_from_log', '_copy_text_to_clipboard', '_copy_setup_command', '_copy_setup_config', '_queue_setup_run', '_clear_terminal_for_external_command', '_run_pending_setup', '_copy_logs', '_open_logs', '_open_help', '_health_status_from_report', '_yes_no', '_path_snapshot', '_path_changed', '_expected_setup_snapshot', '_variant_setup_snapshot', '_create_failure_summary', '_target_version_for_summary', '_has_cached_native_artifact', '_base_download_status', '_post_variant_snapshot', '_command_replaced_status', '_active_setup_status', '_managed_install_paths', '_run_setup_health', '_run_setup_upgrade', '_inspect_delete_artifact', '_run_inspect_delete', '_run_setup_delete', '_begin_tweak_apply_preview', '_run_tweak_apply', '_run_dashboard_build', '_refresh_variant_models', '_refresh_models_editor_models', '_models_editor_variant', '_models_editor_provider', '_models_editor_endpoint', '_models_editor_api_key', '_apply_models_choice', '_apply_models', '_discard_models', '_variant_model_discovery_api_key', '_run_variant_create']
+__all__ = ['_refresh_state', '_refresh_startup_download_index', '_route_startup', '_load_saved_setup_list_preferences', '_save_setup_list_preferences', '_log_lines', '_stage_log_lines', '_build_stage_lines', '_exception_stage_lines', '_result_stage_lines', '_append_backend_stages', '_stage_lines_from_log', '_copy_text_to_clipboard', '_copy_setup_command', '_copy_setup_config', '_queue_setup_run', '_clear_terminal_for_external_command', '_run_pending_setup', '_copy_logs', '_open_logs', '_open_help', '_health_status_from_report', '_yes_no', '_path_snapshot', '_path_changed', '_expected_setup_snapshot', '_variant_setup_snapshot', '_create_failure_summary', '_target_version_for_summary', '_has_cached_native_artifact', '_base_download_status', '_post_variant_snapshot', '_command_replaced_status', '_active_setup_status', '_managed_install_paths', '_run_setup_health', '_run_setup_upgrade', '_run_setup_ccrouter_action', '_inspect_delete_artifact', '_run_inspect_delete', '_run_setup_delete', '_begin_tweak_apply_preview', '_run_tweak_apply', '_run_dashboard_build', '_refresh_variant_models', '_refresh_models_editor_models', '_models_editor_variant', '_models_editor_provider', '_models_editor_endpoint', '_models_editor_api_key', '_apply_models_choice', '_apply_models', '_discard_models', '_variant_model_discovery_api_key', '_run_variant_create']
 
 def _refresh_state(state):
     try:
@@ -386,6 +387,63 @@ def _run_setup_health(state, setup_id, *, show_result=False):
         _tui()._set_mode(state, "health-result")
         state.message = message
     return state.setup_health[setup_id]
+
+
+def _run_setup_ccrouter_action(state, setup_id, action):
+    variant = next((item for item in state.variants if item.variant_id == setup_id), None)
+    if variant is None:
+        state.message = f"Setup {setup_id} not found."
+        return
+    ccrouter = (variant.manifest or {}).get("ccrouter") or {}
+    if ccrouter.get("mode") != "managed":
+        state.message = f"Setup {setup_id} is not managed by cc-extractor CCR."
+        return
+    if action == "copy-config":
+        config_path = ccrouter.get("configPath") or str(Path(ccrouter.get("homeDir", "")) / ".claude-code-router" / "config.json")
+        try:
+            _tui()._copy_text_to_clipboard(config_path)
+        except Exception as exc:
+            state.message = f"Copy failed: {exc}"
+            return
+        state.last_action_log = [f"Copied CCR config path: {config_path}"]
+        state.message = f"Copied CCR config path for setup {setup_id}."
+        return
+
+    command_args = {
+        "status": ["status"],
+        "start": ["start"],
+        "stop": ["stop"],
+        "restart": ["restart"],
+        "ui": ["ui"],
+    }.get(action)
+    if command_args is None:
+        state.message = f"Unknown CCR action: {action}"
+        return
+    try:
+        result, output = _run_quiet(run_ccrouter_command, variant.manifest, command_args)
+    except Exception as exc:
+        state.last_action_log = _stage_log_lines("CCR action failure", str(exc))
+        state.message = f"CCR {action} failed: {exc}"
+        return
+    combined = "\n".join(
+        str(part)
+        for part in (output, getattr(result, "stdout", ""), getattr(result, "stderr", ""))
+        if str(part).strip()
+    )
+    state.last_action_log = _stage_log_lines(f"CCR {action}", combined)
+    state.last_action_summary = [
+        f"CCR {action}.",
+        f"Setup: {setup_id}",
+        f"Return code: {getattr(result, 'returncode', '?')}",
+        "",
+        *(combined.splitlines() or ["No CCR output captured."]),
+    ]
+    if getattr(result, "returncode", 1) == 0:
+        state.message = f"CCR {action} completed for setup {setup_id}."
+    else:
+        state.message = f"CCR {action} exited {getattr(result, 'returncode', '?')} for setup {setup_id}."
+    _tui()._set_mode(state, "health-result")
+
 
 def _run_setup_upgrade(state):
     setup_id = state.selected_setup_id
@@ -816,6 +874,7 @@ def _run_variant_create(state):
             store_secret=store_secret,
             model_overrides=_tui()._variant_model_overrides_for_create(state),
             mcp_ids=state.selected_variant_mcp_ids,
+            **_tui()._variant_ccrouter_options_for_create(state, provider),
             force=False,
         )
         state.last_action_log = _stage_log_lines("Create setup", output)

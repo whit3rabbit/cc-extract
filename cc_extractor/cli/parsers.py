@@ -99,6 +99,8 @@ def _build_variant_subcommands(subparsers):
     create.add_argument("--name", required=True, help="Variant name, also used as wrapper command")
     create.add_argument("--provider", required=True, help="Provider preset key")
     create.add_argument("--claude-version", default="latest", help="Claude Code version, latest, or stable")
+    create.add_argument("--source-binary", help="Advanced: import a local Claude Code native binary")
+    create.add_argument("--source-platform", help="Advanced: platform key for --source-binary")
     create.add_argument("--patch-profile", help="Patch profile id to apply")
     create.add_argument("--tweak", action="append", help="Curated tweak id, repeatable")
     create.add_argument("--mcp", action="append", help="Optional MCP server id, repeatable")
@@ -110,6 +112,27 @@ def _build_variant_subcommands(subparsers):
     create.add_argument("--install", action="store_true", help="Install the setup command into a home PATH directory")
     create.add_argument("--force", action="store_true", help="Overwrite an existing variant")
     create.add_argument("--extra-env", action="append", help="Additional KEY=VALUE env entry, repeatable")
+    create.add_argument("--ccrouter-mode", choices=["managed", "external"], help="ccrouter runtime mode")
+    create.add_argument(
+        "--ccrouter-config",
+        choices=["copy-global", "empty", "shared-home"],
+        help="ccrouter config source for managed mode",
+    )
+    create.add_argument("--ccrouter-package", help="NPM package spec for managed ccrouter")
+    create.add_argument("--ccrouter-port", help="Managed ccrouter port or auto")
+    create.add_argument(
+        "--no-ccrouter-autostart",
+        dest="ccrouter_autostart",
+        action="store_false",
+        default=None,
+        help="Do not start managed ccrouter automatically in the wrapper",
+    )
+    create.add_argument(
+        "--model-proxy",
+        choices=["architect"],
+        help="Start the managed architect-only local model proxy; requires a Claude Code account",
+    )
+    create.add_argument("--model-proxy-port", default="auto", help="Managed model proxy port or auto")
     create.add_argument("--json", action="store_true", help="Print machine-readable JSON")
     add_variant_model_args(create)
     add_variant_tweak_option_args(create)
@@ -136,6 +159,8 @@ def _build_variant_subcommands(subparsers):
     update.add_argument("name", nargs="?", help="Variant name or id")
     update.add_argument("--all", action="store_true", help="Update all variants")
     update.add_argument("--claude-version", help="Override Claude Code version")
+    update.add_argument("--source-binary", help="Advanced: import a local Claude Code native binary")
+    update.add_argument("--source-platform", help="Advanced: platform key for --source-binary")
     update.add_argument("--json", action="store_true", help="Print machine-readable JSON")
 
     remove = subparsers.add_parser("remove", help="Remove a variant")

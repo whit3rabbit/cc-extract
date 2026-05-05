@@ -94,6 +94,16 @@ def validate_variant_manifest(manifest: Dict) -> None:
     source = manifest.get("source")
     if not isinstance(source, dict) or not isinstance(source.get("version"), str):
         raise ValueError("variant source must include version")
+    source_type = source.get("type", "download")
+    if source_type not in {"download", "local-binary"}:
+        raise ValueError("variant source.type must be download or local-binary")
+    if source_type == "local-binary":
+        for field in ("platform", "sha256", "path"):
+            if not isinstance(source.get(field), str) or not source[field]:
+                raise ValueError(f"local-binary variant source must include {field}")
+        imported_from = source.get("importedFrom")
+        if imported_from is not None and not isinstance(imported_from, str):
+            raise ValueError("local-binary variant source importedFrom must be a string")
     paths = manifest.get("paths")
     if not isinstance(paths, dict):
         raise ValueError("variant paths must be an object")
@@ -116,6 +126,50 @@ def validate_variant_manifest(manifest: Dict) -> None:
         from ..providers import normalize_mcp_ids
 
         normalize_mcp_ids(selected_mcp)
+    ccrouter = manifest.get("ccrouter")
+    if ccrouter is not None:
+        if not isinstance(ccrouter, dict):
+            raise ValueError("variant ccrouter must be an object")
+        mode = ccrouter.get("mode")
+        if mode not in {"managed", "external"}:
+            raise ValueError("variant ccrouter.mode must be managed or external")
+        if mode == "managed":
+            config_mode = ccrouter.get("configMode")
+            if config_mode not in {"copy-global", "empty", "shared-home"}:
+                raise ValueError("variant ccrouter.configMode must be copy-global, empty, or shared-home")
+            if not isinstance(ccrouter.get("packageSpec"), str) or not ccrouter["packageSpec"].strip():
+                raise ValueError("variant ccrouter.packageSpec must be a non-empty string")
+            if not isinstance(ccrouter.get("homeDir"), str) or not ccrouter["homeDir"].strip():
+                raise ValueError("variant ccrouter.homeDir must be a non-empty string")
+            if not isinstance(ccrouter.get("runtimeDir"), str) or not ccrouter["runtimeDir"].strip():
+                raise ValueError("variant ccrouter.runtimeDir must be a non-empty string")
+            if "tmpDir" in ccrouter and (not isinstance(ccrouter.get("tmpDir"), str) or not ccrouter["tmpDir"].strip()):
+                raise ValueError("variant ccrouter.tmpDir must be a non-empty string")
+            port = ccrouter.get("port")
+            if not isinstance(port, int) or port < 1 or port > 65535:
+                raise ValueError("variant ccrouter.port must be an integer between 1 and 65535")
+            if not isinstance(ccrouter.get("autoStart", True), bool):
+                raise ValueError("variant ccrouter.autoStart must be a boolean")
+    model_proxy = manifest.get("modelProxy")
+    if model_proxy is not None:
+        if not isinstance(model_proxy, dict):
+            raise ValueError("variant modelProxy must be an object")
+        if model_proxy.get("mode") != "architect":
+            raise ValueError("variant modelProxy.mode must be architect")
+        port = model_proxy.get("port", "auto")
+        if port != "auto" and (not isinstance(port, int) or port < 1 or port > 65535):
+            raise ValueError("variant modelProxy.port must be auto or an integer between 1 and 65535")
+        if not isinstance(model_proxy.get("backendUrl"), str) or not model_proxy["backendUrl"].strip():
+            raise ValueError("variant modelProxy.backendUrl must be a non-empty string")
+        if model_proxy.get("backendAuth") not in {"x-api-key", "bearer"}:
+            raise ValueError("variant modelProxy.backendAuth must be x-api-key or bearer")
+        if not isinstance(model_proxy.get("credentialEnv"), str) or not model_proxy["credentialEnv"].strip():
+            raise ValueError("variant modelProxy.credentialEnv must be a non-empty string")
+        require_env_name(model_proxy["credentialEnv"], label="variant modelProxy.credentialEnv")
+        for field in ("runtimeConfigPath", "logPath", "portFilePath", "pythonExecutable"):
+            value = model_proxy.get(field)
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"variant modelProxy.{field} must be a string")
     env_unset = manifest.get("envUnset", [])
     if env_unset is None:
         env_unset = []

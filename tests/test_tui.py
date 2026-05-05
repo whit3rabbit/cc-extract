@@ -1029,7 +1029,9 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     tui._activate_variants(state)
     assert calls == []
     assert state.mode == "create-preview"
-    assert "Setup create preview" in tui._screen_text(state)
+    preview = tui._screen_text(state)
+    assert "Setup create preview" in preview
+    assert "source binary" not in preview.lower()
 
     start = time.monotonic()
     tui._handle_char_key(state, "y")
@@ -1044,6 +1046,8 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     assert calls[0]["name"] == "mirror"
     assert calls[0]["credential_env"] is None
     assert calls[0]["claude_version"] == "latest"
+    assert "source_binary" not in calls[0]
+    assert "source_platform" not in calls[0]
     assert calls[0]["model_overrides"] == {}
     assert calls[0]["mcp_ids"] == ["github"]
     assert first_tweak not in calls[0]["tweaks"]
@@ -1564,6 +1568,99 @@ def test_variants_text_inputs_cover_credentials_and_models():
     assert state.variant_model_overrides["opus"] == "gl"
 
 
+def test_ccrouter_variant_options_accept_managed_runtime_inputs():
+    state = tui.TuiState(
+        mode="variants",
+        variant_step=2,
+        variant_provider_index=0,
+        variant_providers=[
+            {
+                "key": "ccrouter",
+                "label": "CC Router",
+                "description": "Router",
+                "authMode": "authToken",
+                "credentialEnv": "CCROUTER_AUTH_TOKEN",
+                "credentialOptional": True,
+                "authTokenFallback": "ccrouter-proxy",
+                "baseUrl": "http://127.0.0.1:3456",
+                "models": {},
+                "defaultVariantName": "ccrouter",
+            }
+        ],
+    )
+
+    labels = [option.label for option in tui._variant_options(state)]
+
+    assert "Managed CCR" in labels
+    assert "Mode: managed" in labels
+    assert any(label.startswith("Config source:") for label in labels)
+    assert f"NPM package: {tui.CCR_PACKAGE_DEFAULT}" in labels
+    assert "Port: auto" in labels
+    assert "[x] Auto-start CCR" in labels
+
+    package_index = [option.kind for option in tui._variant_options(state)].index("variant-ccrouter-package")
+    state.selected_index = package_index
+    state.variant_ccrouter_package = ""
+    assert tui._handle_char_key(state, "x") is True
+    assert state.variant_ccrouter_package == "x"
+    assert tui._variant_backspace(state) is True
+    assert state.variant_ccrouter_package == ""
+
+    mode_index = [option.kind for option in tui._variant_options(state)].index("variant-ccrouter-mode")
+    state.selected_index = mode_index
+    tui._activate_variants(state)
+    assert state.variant_ccrouter_mode == "external"
+
+
+def test_run_variant_create_passes_ccrouter_options(monkeypatch, tmp_path):
+    calls = []
+
+    class Result:
+        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "ccrouter"
+
+        class variant:
+            variant_id = "ccrouter"
+
+    def fake_create_variant(**kwargs):
+        calls.append(kwargs)
+        return Result()
+
+    monkeypatch.setattr(tui, "create_variant", fake_create_variant)
+    monkeypatch.setattr(tui, "doctor_variant", lambda name: [{"id": name, "ok": True, "checks": []}])
+    state = tui.TuiState(
+        mode="create-preview",
+        variant_name="ccrouter",
+        variant_ccrouter_mode="managed",
+        variant_ccrouter_config="empty",
+        variant_ccrouter_package="@musistudio/claude-code-router@2.0.0",
+        variant_ccrouter_port="4567",
+        variant_ccrouter_autostart=False,
+        variant_providers=[
+            {
+                "key": "ccrouter",
+                "label": "CC Router",
+                "description": "Router",
+                "authMode": "authToken",
+                "credentialEnv": "CCROUTER_AUTH_TOKEN",
+                "credentialOptional": True,
+                "authTokenFallback": "ccrouter-proxy",
+                "baseUrl": "http://127.0.0.1:3456",
+                "models": {},
+                "defaultVariantName": "ccrouter",
+            }
+        ],
+    )
+
+    tui._run_variant_create(state)
+
+    assert calls[0]["provider_key"] == "ccrouter"
+    assert calls[0]["ccrouter_mode"] == "managed"
+    assert calls[0]["ccrouter_config"] == "empty"
+    assert calls[0]["ccrouter_package"] == "@musistudio/claude-code-router@2.0.0"
+    assert calls[0]["ccrouter_port"] == "4567"
+    assert calls[0]["ccrouter_autostart"] is False
+
+
 def test_setup_manager_health_reports_doctor_failure(monkeypatch):
     class Variant:
         variant_id = "mirror"
@@ -1764,6 +1861,67 @@ def test_setup_detail_run_action_queues_command(tmp_path, monkeypatch):
     assert state.pending_run_setup_id == "deepseek-main"
     assert state.pending_run_command == [str(wrapper)]
     assert state.message == "Running setup deepseek-main after setup manager exits."
+
+
+def test_setup_detail_exposes_managed_ccrouter_actions(monkeypatch):
+    calls = []
+
+    class CcrResult:
+        command = ["ccr", "status"]
+        returncode = 0
+        stdout = "Status: Running\n"
+        stderr = ""
+
+    def fake_run_ccrouter_command(manifest, args):
+        calls.append((manifest, args))
+        return CcrResult()
+
+    monkeypatch.setattr(tui, "run_ccrouter_command", fake_run_ccrouter_command)
+    variant = _variant("ccrouter")
+    variant.manifest["provider"]["key"] = "ccrouter"
+    variant.manifest["ccrouter"] = {
+        "mode": "managed",
+        "homeDir": "/tmp/ccrouter-home",
+        "runtimeDir": "/tmp/ccrouter-runtime",
+        "configPath": "/tmp/ccrouter-home/.claude-code-router/config.json",
+        "packageSpec": tui.CCR_PACKAGE_DEFAULT,
+        "installedVersion": "2.0.0",
+        "configMode": "empty",
+        "autoStart": True,
+        "port": 4567,
+    }
+    state = tui.TuiState(mode="setup-detail", variants=[variant], selected_setup_id="ccrouter")
+
+    labels = [option.label for option in tui.options.setup_detail_options(state)]
+    assert "CCR status" in labels
+    assert "Start CCR" in labels
+    assert "Copy CCR config path" in labels
+    assert "CCR config: /tmp/ccrouter-home/.claude-code-router/config.json" in tui._screen_text(state)
+
+    state.selected_index = [option.kind for option in tui.options.setup_detail_options(state)].index("setup-action-ccrouter-status")
+    tui._activate_setup_detail(state)
+
+    assert calls[0][1] == ["status"]
+    assert state.mode == "health-result"
+    assert "Status: Running" in "\n".join(state.last_action_summary)
+
+
+def test_setup_detail_explains_model_proxy_account_requirement():
+    variant = _variant("architect-proxy")
+    variant.manifest["modelProxy"] = {
+        "mode": "architect",
+        "backendUrl": "https://example.test/anthropic",
+        "backendAuth": "x-api-key",
+        "credentialEnv": "EXAMPLE_API_KEY",
+        "port": "auto",
+    }
+    state = tui.TuiState(mode="setup-detail", variants=[variant], selected_setup_id="architect-proxy")
+
+    screen = tui._screen_text(state)
+
+    assert "Model proxy: architect" in screen
+    assert "requires Claude Code login" in screen
+    assert "Model proxy backend: https://example.test/anthropic" in screen
 
 
 def test_setup_manager_run_shortcut_requires_row_then_queues(tmp_path, monkeypatch):

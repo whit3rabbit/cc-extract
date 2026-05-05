@@ -272,6 +272,8 @@ def _toggle_selected(state):
             _tui()._toggle_variant_mcp(state, str(option.value))
         elif option and option.kind == "variant-store-secret":
             _tui()._toggle_variant_store_secret(state)
+        elif option and option.kind == "variant-ccrouter-autostart":
+            _tui()._toggle_variant_ccrouter_autostart(state)
     elif state.mode in {"tweaks-edit", "tweak-editor"}:
         _tui()._toggle_tweak(state)
 
@@ -389,6 +391,9 @@ def _activate_setup_detail(state):
         _tui()._open_tweak_editor(state)
     elif option.kind == "setup-action-delete":
         _tui()._open_delete_confirm(state)
+    elif option.kind.startswith("setup-action-ccrouter-") and setup_id:
+        action = option.kind.replace("setup-action-ccrouter-", "")
+        _tui()._run_setup_ccrouter_action(state, setup_id, action)
 
 def _current_setup_id_for_action(state):
     option = _tui()._selected_setup_option(state)
@@ -614,6 +619,16 @@ def _activate_variants(state):
     elif option.kind == "variant-store-secret":
         _tui()._toggle_variant_store_secret(state)
         state.message = "Local API key storage enabled." if state.variant_store_secret else "Local API key storage disabled."
+    elif option.kind == "variant-ccrouter-mode":
+        _tui()._cycle_variant_ccrouter_mode(state)
+    elif option.kind == "variant-ccrouter-config":
+        _tui()._cycle_variant_ccrouter_config(state)
+    elif option.kind == "variant-ccrouter-package":
+        state.message = "Type the CCR npm package spec."
+    elif option.kind == "variant-ccrouter-port":
+        state.message = "Type a CCR port, or auto."
+    elif option.kind == "variant-ccrouter-autostart":
+        _tui()._toggle_variant_ccrouter_autostart(state)
     elif option.kind == "variant-mcp":
         _tui()._toggle_variant_mcp(state, str(option.value))
     elif option.kind == "variant-mcp-continue":

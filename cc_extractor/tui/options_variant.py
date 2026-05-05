@@ -50,6 +50,8 @@ def variant_options(state):
             MenuOption("variant-credential-env", f"Credential env: {credential}"),
             MenuOption("variant-store-secret", f"{store_marker} Store API key locally"),
         ]
+        if provider.get("key") == "ccrouter":
+            options.extend(_ccrouter_credential_options(state))
         if state.variant_store_secret:
             options.append(MenuOption("variant-api-key", f"API key: {_masked_secret(state.variant_api_key)}"))
         options.append(MenuOption("variant-credentials-continue", "Continue to models"))
@@ -268,6 +270,24 @@ def _variant_provider_row_label(provider):
     if provider.get("section") == "local" or provider.get("baseUrl", "").startswith(("http://127.0.0.1", "http://localhost")):
         markers.append("local")
     return f"{key}  {label} [{', '.join(markers)}]"
+
+
+def _ccrouter_credential_options(state):
+    options = [
+        MenuOption("section", "Managed CCR"),
+        MenuOption("variant-ccrouter-mode", f"Mode: {state.variant_ccrouter_mode}"),
+    ]
+    if state.variant_ccrouter_mode == "managed":
+        auto_marker = "[x]" if state.variant_ccrouter_autostart else "[ ]"
+        options.extend(
+            [
+                MenuOption("variant-ccrouter-config", f"Config source: {state.variant_ccrouter_config}"),
+                MenuOption("variant-ccrouter-package", f"NPM package: {state.variant_ccrouter_package or '(set package)'}"),
+                MenuOption("variant-ccrouter-port", f"Port: {state.variant_ccrouter_port or 'auto'}"),
+                MenuOption("variant-ccrouter-autostart", f"{auto_marker} Auto-start CCR"),
+            ]
+        )
+    return options
 
 def _highlighted_variant_provider(state):
     option = selected_variant_option(state)

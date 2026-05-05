@@ -24,6 +24,7 @@ def apply_provider_claude_config(
     config_dir,
     *,
     credential_value: Optional[str] = None,
+    auth_bootstrap: bool = True,
     optional_mcp_ids=None,
     read_json=None,
     write_json=None,
@@ -32,7 +33,7 @@ def apply_provider_claude_config(
     config_dir = Path(config_dir)
     settings_changed = _merge_settings_values(
         config_dir,
-        _provider_runtime_settings(provider_key),
+        _provider_runtime_settings(provider_key, auth_bootstrap=auth_bootstrap),
         read_json=read_json,
         write_json=write_json,
     )
@@ -60,8 +61,8 @@ def provider_auth_bootstrap_enabled(provider_key: str) -> bool:
     return provider.key != "mirror" and provider.auth_mode != "none"
 
 
-def _provider_runtime_settings(provider_key: str) -> Dict[str, object]:
-    if provider_auth_bootstrap_enabled(provider_key):
+def _provider_runtime_settings(provider_key: str, *, auth_bootstrap: bool = True) -> Dict[str, object]:
+    if auth_bootstrap and provider_auth_bootstrap_enabled(provider_key):
         return {"forceLoginMethod": "console"}
     return {}
 

@@ -254,24 +254,53 @@ Creates or applies text patch manifests against extracted bundle files. `--check
 
 **CC Router provider:**
 
-The `ccrouter` provider points an isolated Claude Code setup at a local
-Claude Code Router service. Install CCR, configure it, and start the service
-before running the cc-extractor wrapper:
+The `ccrouter` provider can manage Claude Code Router inside the setup
+workspace. By default, cc-extractor installs CCR locally under the setup,
+copies `~/.claude-code-router/config.json` into the setup when it exists,
+assigns an isolated local port, and runs CCR with `HOME` pointed at the
+setup-local home:
+
+```bash
+cc-extractor variant create --name ccrouter --provider ccrouter
+```
+
+Managed CCR config lives at:
+
+```text
+.cc-extractor/variants/<setup-id>/ccr-home/.claude-code-router/config.json
+```
+
+Useful create options:
+
+```bash
+cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-config empty
+cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-package @musistudio/claude-code-router@2.0.0
+cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-port 4567
+cc-extractor variant create --name ccrouter --provider ccrouter --no-ccrouter-autostart
+```
+
+Use `--ccrouter-mode external` to keep the old behavior, where you install,
+configure, and start CCR yourself:
 
 ```bash
 npm install -g @musistudio/claude-code-router
 # edit ~/.claude-code-router/config.json
 ccr start
-cc-extractor variant create --name ccrouter --provider ccrouter
+cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-mode external
 ```
 
-If CCR config sets `APIKEY`, expose the same value as `CCROUTER_AUTH_TOKEN`
-when creating or running the setup. Custom CCR ports require overriding
-`ANTHROPIC_BASE_URL` with `--extra-env ANTHROPIC_BASE_URL=http://127.0.0.1:<port>`.
-cc-extractor does not start `ccr`, call `ccr code`, or write CCR's global
-config. See the [CCR README](https://github.com/musistudio/claude-code-router),
+For managed setups, edit the setup-local CCR config instead of the global
+CCR config. The wrapper starts the local `ccr` service when needed and runs
+the patched Claude binary directly; it does not call `ccr code`. See the
+[cc-extractor CCR guide](docs/CCR.md),
+[CCR README](https://github.com/musistudio/claude-code-router),
 [basic config docs](https://musistudio.github.io/claude-code-router/docs/cli/config/basic/),
 and CCR's `ccr activate`/`ccr env` behavior for the upstream environment model.
+
+Advanced setups may also use `--model-proxy architect`. This requires a Claude
+Code account: Claude-owned requests still use the user's normal Claude Code
+OAuth/session path, while non-Claude worker model aliases are forwarded to the
+configured provider backend. See [docs/CCR.md](docs/CCR.md#architect-model-proxy).
 
 ### Pack
 

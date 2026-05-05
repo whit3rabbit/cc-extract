@@ -12,6 +12,7 @@ from cc_extractor.workspace import (
     TUI_SETTINGS,
     delete_dashboard_tweak_profile,
     delete_patch_profile,
+    import_local_native_binary,
     load_dashboard_tweak_profile,
     load_tui_settings,
     load_patch_package,
@@ -169,6 +170,55 @@ def test_store_and_scan_native_download(tmp_path):
     assert len(artifacts) == 1
     assert artifacts[0].path == final_path
     assert artifacts[0].sha256 == sha256
+
+
+def test_import_local_native_binary_copies_to_managed_downloads(tmp_path):
+    root = tmp_path / ".cc-extractor"
+    source_dir = tmp_path / "external"
+    source_dir.mkdir()
+    source = source_dir / "claude-local"
+    fixture = build_bun_fixture(
+        platform="elf",
+        modules=[{"name": "src/index.js", "content": "console.log('local');"}],
+    )
+    source.write_bytes(fixture["buf"])
+    original = source.read_bytes()
+    sha256 = hashlib.sha256(original).hexdigest()
+
+    artifact = import_local_native_binary(source, "2.1.123", "linux-x64", root=root)
+
+    assert source.read_bytes() == original
+    assert artifact.path == root / "downloads" / "native" / "2.1.123" / "linux-x64" / sha256 / "claude"
+    assert artifact.path.read_bytes() == original
+    metadata = json.loads((artifact.path.parent / ARTIFACT_METADATA).read_text(encoding="utf-8"))
+    assert metadata["sourceType"] == "local-binary"
+    assert metadata["importedFrom"] == str(source.resolve())
+    assert metadata["container"] == "elf"
+    assert metadata["path"] == str(artifact.path)
+    assert scan_native_downloads(root)[0].path == artifact.path
+
+
+def test_import_local_native_binary_rejects_invalid_inputs(tmp_path):
+    invalid = tmp_path / "not-claude"
+    invalid.write_bytes(b"not a bun binary")
+
+    with pytest.raises(ValueError, match="concrete Claude Code semver"):
+        import_local_native_binary(invalid, "latest", "linux-x64", root=tmp_path / ".cc-extractor")
+
+    with pytest.raises(ValueError, match="Bun standalone"):
+        import_local_native_binary(invalid, "2.1.123", "linux-x64", root=tmp_path / ".cc-extractor")
+
+
+def test_import_local_native_binary_rejects_platform_mismatch(tmp_path):
+    source = tmp_path / "claude"
+    fixture = build_bun_fixture(
+        platform="macho",
+        modules=[{"name": "src/index.js", "content": "console.log('local');"}],
+    )
+    source.write_bytes(fixture["buf"])
+
+    with pytest.raises(ValueError, match="not compatible with platform"):
+        import_local_native_binary(source, "2.1.123", "linux-x64", root=tmp_path / ".cc-extractor")
 
 
 def test_store_and_scan_npm_download(tmp_path):

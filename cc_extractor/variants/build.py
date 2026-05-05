@@ -27,6 +27,7 @@ from .constants import (
     _SETUP_ENV_ONLY_TWEAKS,
     _THEME_PROMPT_TWEAKS,
 )
+from .ccrouter import prepare_ccrouter_manifest
 from .model import (
     VariantBuildError,
     VariantBuildResult,
@@ -116,13 +117,28 @@ def _build_variant_from_manifest(
             path.mkdir(parents=True, exist_ok=True)
 
     stages.run("prepare directories", prepare_dirs, detail=str(variant_dir))
-
-    if source_artifact is None:
-        source_artifact = stages.run(
-            "download source",
-            lambda: _variants()._download_source_artifact(manifest["source"]["version"], root=root),
-            detail=str(manifest["source"]["version"]),
+    manifest = dict(manifest)
+    if manifest.get("provider", {}).get("key") == "ccrouter" and manifest.get("ccrouter"):
+        manifest["ccrouter"] = stages.run(
+            "prepare ccrouter",
+            lambda: prepare_ccrouter_manifest(manifest, variant_dir),
+            detail=str(variant_dir / "ccr-runtime"),
         )
+
+    source_info = manifest.get("source") or {}
+    if source_artifact is None:
+        if source_info.get("type") == "local-binary":
+            source_artifact = stages.run(
+                "resolve local source",
+                lambda: _local_source_artifact_from_manifest(source_info, root=root),
+                detail=str(source_info.get("path") or source_info.get("version")),
+            )
+        else:
+            source_artifact = stages.run(
+                "download source",
+                lambda: _variants()._download_source_artifact(source_info["version"], root=root),
+                detail=str(source_info["version"]),
+            )
     binary_name = native_binary_filename(source_artifact.platform)
     output_binary = native_dir / binary_name
     runtime = "native"
@@ -194,12 +210,7 @@ def _build_variant_from_manifest(
     output_sha256 = stages.run("hash output", lambda: file_sha256(output_binary), detail=str(output_binary))
     manifest = dict(manifest)
     manifest["runtime"] = runtime
-    manifest["source"] = {
-        "version": source_artifact.version,
-        "platform": source_artifact.platform,
-        "sha256": source_artifact.sha256,
-        "path": str(source_artifact.path),
-    }
+    manifest["source"] = _source_manifest_from_artifact(source_artifact, source_info)
     manifest["outputSha256"] = output_sha256
     manifest["paths"] = {
         "root": str(variant_dir),
@@ -211,6 +222,13 @@ def _build_variant_from_manifest(
         "binDir": str(bin_dir),
         "wrapper": str(bin_dir / variant_id),
     }
+    if isinstance(manifest.get("modelProxy"), dict):
+        model_proxy = dict(manifest["modelProxy"])
+        model_proxy.setdefault("runtimeConfigPath", str(config_dir / "model-proxy.json"))
+        model_proxy.setdefault("logPath", str(tmp_dir / "model-proxy.log"))
+        model_proxy.setdefault("portFilePath", str(tmp_dir / "model-proxy-port"))
+        model_proxy.setdefault("pythonExecutable", _sys.executable or "python3")
+        manifest["modelProxy"] = model_proxy
     if entry_path:
         manifest["paths"]["entryPath"] = str(entry_path)
         manifest["entrySha256"] = file_sha256(Path(entry_path))
@@ -251,6 +269,43 @@ def _download_source_artifact(version: str, root=None) -> NativeArtifact:
     if artifact is None:
         raise ValueError(f"Downloaded binary was not found in workspace: {path}")
     return artifact
+
+def _local_source_artifact_from_manifest(source: Dict, root=None) -> NativeArtifact:
+    version = source.get("version")
+    platform_key = source.get("platform")
+    sha256 = source.get("sha256")
+    path_text = source.get("path")
+    if not all(isinstance(value, str) and value for value in (version, platform_key, sha256, path_text)):
+        raise ValueError("local source manifest is missing version, platform, sha256, or path")
+
+    path = Path(path_text)
+    if not path.is_file():
+        raise ValueError("local source binary is missing; re-import it with variant update --source-binary")
+    actual_sha256 = file_sha256(path)
+    if actual_sha256 != sha256:
+        raise ValueError("local source binary hash changed; re-import it with variant update --source-binary")
+    artifact = native_artifact_from_path(path, root=root)
+    if artifact is None:
+        raise ValueError("local source binary is not a managed native artifact; re-import it with variant update --source-binary")
+    if artifact.version != version or artifact.platform != platform_key or artifact.sha256 != sha256:
+        raise ValueError("local source artifact metadata does not match the variant source")
+    return artifact
+
+def _source_manifest_from_artifact(source_artifact: NativeArtifact, existing_source: Dict) -> Dict[str, str]:
+    source_type = source_artifact.metadata.get("sourceType") or existing_source.get("type") or "download"
+    if source_type != "local-binary":
+        source_type = "download"
+    payload = {
+        "type": source_type,
+        "version": source_artifact.version,
+        "platform": source_artifact.platform,
+        "sha256": source_artifact.sha256,
+        "path": str(source_artifact.path),
+    }
+    imported_from = source_artifact.metadata.get("importedFrom") or existing_source.get("importedFrom")
+    if source_type == "local-binary" and imported_from:
+        payload["importedFrom"] = str(imported_from)
+    return payload
 
 def _copy_patch_or_unpack_variant_binary(
     source_artifact: NativeArtifact,

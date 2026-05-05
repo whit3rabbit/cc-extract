@@ -33,6 +33,8 @@ def variant_accepts_text(state) -> bool:
         "variant-credential-env",
         "variant-api-key",
         "variant-model",
+        "variant-ccrouter-package",
+        "variant-ccrouter-port",
     }
 
 
@@ -60,6 +62,10 @@ def variant_append_text(state, char: str) -> None:
     elif option.kind == "variant-model":
         key = str(option.value)
         state.variant_model_overrides[key] = state.variant_model_overrides.get(key, "") + char
+    elif option.kind == "variant-ccrouter-package":
+        state.variant_ccrouter_package += char
+    elif option.kind == "variant-ccrouter-port":
+        state.variant_ccrouter_port += char
 
 
 def models_append_text(state, char: str) -> None:
@@ -87,6 +93,10 @@ def variant_backspace(state) -> bool:
     elif option.kind == "variant-model":
         key = str(option.value)
         state.variant_model_overrides[key] = state.variant_model_overrides.get(key, "")[:-1]
+    elif option.kind == "variant-ccrouter-package":
+        state.variant_ccrouter_package = state.variant_ccrouter_package[:-1]
+    elif option.kind == "variant-ccrouter-port":
+        state.variant_ccrouter_port = state.variant_ccrouter_port[:-1]
     return True
 
 
