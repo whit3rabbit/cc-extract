@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from urllib.error import URLError
 
 import pytest
@@ -18,7 +19,7 @@ from cc_extractor.providers import (
 )
 from cc_extractor.providers.schema import ProviderSchemaError, provider_from_json
 from cc_extractor.variants import list_variant_providers
-from cc_extractor.variants.splash import has_style, splash_ascii_art, splash_quote_block
+from cc_extractor.variants.splash import has_style, splash_ascii_art, splash_lines, splash_quote_block
 
 
 def _minimal_provider_payload(mcp_servers):
@@ -268,6 +269,22 @@ def test_provider_ascii_art_is_unique_plain_and_quoteable():
         art_by_key[provider.key] = art
 
     assert len(set(art_by_key.values())) == len(art_by_key)
+
+
+def test_zai_ascii_art_loads_from_text_file_and_keeps_palette():
+    art_path = Path(__file__).parents[1] / "cc_extractor" / "variants" / "ascii" / "zai.txt"
+    expected = art_path.read_text(encoding="utf-8").strip("\n")
+
+    art = splash_ascii_art("zai")
+    colored = "\n".join(splash_lines("zai"))
+
+    assert art == expected
+    assert "ZAI CLOUD" not in art
+    assert "\033" not in art
+    assert "++++++++" in colored
+    assert r"\033[38;5;220m" in colored
+    assert r"\033[38;5;214m" in colored
+    assert r"\033[38;5;208m" in colored
 
 
 def test_ported_provider_defaults_match_cc_mirror_update():

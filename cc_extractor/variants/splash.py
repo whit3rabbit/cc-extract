@@ -1,10 +1,12 @@
 """Provider splash art rendered by generated variant wrappers."""
 
 import shlex
-from typing import Dict, Iterable, List, Tuple
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Tuple
 
 
 RESET = r"\033[0m"
+ASCII_DIR = Path(__file__).with_name("ascii")
 
 
 PALETTES: Dict[str, Tuple[str, str, str, str]] = {
@@ -60,32 +62,36 @@ SPLASH_TEXT: Dict[str, Tuple[str, ...]] = {
 
 
 def known_styles() -> Tuple[str, ...]:
-    return tuple(sorted(style for style in SPLASH_TEXT if style != "default"))
+    styles = {style for style in SPLASH_TEXT if style != "default"}
+    if ASCII_DIR.is_dir():
+        styles.update(path.stem for path in ASCII_DIR.glob("*.txt") if path.stem != "default")
+    return tuple(sorted(styles))
 
 
 def has_style(style: str) -> bool:
-    return style in SPLASH_TEXT
+    return style in SPLASH_TEXT or _ascii_file_path(style).is_file()
 
 
 def splash_lines(style: str) -> Tuple[str, ...]:
     """Return ANSI-colored splash lines for a known provider style."""
     resolved = style if has_style(style) else "default"
-    primary, secondary, accent, dim = PALETTES[resolved]
+    primary, secondary, accent, dim = PALETTES.get(resolved, PALETTES["default"])
     art = splash_ascii_lines(resolved)
-    return (
-        "",
-        f"{dim}{art[0]}{RESET}",
-        f"{primary}{art[1]}{RESET}",
-        f"{secondary}{art[2]}{RESET}",
-        f"{accent}{art[3]}{RESET}",
-        f"{dim}{art[4]}{RESET}",
-        "",
-    )
+    body_colors = (primary, secondary, accent)
+    last_index = len(art) - 1
+    colored = []
+    for index, line in enumerate(art):
+        color = dim if index in {0, last_index} else body_colors[(index - 1) % len(body_colors)]
+        colored.append(f"{color}{line}{RESET}")
+    return ("", *colored, "")
 
 
 def splash_ascii_lines(style: str) -> Tuple[str, ...]:
     """Return uncolored provider splash art lines for copying or machine output."""
     resolved = style if has_style(style) else "default"
+    file_lines = _file_ascii_lines(resolved)
+    if file_lines is not None:
+        return file_lines
     text = SPLASH_TEXT[resolved]
     width = max(len(line) for line in text) + 4
     rule = "=" * width
@@ -106,6 +112,19 @@ def splash_ascii_art(style: str) -> str:
 def splash_quote_block(style: str) -> str:
     """Return provider splash art formatted as a Markdown quote block."""
     return "\n".join(f"> {line}" for line in splash_ascii_lines(style))
+
+
+def _file_ascii_lines(style: str) -> Optional[Tuple[str, ...]]:
+    path = _ascii_file_path(style)
+    if not path.is_file():
+        return None
+    text = path.read_text(encoding="utf-8")
+    lines = tuple(text.splitlines())
+    return lines or None
+
+
+def _ascii_file_path(style: str) -> Path:
+    return ASCII_DIR / f"{style}.txt"
 
 
 def shell_splash_lines(styles: Iterable[str] = None) -> List[str]:

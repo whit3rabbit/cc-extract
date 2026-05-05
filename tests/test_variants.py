@@ -182,7 +182,7 @@ def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
     assert "ANTHROPIC_API_KEY=\"${Z_AI_API_KEY}\"" in wrapper
     credential_export = 'export ANTHROPIC_API_KEY="${Z_AI_API_KEY}"'
     assert wrapper.index(credential_export) < wrapper.index("customApiKeyResponses") < wrapper.index("\nexec ")
-    assert "ZAI CLOUD" in wrapper
+    assert "++++++++" in wrapper
     assert result.variant.manifest["env"]["CC_EXTRACTOR_SPLASH"] == "1"
     assert result.variant.manifest["env"]["CC_EXTRACTOR_SPLASH_STYLE"] == "zai"
     assert result.variant.manifest["tweaks"] == [
@@ -899,15 +899,16 @@ def test_write_wrapper_splash_tty_and_machine_output_controls(tmp_path):
 
     non_tty = subprocess.run([str(wrapper)], capture_output=True, text=True, check=False)
     assert non_tty.returncode == 0
-    assert "ZAI CLOUD" not in non_tty.stdout
+    assert "++++++++" not in non_tty.stdout
     assert "RUN:" in non_tty.stdout
 
     tty_output = run_in_pty([str(wrapper)])
-    assert "ZAI CLOUD" in tty_output
+    assert "++++++++" in tty_output
+    assert "\x1b[38;5;220m" in tty_output
     assert "RUN:" in tty_output
 
     machine_output = run_in_pty([str(wrapper), "--output-format", "json"])
-    assert "ZAI CLOUD" not in machine_output
+    assert "++++++++" not in machine_output
     assert "RUN:--output-format json" in machine_output
 
 
@@ -921,7 +922,7 @@ def test_write_wrapper_splash_disable_and_fallback_style(tmp_path):
         },
     )
     disabled_output = run_in_pty([str(write_wrapper(disabled))])
-    assert "ZAI CLOUD" not in disabled_output
+    assert "++++++++" not in disabled_output
     assert "RUN:" in disabled_output
 
     fallback = wrapper_manifest(
