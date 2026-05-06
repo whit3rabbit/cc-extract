@@ -2,7 +2,7 @@
 
 from urllib.parse import urlparse
 
-from ..variants import CCR_PACKAGE_DEFAULT, default_ccrouter_config_mode
+from ..variants import CCR_OAUTH_PROVIDER_KEY, CCR_PACKAGE_DEFAULT, CCR_PROVIDER_KEYS, default_ccrouter_config_mode
 from ..providers import normalize_mcp_ids, provider_default_variant_name
 from ..variant_tweaks import CURATED_TWEAK_IDS, DEFAULT_TWEAK_IDS, default_tweak_ids_for_provider
 from ._const import VARIANT_MODEL_FIELDS, VARIANT_STEPS
@@ -31,6 +31,8 @@ def reset_variant(state):
     state.variant_ccrouter_package = CCR_PACKAGE_DEFAULT
     state.variant_ccrouter_port = "auto"
     state.variant_ccrouter_autostart = True
+    state.variant_model_proxy = ""
+    state.variant_model_proxy_port = "auto"
     state.variant_model_overrides = {}
     state.variant_model_choices = []
     state.variant_install_command = False
@@ -52,6 +54,8 @@ def set_variant_provider_defaults(state, provider):
     state.variant_ccrouter_package = CCR_PACKAGE_DEFAULT
     state.variant_ccrouter_port = "auto"
     state.variant_ccrouter_autostart = True
+    state.variant_model_proxy = "architect" if provider_key == CCR_OAUTH_PROVIDER_KEY else ""
+    state.variant_model_proxy_port = "auto"
     state.variant_model_overrides = {}
     state.variant_model_choices = []
     state.variant_install_command = False
@@ -134,7 +138,7 @@ def variant_model_overrides_for_create(state):
 
 
 def variant_ccrouter_options_for_create(state, provider):
-    if not provider or provider.get("key") != "ccrouter":
+    if not provider or provider.get("key") not in CCR_PROVIDER_KEYS:
         return {}
     return {
         "ccrouter_mode": state.variant_ccrouter_mode,
@@ -143,6 +147,28 @@ def variant_ccrouter_options_for_create(state, provider):
         "ccrouter_port": state.variant_ccrouter_port.strip() or "auto",
         "ccrouter_autostart": bool(state.variant_ccrouter_autostart),
     }
+
+
+def variant_model_proxy_options_for_create(state, provider):
+    if not provider or state.variant_model_proxy != "architect":
+        return {}
+    return {
+        "model_proxy": "architect",
+        "model_proxy_port": state.variant_model_proxy_port.strip() or "auto",
+    }
+
+
+def toggle_variant_model_proxy(state):
+    state.variant_model_proxy = "" if state.variant_model_proxy == "architect" else "architect"
+    if state.variant_model_proxy == "architect" and "opusplan1m" in CURATED_TWEAK_IDS:
+        if "opusplan1m" not in state.selected_variant_tweaks:
+            state.selected_variant_tweaks.append("opusplan1m")
+            state.selected_variant_tweaks.sort(key=lambda item: CURATED_TWEAK_IDS.index(item))
+    state.message = (
+        "Architect model proxy: enabled"
+        if state.variant_model_proxy == "architect"
+        else "Architect model proxy: disabled"
+    )
 
 
 def cycle_variant_ccrouter_mode(state):

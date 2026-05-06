@@ -66,6 +66,8 @@ class TuiState:
     variant_ccrouter_package: str = CCR_PACKAGE_DEFAULT
     variant_ccrouter_port: str = "auto"
     variant_ccrouter_autostart: bool = True
+    variant_model_proxy: str = ""
+    variant_model_proxy_port: str = "auto"
     variant_model_overrides: Dict[str, str] = field(default_factory=dict)
     variant_model_choices: List[str] = field(default_factory=list)
     variant_install_command: bool = False

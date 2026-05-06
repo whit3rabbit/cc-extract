@@ -274,6 +274,8 @@ def _toggle_selected(state):
             _tui()._toggle_variant_store_secret(state)
         elif option and option.kind == "variant-ccrouter-autostart":
             _tui()._toggle_variant_ccrouter_autostart(state)
+        elif option and option.kind == "variant-model-proxy":
+            _tui()._toggle_variant_model_proxy(state)
     elif state.mode in {"tweaks-edit", "tweak-editor"}:
         _tui()._toggle_tweak(state)
 
@@ -629,6 +631,10 @@ def _activate_variants(state):
         state.message = "Type a CCR port, or auto."
     elif option.kind == "variant-ccrouter-autostart":
         _tui()._toggle_variant_ccrouter_autostart(state)
+    elif option.kind == "variant-model-proxy":
+        _tui()._toggle_variant_model_proxy(state)
+    elif option.kind == "variant-model-proxy-port":
+        state.message = "Type a model proxy port, or auto."
     elif option.kind == "variant-mcp":
         _tui()._toggle_variant_mcp(state, str(option.value))
     elif option.kind == "variant-mcp-continue":

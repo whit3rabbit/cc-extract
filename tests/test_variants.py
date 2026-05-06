@@ -1061,6 +1061,40 @@ def test_create_model_proxy_openrouter_uses_bearer_backend_auth(tmp_path):
     assert "ANTHROPIC_AUTH_TOKEN" not in manifest["env"]
 
 
+def test_create_ccr_oauth_proxy_uses_managed_ccrouter_backend(tmp_path, monkeypatch):
+    root = tmp_path / ".cc-extractor"
+    artifact = write_source_artifact(tmp_path)
+    stub_ccrouter_npm(monkeypatch)
+
+    result = create_variant(
+        name="CCR OAuth",
+        provider_key="ccr-oauth",
+        model_proxy="architect",
+        model_overrides={
+            "opus": "claude-opus-test",
+            "sonnet": "ccr-worker",
+            "haiku": "ccr-worker",
+        },
+        tweaks=["themes"],
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+
+    manifest = result.variant.manifest
+    model_proxy = manifest["modelProxy"]
+
+    assert manifest["provider"]["key"] == "ccr-oauth"
+    assert manifest["ccrouter"]["mode"] == "managed"
+    assert model_proxy["mode"] == "architect"
+    assert model_proxy["backendUrl"] == f"http://127.0.0.1:{manifest['ccrouter']['port']}"
+    assert model_proxy["credentialEnv"] == "CCROUTER_AUTH_TOKEN"
+    assert manifest["env"]["CCROUTER_AUTH_TOKEN"] == "ccrouter-proxy"
+    assert "ANTHROPIC_BASE_URL" not in manifest["env"]
+    assert "ANTHROPIC_AUTH_TOKEN" not in manifest["env"]
+    assert "ANTHROPIC_API_KEY" not in manifest["env"]
+
+
 def test_write_secrets_rewrites_existing_file_with_private_mode(tmp_path):
     secrets_path = tmp_path / "secrets.env"
     secrets_path.write_text("old\n", encoding="utf-8")

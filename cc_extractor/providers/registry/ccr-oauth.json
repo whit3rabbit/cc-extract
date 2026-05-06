@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "key": "ccr-oauth",
+  "label": "CCR OAuth Proxy",
+  "description": "Managed Claude Code Router backend for Architect Mode setups that keep claude-* calls on Claude Code OAuth/session auth and route non-Claude worker aliases through CCR",
+  "displayOrder": 115,
+  "baseUrl": "http://127.0.0.1:3456",
+  "auth": {
+    "mode": "authToken",
+    "apiKeyLabel": "Router token",
+    "credentialEnv": "CCROUTER_AUTH_TOKEN",
+    "credentialOptional": true,
+    "authTokenFallback": "ccrouter-proxy"
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "",
+    "sonnet": "",
+    "haiku": "",
+    "subagent": "",
+    "requiresModelMapping": true
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000",
+    "CCROUTER_AUTH_TOKEN": "ccrouter-proxy",
+    "NO_PROXY": "127.0.0.1",
+    "DISABLE_TELEMETRY": "true",
+    "DISABLE_COST_WARNINGS": "true"
+  },
+  "envUnset": [
+    "CLAUDE_CODE_USE_BEDROCK"
+  ],
+  "variant": {
+    "defaultVariantName": "ccr-oauth",
+    "splashStyle": "ccr-oauth",
+    "noPromptPack": true,
+    "theme": {
+      "id": "ccr-oauth-variant",
+      "name": "CCR OAuth Proxy",
+      "colors": {
+        "bashBorder": "rgb(56,189,248)",
+        "claude": "rgb(167,243,208)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "CCR OAuth Architect Proxy",
+    "section": "pinned",
+    "features": [
+      "Managed CCR runs setup-local, like the CC Router provider",
+      "Architect model proxy starts automatically for this setup",
+      "claude-* planner requests use the normal Claude Code OAuth/session login",
+      "Non-Claude worker aliases route through the CCR backend"
+    ],
+    "setupLinks": {
+      "docs": "docs/CCR.md#architect-model-proxy",
+      "ccrouter": "https://musistudio.github.io/claude-code-router/docs/cli/config/basic/",
+      "login": "https://docs.anthropic.com/en/docs/claude-code/setup"
+    },
+    "setupNote": "Use this when you want Architect Mode with Claude Code account auth for planner/claude-* calls and CCR for worker aliases. On the Models step, set Opus to a claude-* model and set worker aliases to names your CCR config can route."
+  }
+}

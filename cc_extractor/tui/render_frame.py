@@ -6,7 +6,9 @@ from typing import Optional
 from ._const import TABS
 from .options import variant_provider_detail_lines, variant_provider_selector_labels
 from .render_labels import (
+    _dashboard_tweak_selector_active,
     _variant_provider_selector_active,
+    _variant_tweak_selector_active,
     active_tab_index,
     ascii_progress,
     body_text,
@@ -20,7 +22,9 @@ from .render_labels import (
     panel_title,
     selected_label_index,
     status_line,
+    dashboard_tweak_detail_text,
     tweaks_detail_text,
+    variant_tweak_detail_text,
     visible_items,
 )
 from .themes import active_theme
@@ -225,7 +229,30 @@ def _modal_content_rows(title, labels, width, height):
     return rows[:height]
 
 def _tweaks_detail_box_rows(state, width, height):
-    detail_rows = [(line, "body") for line in tweaks_detail_text(state).splitlines()]
+    content_width = max(1, width - 2)
+    detail_rows = [
+        (line, "body")
+        for line in _wrap_detail_lines(tweaks_detail_text(state).splitlines(), content_width)
+    ]
+    detail_rows = _compact_blank_rows(detail_rows, max(0, height - 2))
+    return _box_rows("Tweak details", detail_rows, width, height, "body")
+
+def _variant_tweak_detail_box_rows(state, width, height):
+    content_width = max(1, width - 2)
+    detail_rows = [
+        (line, "body")
+        for line in _wrap_detail_lines(variant_tweak_detail_text(state).splitlines(), content_width)
+    ]
+    detail_rows = _compact_blank_rows(detail_rows, max(0, height - 2))
+    return _box_rows("Tweak details", detail_rows, width, height, "body")
+
+def _dashboard_tweak_detail_box_rows(state, width, height):
+    content_width = max(1, width - 2)
+    detail_rows = [
+        (line, "body")
+        for line in _wrap_detail_lines(dashboard_tweak_detail_text(state).splitlines(), content_width)
+    ]
+    detail_rows = _compact_blank_rows(detail_rows, max(0, height - 2))
     return _box_rows("Tweak details", detail_rows, width, height, "body")
 
 def _provider_detail_box_rows(state, width, height):
@@ -290,6 +317,28 @@ def _tweaks_two_pane_rows(state, width, height):
     right_rows = _tweaks_detail_box_rows(state, right_width, height)
     return _combine_segment_rows(left_rows, right_rows, gap)
 
+def _variant_tweaks_two_pane_rows(state, width, height):
+    if width <= 1:
+        return _body_box_rows(state, width, height)
+    gap = 1
+    left_width = max(1, int((width - gap) * 0.45))
+    right_width = max(1, width - gap - left_width)
+    title, _ = current_labels(state)
+    left_title = str(title).split(": ", 1)[-1]
+    left_rows = _body_box_rows(state, left_width, height, title_override=left_title)
+    right_rows = _variant_tweak_detail_box_rows(state, right_width, height)
+    return _combine_segment_rows(left_rows, right_rows, gap)
+
+def _dashboard_tweaks_two_pane_rows(state, width, height):
+    if width <= 1:
+        return _body_box_rows(state, width, height)
+    gap = 1
+    left_width = max(1, int((width - gap) * 0.45))
+    right_width = max(1, width - gap - left_width)
+    left_rows = _body_box_rows(state, left_width, height)
+    right_rows = _dashboard_tweak_detail_box_rows(state, right_width, height)
+    return _combine_segment_rows(left_rows, right_rows, gap)
+
 def _provider_selector_two_pane_rows(state, width, height):
     if width <= 1:
         return _body_box_rows(state, width, height)
@@ -336,6 +385,12 @@ def _frame_rows(state, width, height):
         title, _ = current_labels(state)
         rows.extend(_plain_rows([panel_title(state, title)], width, "header"))
         rows.extend(_provider_selector_two_pane_rows(state, width, body_height - 1))
+    elif _variant_tweak_selector_active(state) and width > 72 and body_height >= 10:
+        title, _ = current_labels(state)
+        rows.extend(_plain_rows([panel_title(state, title)], width, "header"))
+        rows.extend(_variant_tweaks_two_pane_rows(state, width, body_height - 1))
+    elif _dashboard_tweak_selector_active(state) and width > 72 and body_height >= 10:
+        rows.extend(_dashboard_tweaks_two_pane_rows(state, width, body_height))
     elif state.mode in {"tweaks-edit", "tweak-editor"} and not state.tweak_apply_preview and width > 60:
         rows.extend(_tweaks_two_pane_rows(state, width, body_height))
     else:

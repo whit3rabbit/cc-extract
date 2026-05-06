@@ -1,6 +1,7 @@
 """Setup creation and model-edit option helpers."""
 
 from ..providers import PLUGIN_RECOMMENDATIONS, list_optional_mcp_entries
+from ..variants import CCR_OAUTH_PROVIDER_KEY, CCR_PROVIDER_KEYS
 from ..variant_tweaks import CURATED_TWEAK_IDS, default_tweak_ids_for_provider
 from ._const import MenuOption, SOURCE_LATEST, VARIANT_MODEL_FIELDS, VARIANT_STEPS
 from .options_tweaks import _tweak_display_name
@@ -50,7 +51,7 @@ def variant_options(state):
             MenuOption("variant-credential-env", f"Credential env: {credential}"),
             MenuOption("variant-store-secret", f"{store_marker} Store API key locally"),
         ]
-        if provider.get("key") == "ccrouter":
+        if provider.get("key") in CCR_PROVIDER_KEYS:
             options.extend(_ccrouter_credential_options(state))
         if state.variant_store_secret:
             options.append(MenuOption("variant-api-key", f"API key: {_masked_secret(state.variant_api_key)}"))
@@ -108,8 +109,27 @@ def variant_options(state):
     if state.variant_step == 5:
         options = []
         provider = selected_variant_provider(state)
-        recommended_ids = default_tweak_ids_for_provider(provider.get("key") if provider else None)
-        tweak_ids = recommended_ids if state.tweak_filter == "recommended" else list(CURATED_TWEAK_IDS)
+        if variant_model_proxy_supported(provider):
+            marker = "[x]" if state.variant_model_proxy == "architect" else "[ ]"
+            options.extend(
+                [
+                    MenuOption("section", "Architect model proxy"),
+                    MenuOption(
+                        "variant-model-proxy",
+                        f"{marker} Architect model proxy  (Claude OAuth planner, backend workers)",
+                        "architect",
+                    ),
+                ]
+            )
+            if state.variant_model_proxy == "architect":
+                options.append(
+                    MenuOption(
+                        "variant-model-proxy-port",
+                        f"Model proxy port: {state.variant_model_proxy_port or 'auto'}",
+                    )
+                )
+            options.append(MenuOption("section", "Tweaks"))
+        tweak_ids = variant_tweak_ids(state)
         for tweak_id in tweak_ids:
             marker = "[x]" if tweak_id in state.selected_variant_tweaks else "[ ]"
             options.append(MenuOption("variant-tweak", f"{marker} {_tweak_display_name(tweak_id)}  ({tweak_id})", tweak_id))
@@ -175,12 +195,12 @@ def _providers_for_section(state, section):
         if str(provider.get("section") or _default_provider_section(provider.get("key"))) == section
     ]
     if section == "pinned":
-        order = {"mirror": 0, "ccrouter": 1}
+        order = {"mirror": 0, "ccrouter": 1, "ccr-oauth": 2}
         providers.sort(key=lambda item: (order.get(item[1].get("key"), 99), item[1].get("label", "")))
     return providers
 
 def _default_provider_section(provider_key):
-    if provider_key in {"mirror", "ccrouter"}:
+    if provider_key in {"mirror", *CCR_PROVIDER_KEYS}:
         return "pinned"
     if provider_key in {"ollama", "lmstudio", "omlx", "local-custom"}:
         return "local"
@@ -257,16 +277,31 @@ def variant_provider_detail_lines(state):
     return lines
 
 def _provider_model_proxy_lines(provider):
-    section = str(provider.get("section") or _default_provider_section(provider.get("key")))
-    if section != "cloud":
+    if not variant_model_proxy_supported(provider):
         return []
-    if provider.get("authMode") not in {"apiKey", "authToken"}:
-        return []
-    return [
-        "- CLI: --model-proxy architect --tweak opusplan1m",
+    lines = [
+        "- Wizard: enable Architect model proxy on the Tweaks step",
         "- Requires a Claude Code login; claude-* calls use OAuth/session",
         "- Non-Claude worker aliases route to this provider backend",
     ]
+    if provider.get("key") == CCR_OAUTH_PROVIDER_KEY:
+        lines.append("- Managed CCR is started setup-locally before the proxy starts")
+    return lines
+
+
+def variant_model_proxy_supported(provider):
+    if not provider:
+        return False
+    if provider.get("authMode") not in {"apiKey", "authToken"}:
+        return False
+    section = str(provider.get("section") or _default_provider_section(provider.get("key")))
+    return section == "cloud" or provider.get("key") == CCR_OAUTH_PROVIDER_KEY
+
+
+def variant_tweak_ids(state):
+    provider = selected_variant_provider(state)
+    recommended_ids = default_tweak_ids_for_provider(provider.get("key") if provider else None)
+    return recommended_ids if state.tweak_filter == "recommended" else list(CURATED_TWEAK_IDS)
 
 def _variant_provider_row_label(provider):
     if not provider:

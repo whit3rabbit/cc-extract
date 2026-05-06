@@ -193,6 +193,10 @@ def test_non_mirror_defaults_include_privacy_cache_env_toggles():
     assert "disable-feedback-survey" in defaults
     assert "disable-prompt-caching" in defaults
 
+    ccr_oauth_defaults = default_tweak_ids_for_provider("ccr-oauth")
+    assert "opusplan1m" in ccr_oauth_defaults
+    assert "disable-telemetry" in ccr_oauth_defaults
+
 
 def test_mcp_batch_size_setup_tweak_emits_wrapper_env():
     env = env_for_tweaks(["mcp-batch-size"])

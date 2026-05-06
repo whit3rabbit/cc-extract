@@ -205,6 +205,8 @@ MANAGED_TWEAK_ENV_KEYS = (
 
 def default_tweak_ids_for_provider(provider_key: Optional[str]) -> List[str]:
     defaults = list(DEFAULT_TWEAK_IDS)
+    if provider_key == "ccr-oauth":
+        defaults.append("opusplan1m")
     if provider_key and provider_key != "mirror":
         defaults.extend(NON_MIRROR_DEFAULT_TWEAK_IDS)
     return _unique_ordered(defaults)

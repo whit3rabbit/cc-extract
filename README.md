@@ -326,7 +326,9 @@ the patched Claude binary directly; it does not call `ccr code`. See the
 and CCR's `ccr activate`/`ccr env` behavior for the upstream environment model.
 
 Advanced setups may also use `--model-proxy architect` with the Architect Mode
-tweak (`--tweak opusplan1m`). This requires a Claude Code account and login:
+tweak (`--tweak opusplan1m`). In the TUI, choose the `ccr-oauth` provider for
+the managed CCR plus OAuth version of that flow. This requires a Claude Code
+account and login:
 `claude-*` planner/Opus requests still use the user's normal Claude Code
 OAuth/session path, while non-Claude worker model aliases are forwarded to the
 configured provider backend. See [docs/CCR.md](docs/CCR.md#architect-model-proxy).

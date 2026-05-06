@@ -129,8 +129,10 @@ Managed CCR setups add CCR-specific setup detail rows for status, start, stop,
 restart, opening the CCR UI, and copying the setup-local CCR config path. The
 detail panel also shows the setup-local CCR config and installed CCR package.
 
-Cloud provider detail panes mention the CLI-only Architect model proxy option
-for providers that can supply backend credentials. Setups with
+Provider detail panes mention the Architect model proxy option for providers
+that can supply backend credentials. The setup wizard exposes the proxy on the
+Tweaks step, next to the tweak detail card and the Architect Mode tweak.
+Setups with
 `--model-proxy architect` show that the model proxy requires an Architect Mode
 setup plus a Claude Code login. Claude model calls continue through the user's
 Claude Code account/session, while non-Claude model aliases are forwarded to
@@ -146,7 +148,8 @@ The wizard reuses provider registry defaults:
 - Setup name defaults from provider metadata.
 - Credential env defaults from provider metadata.
 - Model mapping is shown only when the provider requires it.
-- Default tweaks come from `DEFAULT_TWEAK_IDS`: `themes`, `prompt-overlays`, `patches-applied-indication`.
+- Default tweaks come from `DEFAULT_TWEAK_IDS`, with provider-specific additions
+  such as `opusplan1m` for the `ccr-oauth` Architect proxy provider.
 - Create goes through a preview, then calls `create_variant()`.
 - Successful create refreshes state, runs `doctor_variant()`, and shows command, setup config, and health.
 

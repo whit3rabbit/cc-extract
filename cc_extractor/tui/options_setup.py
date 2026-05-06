@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from ..variants import CCR_PROVIDER_KEYS
 from .._utils import version_sort_key
 from ._const import MenuOption
 
@@ -188,7 +189,7 @@ def setup_detail_lines(state):
         f"Setup config: {variant.path / 'variant.json'}",
         f"Enabled tweaks: {tweak_count}",
     ]
-    ccrouter = manifest.get("ccrouter") if provider == "ccrouter" else None
+    ccrouter = manifest.get("ccrouter") if provider in CCR_PROVIDER_KEYS else None
     if isinstance(ccrouter, dict):
         lines.extend([
             f"CCR mode: {ccrouter.get('mode') or 'external'}",

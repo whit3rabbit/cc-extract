@@ -259,6 +259,8 @@ def _model_proxy_credential(provider_env, source_env: str, *, api_key: Optional[
     mode = (provider_env.credential or {}).get("mode")
     if mode == "env":
         return {"mode": "env", "source": source_env, "targets": []}, {}
+    if mode == "none" and source_env in (provider_env.env or {}):
+        return dict(provider_env.credential or {"mode": "none", "targets": []}), {}
     if mode == "stored":
         value = (api_key or "").strip()
         if not value:

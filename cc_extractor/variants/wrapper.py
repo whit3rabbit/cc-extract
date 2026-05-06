@@ -14,6 +14,7 @@ from ..providers import (
     provider_patch_config,
 )
 from ..workspace import read_json, write_json
+from .ccrouter import CCR_PROVIDER_KEYS
 from .splash import shell_splash_lines
 
 SECRETS_FILE = "secrets.env"
@@ -210,7 +211,7 @@ def write_wrapper(manifest: Dict) -> Path:
 
 
 def _managed_ccrouter_config(manifest: Dict) -> Optional[Dict]:
-    if (manifest.get("provider") or {}).get("key") != "ccrouter":
+    if (manifest.get("provider") or {}).get("key") not in CCR_PROVIDER_KEYS:
         return None
     config = manifest.get("ccrouter")
     if not isinstance(config, dict) or config.get("mode") != "managed":

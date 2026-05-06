@@ -116,7 +116,11 @@ def selected_tweaks_edit_patch(state):
     option = selected_tweaks_edit_option(state)
     if option is None:
         return None
-    return _tweak_meta(str(option.value))
+    return tweak_meta(str(option.value))
+
+
+def tweak_meta(tweak_id):
+    return _tweak_meta(tweak_id)
 
 def tweak_control_summary(state):
     search = getattr(state, "tweak_search", "") or ""
@@ -137,20 +141,28 @@ def selected_setup_version(state):
     return ((variant.manifest or {}).get("source") or {}).get("version")
 
 def tweak_status(state, tweak_id):
+    return tweak_status_for_version(
+        tweak_id,
+        selected_setup_version(state),
+        recommended_ids=DEFAULT_TWEAK_IDS,
+    )
+
+
+def tweak_status_for_version(tweak_id, version=None, recommended_ids=None):
+    recommended = set(DEFAULT_TWEAK_IDS if recommended_ids is None else recommended_ids)
     if tweak_id in ENV_TWEAK_IDS:
         return {"label": "env-backed", "selectable": True, "reason": "Sets environment only."}
     if tweak_id in PROMPT_ONLY_TWEAK_IDS:
-        label = "ready" if tweak_id in DEFAULT_TWEAK_IDS else "advanced"
+        label = "ready" if tweak_id in recommended else "advanced"
         return {"label": label, "selectable": True, "reason": "Adds prompt overlay instructions."}
     patch = PATCH_REGISTRY.get(tweak_id)
     if patch is None:
         if tweak_id in SETUP_ONLY_TWEAK_IDS:
-            label = "ready" if tweak_id in DEFAULT_TWEAK_IDS else "advanced"
+            label = "ready" if tweak_id in recommended else "advanced"
             return {"label": label, "selectable": True, "reason": "Changes setup wrapper behavior."}
         return {"label": "unknown", "selectable": False, "reason": "Tweak is not registered."}
-    version = selected_setup_version(state)
     if not version or version == "latest":
-        if patch.id in DEFAULT_TWEAK_IDS:
+        if patch.id in recommended:
             return {"label": "ready", "selectable": True, "reason": "Version is not pinned yet."}
         return {"label": "advanced", "selectable": True, "reason": "Version is not pinned yet."}
     if version in patch.versions_blacklisted:
@@ -169,7 +181,7 @@ def tweak_status(state, tweak_id):
             "selectable": False,
             "reason": f"Supported range: {patch.versions_supported}",
         }
-    if patch.id in DEFAULT_TWEAK_IDS:
+    if patch.id in recommended:
         return {"label": "ready", "selectable": True, "reason": "Recommended setup tweak."}
     return {"label": "advanced", "selectable": True, "reason": "Advanced tweak. Review before enabling."}
 
@@ -199,17 +211,17 @@ def _filtered_patches_grouped(state):
         if filtered:
             grouped.append((group, filtered))
     env_filtered = [
-        _tweak_meta(tweak_id)
+        tweak_meta(tweak_id)
         for tweak_id in ENV_TWEAK_IDS
         if tweak_id in curated and _tweak_passes_filter(state, tweak_id, recommended)
     ]
     prompt_only_filtered = [
-        _tweak_meta(tweak_id)
+        tweak_meta(tweak_id)
         for tweak_id in PROMPT_ONLY_TWEAK_IDS
         if tweak_id in curated and _tweak_passes_filter(state, tweak_id, recommended)
     ]
     setup_only_filtered = [
-        _tweak_meta(tweak_id)
+        tweak_meta(tweak_id)
         for tweak_id in SETUP_ONLY_TWEAK_IDS
         if tweak_id in curated and tweak_id not in PATCH_REGISTRY and _tweak_passes_filter(state, tweak_id, recommended)
     ]
@@ -276,7 +288,7 @@ def _tweak_passes_filter(state, tweak_id, recommended):
         return False
     if state.tweak_filter == "incompatible" and status["selectable"]:
         return False
-    meta = _tweak_meta(tweak_id)
+    meta = tweak_meta(tweak_id)
     if meta is None:
         return False
     search_text = f"{meta.id} {meta.name} {meta.group} {meta.description}".lower()

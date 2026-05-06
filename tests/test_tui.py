@@ -842,6 +842,7 @@ def test_variants_provider_selection_groups_pinned_cloud_and_local():
         variant_providers=[
             {"key": "zai", "label": "Zai Cloud", "description": "Cloud", "section": "cloud"},
             {"key": "ollama", "label": "Ollama", "description": "Local", "section": "local"},
+            {"key": "ccr-oauth", "label": "CCR OAuth Proxy", "description": "OAuth CCR", "section": "pinned"},
             {"key": "ccrouter", "label": "CC Router", "description": "Router", "section": "pinned"},
             {"key": "mirror", "label": "Mirror Claude Code", "description": "Pure", "section": "pinned"},
             {"key": "lmstudio", "label": "LM Studio", "description": "Local", "section": "local"},
@@ -853,11 +854,12 @@ def test_variants_provider_selection_groups_pinned_cloud_and_local():
 
     assert provider_labels[0].startswith("mirror  Mirror Claude Code")
     assert provider_labels[1].startswith("ccrouter  CC Router")
-    assert labels[2] == "Cloud Providers"
-    assert provider_labels[3].startswith("zai  Zai Cloud")
-    assert labels[4] == "Local LLMs"
-    assert provider_labels[5].startswith("ollama  Ollama")
-    assert provider_labels[6].startswith("lmstudio  LM Studio")
+    assert provider_labels[2].startswith("ccr-oauth  CCR OAuth Proxy")
+    assert labels[3] == "Cloud Providers"
+    assert provider_labels[4].startswith("zai  Zai Cloud")
+    assert labels[5] == "Local LLMs"
+    assert provider_labels[6].startswith("ollama  Ollama")
+    assert provider_labels[7].startswith("lmstudio  LM Studio")
 
 
 def _provider_selector_fixture():
@@ -920,7 +922,7 @@ def test_provider_selector_screen_text_includes_highlighted_details():
     assert "MCP servers: web-reader" in screen
     assert "Settings deny: mcp__zai__web_search" in screen
     assert "Architect model proxy" in screen
-    assert "--model-proxy architect --tweak opusplan1m" in screen
+    assert "enable Architect model proxy on the Tweaks step" in screen
     assert "Requires a Claude Code login" in screen
     assert "docs: https://z.ai/docs" in screen
 
@@ -1459,6 +1461,70 @@ def test_variants_wizard_can_uncheck_new_default_tweaks():
     assert "dangerously-skip-permissions" not in state.selected_variant_tweaks
 
 
+def test_ccr_oauth_provider_defaults_to_architect_proxy_and_tweak():
+    provider = {
+        "key": "ccr-oauth",
+        "label": "CCR OAuth Proxy",
+        "description": "OAuth CCR",
+        "section": "pinned",
+        "authMode": "authToken",
+        "credentialEnv": "CCROUTER_AUTH_TOKEN",
+        "credentialOptional": True,
+        "authTokenFallback": "ccrouter-proxy",
+        "baseUrl": "http://127.0.0.1:3456",
+        "requiresModelMapping": True,
+        "models": {},
+        "defaultVariantName": "ccr-oauth",
+    }
+    state = tui.TuiState(
+        mode="variants",
+        variant_step=5,
+        variant_provider_index=0,
+        variant_providers=[provider],
+    )
+    tui._set_variant_provider_defaults(state, provider)
+
+    options = tui._variant_options(state)
+    labels = [option.label for option in options]
+
+    assert state.variant_model_proxy == "architect"
+    assert "opusplan1m" in state.selected_variant_tweaks
+    assert "[x] Architect model proxy  (Claude OAuth planner, backend workers)" in labels
+    assert "Model proxy port: auto" in labels
+
+    state.selected_index = next(index for index, option in enumerate(options) if option.kind == "variant-model-proxy")
+    screen = tui._screen_text(state, height=40)
+    assert "Tweak details" in screen
+    assert "Architect model proxy" in screen
+    assert "claude-* requests keep the normal Claude Code OAuth/session login" in screen
+
+    tui._toggle_selected(state)
+    assert state.variant_model_proxy == ""
+
+
+def test_variants_wizard_tweak_step_renders_detail_card():
+    state = tui.TuiState(mode="variants", variant_step=5, tweak_filter="all")
+    options = tui._variant_options(state)
+    state.selected_index = next(index for index, option in enumerate(options) if option.value == "opusplan1m")
+
+    screen = _render_screen(state, 100, 30)
+
+    assert "Tweak details" in screen
+    assert "Architect Mode" in screen
+    assert "Versions supported" in screen
+    assert "Add an Architect Mode model alias" in screen
+
+
+def test_dashboard_tweak_step_renders_detail_card():
+    state = tui.TuiState(mode="dashboard", dashboard_step=1)
+
+    screen = _render_screen(state, 100, 30)
+
+    assert "Tweak details" in screen
+    assert "Versions supported" in screen
+    assert "Selected for build: no" in screen
+
+
 def test_variants_wizard_provider_mcp_copy_clarifies_auto_enabled():
     state = tui.TuiState(
         mode="variants",
@@ -1662,6 +1728,50 @@ def test_run_variant_create_passes_ccrouter_options(monkeypatch, tmp_path):
     assert calls[0]["ccrouter_package"] == "@musistudio/claude-code-router@2.0.0"
     assert calls[0]["ccrouter_port"] == "4567"
     assert calls[0]["ccrouter_autostart"] is False
+
+
+def test_run_variant_create_passes_model_proxy_options(monkeypatch, tmp_path):
+    calls = []
+
+    class Result:
+        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "ccr-oauth"
+
+        class variant:
+            variant_id = "ccr-oauth"
+
+    def fake_create_variant(**kwargs):
+        calls.append(kwargs)
+        return Result()
+
+    monkeypatch.setattr(tui, "create_variant", fake_create_variant)
+    monkeypatch.setattr(tui, "doctor_variant", lambda name: [{"id": name, "ok": True, "checks": []}])
+    state = tui.TuiState(
+        mode="create-preview",
+        variant_name="ccr-oauth",
+        variant_model_proxy="architect",
+        variant_model_proxy_port="4321",
+        variant_providers=[
+            {
+                "key": "ccr-oauth",
+                "label": "CCR OAuth Proxy",
+                "description": "OAuth CCR",
+                "authMode": "authToken",
+                "credentialEnv": "CCROUTER_AUTH_TOKEN",
+                "credentialOptional": True,
+                "authTokenFallback": "ccrouter-proxy",
+                "baseUrl": "http://127.0.0.1:3456",
+                "models": {},
+                "defaultVariantName": "ccr-oauth",
+            }
+        ],
+    )
+
+    tui._run_variant_create(state)
+
+    assert calls[0]["provider_key"] == "ccr-oauth"
+    assert calls[0]["model_proxy"] == "architect"
+    assert calls[0]["model_proxy_port"] == "4321"
+    assert calls[0]["ccrouter_mode"] == "managed"
 
 
 def test_setup_manager_health_reports_doctor_failure(monkeypatch):

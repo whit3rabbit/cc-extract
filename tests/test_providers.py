@@ -67,6 +67,7 @@ def test_provider_list_includes_cc_mirror_parity_presets():
     keys = [provider.key for provider in list_providers()]
 
     assert keys.count("ccrouter") == 1
+    assert keys.count("ccr-oauth") == 1
     assert keys == [
         "kimi",
         "minimax",
@@ -81,6 +82,7 @@ def test_provider_list_includes_cc_mirror_parity_presets():
         "nanogpt",
         "9router",
         "ccrouter",
+        "ccr-oauth",
         "cerebras",
         "mirror",
         "anthropic",
@@ -354,6 +356,20 @@ def test_ccrouter_and_cerebras_use_optional_router_fallbacks():
     assert ccrouter.env["DISABLE_COST_WARNINGS"] == "true"
     assert ccrouter.env_unset == ["CLAUDE_CODE_USE_BEDROCK"]
 
+    ccr_oauth = build_provider_env(
+        "ccr-oauth",
+        model_overrides={
+            "opus": "claude-opus-test",
+            "sonnet": "ccr-worker",
+            "haiku": "ccr-worker",
+        },
+    )
+    assert ccr_oauth.credential == {"mode": "none", "targets": []}
+    assert ccr_oauth.env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:3456"
+    assert ccr_oauth.env["ANTHROPIC_AUTH_TOKEN"] == "ccrouter-proxy"
+    assert ccr_oauth.env["CCROUTER_AUTH_TOKEN"] == "ccrouter-proxy"
+    assert ccr_oauth.env["NO_PROXY"] == "127.0.0.1"
+
     cerebras = build_provider_env("cerebras")
     assert cerebras.credential == {"mode": "none", "targets": []}
     assert cerebras.env["ANTHROPIC_AUTH_TOKEN"] == "cerebras-proxy"
@@ -407,6 +423,8 @@ def test_provider_payload_exposes_sections_and_model_discovery():
 
     assert providers["mirror"]["section"] == "pinned"
     assert providers["ccrouter"]["section"] == "pinned"
+    assert providers["ccr-oauth"]["section"] == "pinned"
+    assert "Claude Code OAuth" in providers["ccr-oauth"]["description"]
     assert providers["lmstudio"]["section"] == "local"
     assert providers["lmstudio"]["modelDiscovery"] == {"enabled": True}
     assert providers["zai"]["section"] == "cloud"

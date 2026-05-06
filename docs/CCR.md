@@ -5,6 +5,11 @@ default mode is managed and isolated: cc-extractor installs CCR inside the
 setup, creates a setup-local home directory, copies or seeds CCR config, starts
 CCR on demand, and runs the patched Claude Code binary directly.
 
+The `ccr-oauth` provider uses the same managed CCR runtime, but enables the
+Architect model proxy flow from the TUI. Use it when planner/`claude-*` calls
+should keep Claude Code OAuth/session auth while worker aliases route through
+CCR.
+
 ## Managed CCR
 
 Create a managed setup:
@@ -73,7 +78,7 @@ cc-extractor does not install or start CCR.
 ## TUI Notes
 
 The setup wizard shows managed CCR options on the credentials step when the
-`ccrouter` provider is selected:
+`ccrouter` or `ccr-oauth` provider is selected:
 
 - managed or external mode;
 - config source (`copy-global`, `empty`, or `shared-home`);
@@ -84,6 +89,11 @@ The setup wizard shows managed CCR options on the credentials step when the
 After creating a managed CCR setup, the setup detail screen shows CCR metadata
 and actions for status, start, stop, restart, UI, and copying the setup-local
 CCR config path.
+
+The `ccr-oauth` provider defaults the wizard's Tweaks step to Architect model
+proxy enabled and selects the `opusplan1m` Architect Mode tweak. The Models step
+still matters: set Opus to a `claude-*` model and set worker aliases to names
+your CCR config can route.
 
 ## Architect Model Proxy
 

@@ -23,7 +23,9 @@ from .build import (
 )
 from .constants import VARIANT_METADATA
 from .ccrouter import (
+    CCR_OAUTH_PROVIDER_KEY,
     CCR_PACKAGE_DEFAULT,
+    CCR_PROVIDER_KEYS,
     ccrouter_command_env,
     ccrouter_doctor_checks,
     ccrouter_is_running,
@@ -79,6 +81,8 @@ __all__ = [
     "SECRETS_FILE",
     "VARIANT_METADATA",
     "CCR_PACKAGE_DEFAULT",
+    "CCR_OAUTH_PROVIDER_KEY",
+    "CCR_PROVIDER_KEYS",
     "Variant",
     "VariantBuildError",
     "VariantBuildResult",

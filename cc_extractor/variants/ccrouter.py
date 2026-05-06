@@ -12,6 +12,8 @@ from typing import Dict, List, Optional
 from .._utils import atomic_write_text_no_symlink
 
 CCR_PROVIDER_KEY = "ccrouter"
+CCR_OAUTH_PROVIDER_KEY = "ccr-oauth"
+CCR_PROVIDER_KEYS = {CCR_PROVIDER_KEY, CCR_OAUTH_PROVIDER_KEY}
 CCR_PACKAGE_DEFAULT = "@musistudio/claude-code-router@latest"
 CCR_MODE_MANAGED = "managed"
 CCR_MODE_EXTERNAL = "external"
@@ -51,10 +53,11 @@ def ccrouter_manifest_for_create(
     auto_start: Optional[bool] = None,
     home: Optional[Path] = None,
 ) -> Optional[Dict[str, object]]:
-    if provider_key != CCR_PROVIDER_KEY:
+    if provider_key not in CCR_PROVIDER_KEYS:
         values = [mode, config_mode, package_spec, port]
         if any(value not in (None, "") for value in values) or auto_start is not None:
-            raise ValueError("ccrouter options can only be used with --provider ccrouter")
+            allowed = ", ".join(sorted(CCR_PROVIDER_KEYS))
+            raise ValueError(f"ccrouter options can only be used with --provider {allowed}")
         return None
 
     resolved_mode = _validate_choice(mode or CCR_MODE_MANAGED, _CCR_MODES, "ccrouter mode")

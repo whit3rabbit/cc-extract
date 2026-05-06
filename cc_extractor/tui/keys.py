@@ -35,6 +35,7 @@ def variant_accepts_text(state) -> bool:
         "variant-model",
         "variant-ccrouter-package",
         "variant-ccrouter-port",
+        "variant-model-proxy-port",
     }
 
 
@@ -66,6 +67,8 @@ def variant_append_text(state, char: str) -> None:
         state.variant_ccrouter_package += char
     elif option.kind == "variant-ccrouter-port":
         state.variant_ccrouter_port += char
+    elif option.kind == "variant-model-proxy-port":
+        state.variant_model_proxy_port += char
 
 
 def models_append_text(state, char: str) -> None:
@@ -97,6 +100,8 @@ def variant_backspace(state) -> bool:
         state.variant_ccrouter_package = state.variant_ccrouter_package[:-1]
     elif option.kind == "variant-ccrouter-port":
         state.variant_ccrouter_port = state.variant_ccrouter_port[:-1]
+    elif option.kind == "variant-model-proxy-port":
+        state.variant_model_proxy_port = state.variant_model_proxy_port[:-1]
     return True
 
 

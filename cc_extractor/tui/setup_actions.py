@@ -875,6 +875,7 @@ def _run_variant_create(state):
             model_overrides=_tui()._variant_model_overrides_for_create(state),
             mcp_ids=state.selected_variant_mcp_ids,
             **_tui()._variant_ccrouter_options_for_create(state, provider),
+            **_tui()._variant_model_proxy_options_for_create(state, provider),
             force=False,
         )
         state.last_action_log = _stage_log_lines("Create setup", output)

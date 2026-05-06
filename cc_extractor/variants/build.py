@@ -27,7 +27,7 @@ from .constants import (
     _SETUP_ENV_ONLY_TWEAKS,
     _THEME_PROMPT_TWEAKS,
 )
-from .ccrouter import prepare_ccrouter_manifest
+from .ccrouter import CCR_PROVIDER_KEYS, prepare_ccrouter_manifest
 from .model import (
     VariantBuildError,
     VariantBuildResult,
@@ -118,12 +118,13 @@ def _build_variant_from_manifest(
 
     stages.run("prepare directories", prepare_dirs, detail=str(variant_dir))
     manifest = dict(manifest)
-    if manifest.get("provider", {}).get("key") == "ccrouter" and manifest.get("ccrouter"):
+    if manifest.get("provider", {}).get("key") in CCR_PROVIDER_KEYS and manifest.get("ccrouter"):
         manifest["ccrouter"] = stages.run(
             "prepare ccrouter",
             lambda: prepare_ccrouter_manifest(manifest, variant_dir),
             detail=str(variant_dir / "ccr-runtime"),
         )
+        _sync_ccrouter_model_proxy(manifest)
 
     source_info = manifest.get("source") or {}
     if source_artifact is None:
@@ -260,6 +261,28 @@ def _build_variant_from_manifest(
         missing_prompt_keys=tweak_result.missing,
         stages=stages.stages,
     )
+
+
+_MODEL_PROXY_AUTH_ENV = {"ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"}
+
+
+def _sync_ccrouter_model_proxy(manifest: Dict) -> None:
+    model_proxy = manifest.get("modelProxy")
+    if not isinstance(model_proxy, dict) or model_proxy.get("mode") != "architect":
+        return
+    env = dict(manifest.get("env") or {})
+    backend_url = env.get("ANTHROPIC_BASE_URL")
+    backend_token = env.get("ANTHROPIC_AUTH_TOKEN") or env.get("ANTHROPIC_API_KEY")
+    source_env = str(model_proxy.get("credentialEnv") or "").strip()
+    if backend_url:
+        model_proxy = dict(model_proxy)
+        model_proxy["backendUrl"] = backend_url
+        manifest["modelProxy"] = model_proxy
+    if source_env and backend_token:
+        env[source_env] = backend_token
+    for key in _MODEL_PROXY_AUTH_ENV:
+        env.pop(key, None)
+    manifest["env"] = env
 
 def _download_source_artifact(version: str, root=None) -> NativeArtifact:
     requested = _resolve_source_version(version, root=root)

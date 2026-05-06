@@ -2,6 +2,8 @@
 
 import os
 
+from ..variants import CCR_PROVIDER_KEYS
+from ..variant_tweaks import default_tweak_ids_for_provider
 from ..variants.model import default_bin_dir, variant_id_from_name
 from ..variants.install import default_install_dir
 from ..workspace import short_sha, workspace_root
@@ -16,9 +18,11 @@ from .options import (
     models_edit_options,
     models_pending_diff,
     selected_dashboard_packages,
+    selected_dashboard_option,
     selected_dashboard_tweaks,
     selected_setup_variant,
     selected_variant_provider,
+    selected_variant_option,
     selected_tweaks_edit_patch,
     variant_model_display_value,
     setup_detail_lines,
@@ -28,7 +32,9 @@ from .options import (
     setup_manager_options,
     tweak_control_summary,
     tweak_diff,
+    tweak_meta,
     tweak_status,
+    tweak_status_for_version,
     tweaks_edit_empty_label,
     tweaks_edit_groups,
     tweaks_edit_options,
@@ -36,6 +42,7 @@ from .options import (
     unsupported_pending_tweaks,
     variant_provider_detail_lines,
     variant_provider_selector_labels,
+    variant_tweak_ids,
     variant_options,
     variant_title,
 )
@@ -191,6 +198,7 @@ def create_preview_labels(state):
         f"Command: {command}",
         *_create_preview_install_lines(state, setup_id),
         *_create_preview_ccrouter_lines(state, provider),
+        *_create_preview_model_proxy_lines(state),
         *_create_preview_endpoint_lines(state, provider),
         f"Credential env: {_create_preview_credential(state, provider)}",
         f"API key storage: {_create_preview_api_key_storage(state)}",
@@ -215,7 +223,7 @@ def _create_preview_install_lines(state, setup_id):
 
 
 def _create_preview_ccrouter_lines(state, provider):
-    if provider.get("key") != "ccrouter":
+    if provider.get("key") not in CCR_PROVIDER_KEYS:
         return []
     lines = [f"CCR mode: {state.variant_ccrouter_mode}"]
     if state.variant_ccrouter_mode == "managed":
@@ -228,6 +236,16 @@ def _create_preview_ccrouter_lines(state, provider):
             ]
         )
     return lines
+
+
+def _create_preview_model_proxy_lines(state):
+    if state.variant_model_proxy != "architect":
+        return ["Model proxy: off"]
+    return [
+        "Model proxy: architect",
+        f"Model proxy port: {state.variant_model_proxy_port or 'auto'}",
+        "Model proxy auth: Claude Code OAuth/session for claude-* calls",
+    ]
 
 def _create_preview_endpoint_lines(state, provider):
     if provider.get("authMode") == "none":
@@ -452,16 +470,77 @@ def tweaks_detail_text(state) -> str:
     patch = selected_tweaks_edit_patch(state)
     if patch is None:
         return "No patch selected."
+    status = tweak_status(state, patch.id)
     applied = "yes" if patch.id in (state.tweaks_baseline or ()) else "no"
     pending = "yes" if patch.id in (state.tweaks_pending or ()) else "no"
+    return _format_tweak_detail_text(
+        patch,
+        status,
+        [
+            f"Enabled in setup {state.tweaks_variant_id or '(no setup)'}: {applied}",
+            f"Pending after apply: {pending}",
+        ],
+    )
+
+
+def variant_tweak_detail_text(state) -> str:
+    option = selected_variant_option(state)
+    if option is None:
+        return "No tweak selected."
+    if option.kind in {"variant-model-proxy", "variant-model-proxy-port"}:
+        return _variant_model_proxy_detail_text(state)
+    if option.kind != "variant-tweak":
+        return _variant_tweak_summary_text(state)
+    tweak_id = str(option.value)
+    patch = tweak_meta(tweak_id)
+    if patch is None:
+        return "No tweak metadata available."
+    provider = selected_variant_provider(state)
+    recommended = default_tweak_ids_for_provider(provider.get("key") if provider else None)
+    status = tweak_status_for_version(
+        tweak_id,
+        state.variant_claude_version,
+        recommended_ids=recommended,
+    )
+    enabled = "yes" if tweak_id in (state.selected_variant_tweaks or []) else "no"
+    return _format_tweak_detail_text(
+        patch,
+        status,
+        [
+            f"Selected for new setup: {enabled}",
+            f"Claude Code version: {state.variant_claude_version or 'latest'}",
+        ],
+    )
+
+
+def dashboard_tweak_detail_text(state) -> str:
+    option = selected_dashboard_option(state)
+    if option is None or option.kind != "dashboard-tweak-toggle":
+        return "Select a dashboard tweak to see details."
+    tweak_id = str(option.value)
+    patch = tweak_meta(tweak_id)
+    if patch is None:
+        return "No tweak metadata available."
+    selected = "yes" if tweak_id in (state.selected_dashboard_tweak_ids or []) else "no"
+    return _format_tweak_detail_text(
+        patch,
+        {"label": "dashboard", "reason": "Available for native dashboard builds."},
+        [
+            f"Selected for build: {selected}",
+            f"Dashboard source: {dashboard_source_label(state)}",
+        ],
+    )
+
+
+def _format_tweak_detail_text(patch, status, trailing_lines):
     blacklist = ", ".join(patch.versions_blacklisted) if patch.versions_blacklisted else "(none)"
     tested = ", ".join(patch.versions_tested) if patch.versions_tested else "(none)"
     description = patch.description or "(no description)"
     return "\n".join([
         patch.name,
         f"Group: {patch.group}",
-        f"Status: {tweak_status(state, patch.id)['label']}",
-        f"Reason: {tweak_status(state, patch.id)['reason']}",
+        f"Status: {status['label']}",
+        f"Reason: {status['reason']}",
         "",
         description,
         "",
@@ -470,8 +549,43 @@ def tweaks_detail_text(state) -> str:
         f"Blacklisted: {blacklist}",
         f"On miss: {patch.on_miss}",
         "",
-        f"Enabled in setup {state.tweaks_variant_id or '(no setup)'}: {applied}",
-        f"Pending after apply: {pending}",
+        *trailing_lines,
+    ])
+
+
+def _variant_model_proxy_detail_text(state) -> str:
+    enabled = "yes" if state.variant_model_proxy == "architect" else "no"
+    return "\n".join([
+        "Architect model proxy",
+        "Group: setup",
+        f"Status: {'ready' if enabled == 'yes' else 'disabled'}",
+        "Reason: Routes planner and worker model calls through different auth paths.",
+        "",
+        "Starts a setup-local proxy. claude-* requests keep the normal Claude Code OAuth/session login. Non-Claude model aliases are sent to the selected provider backend.",
+        "",
+        "Versions supported: setup-wrapper",
+        "Tested ranges: setup-wrapper",
+        "Blacklisted: (none)",
+        "On miss: skip",
+        "",
+        f"Selected for new setup: {enabled}",
+        f"Port: {state.variant_model_proxy_port or 'auto'}",
+        "Companion tweak: opusplan1m",
+    ])
+
+
+def _variant_tweak_summary_text(state) -> str:
+    selected = len(state.selected_variant_tweaks or [])
+    available = len(variant_tweak_ids(state))
+    return "\n".join([
+        "Tweak selection",
+        "Group: setup",
+        "Status: ready",
+        "Reason: Review each tweak before creating the setup.",
+        "",
+        f"Selected tweaks: {selected}",
+        f"Visible tweaks: {available}",
+        f"View: {state.tweak_filter or 'recommended'}",
     ])
 
 def empty_text(state):
@@ -675,6 +789,8 @@ def context_hint(state):
             return "MCP servers: provider servers are automatic. Space toggles optional servers."
         if state.variant_step == 4:
             return "Models: refresh local model list, select one, or edit aliases manually."
+        if state.variant_step == 5:
+            return "Tweaks: Space toggles selected rows. Review details on the right."
     return "Ready"
 
 def status_line(state):
@@ -784,6 +900,18 @@ def screen_text(state, height=24):
         for line in variant_provider_detail_lines(state):
             lines.append("  " + line)
 
+    if _variant_tweak_selector_active(state):
+        lines.append("")
+        lines.append("Tweak details")
+        for line in variant_tweak_detail_text(state).splitlines():
+            lines.append("  " + line)
+
+    if _dashboard_tweak_selector_active(state):
+        lines.append("")
+        lines.append("Tweak details")
+        for line in dashboard_tweak_detail_text(state).splitlines():
+            lines.append("  " + line)
+
     if state.mode in {"tweaks-edit", "tweak-editor"} and not state.tweak_apply_preview:
         added, removed = tweak_diff(state)
         lines.append("")
@@ -816,6 +944,14 @@ def body_text(state, height):
 
 def _variant_provider_selector_active(state):
     return state.mode in {"variants", "first-run-setup"} and state.variant_step == 0
+
+
+def _variant_tweak_selector_active(state):
+    return state.mode in {"variants", "first-run-setup"} and state.variant_step == 5
+
+
+def _dashboard_tweak_selector_active(state):
+    return state.mode == "dashboard" and state.dashboard_step == 1
 
 def layout_heights(height):
     height = max(1, height)
