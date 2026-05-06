@@ -18,7 +18,7 @@ Terminology matters:
 | manifest | setup config |
 | wrapper | command or launcher |
 
-`variant` remains the internal storage model under `.cc-extractor/variants`. Patch packages remain advanced build inputs and are intentionally separate from setup tweaks.
+`variant` remains the internal storage model under `.ccsilo/variants`. Patch packages remain advanced build inputs and are intentionally separate from setup tweaks.
 
 ## Implemented Flow
 
@@ -67,12 +67,12 @@ flowchart TD
 
 ## Current Code Map
 
-- `cc_extractor/tui/state.py`: lifecycle state, refresh, setup health cache, search/filter/sort fields.
-- `cc_extractor/tui/options.py`: `MenuOption` rows for setup manager, setup detail, first-run setup, dashboard patch bundles, and tweak editor.
-- `cc_extractor/tui/rendering.py`: text fallback, current labels, footer/key hints, breadcrumbs, ratatui frame rendering.
-- `cc_extractor/tui/nav.py`: mode transitions, back behavior, tweak editor entry, tweak toggles, rebuild apply helper.
-- `cc_extractor/tui/keys.py`: text input helpers for setup creation and dashboard profile names.
-- `cc_extractor/tui/__init__.py`: action layer, startup routing, backend calls through `run_quiet()`, setup health/upgrade/delete/create handlers.
+- `ccsilo/tui/state.py`: lifecycle state, refresh, setup health cache, search/filter/sort fields.
+- `ccsilo/tui/options.py`: `MenuOption` rows for setup manager, setup detail, first-run setup, dashboard patch bundles, and tweak editor.
+- `ccsilo/tui/rendering.py`: text fallback, current labels, footer/key hints, breadcrumbs, ratatui frame rendering.
+- `ccsilo/tui/nav.py`: mode transitions, back behavior, tweak editor entry, tweak toggles, rebuild apply helper.
+- `ccsilo/tui/keys.py`: text input helpers for setup creation and dashboard profile names.
+- `ccsilo/tui/__init__.py`: action layer, startup routing, backend calls through `run_quiet()`, setup health/upgrade/delete/create handlers.
 
 The TUI action layer imports and exposes:
 

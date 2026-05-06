@@ -1,6 +1,6 @@
 import pytest
 
-from cc_extractor.binary_patcher.strip_bun_wrapper import BunWrapperNotFound, strip_bun_wrapper
+from ccsilo.binary_patcher.strip_bun_wrapper import BunWrapperNotFound, strip_bun_wrapper
 
 
 def wrap(body):

@@ -7,9 +7,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from cc_extractor.binary_patcher.bun_compat import BUN_NODE_COMPAT_MARKER
-from cc_extractor.bun_extract import parse_bun_binary
-from cc_extractor.variants import (
+from ccsilo.binary_patcher.bun_compat import BUN_NODE_COMPAT_MARKER
+from ccsilo.bun_extract import parse_bun_binary
+from ccsilo.variants import (
     VariantBuildError,
     apply_variant,
     create_variant,
@@ -26,14 +26,14 @@ from cc_extractor.variants import (
     update_variants,
     update_variant_models,
 )
-from cc_extractor.variants.model import Variant
-from cc_extractor.variants.ccrouter import (
+from ccsilo.variants.model import Variant
+from ccsilo.variants.ccrouter import (
     CCR_PACKAGE_DEFAULT,
 )
-from cc_extractor.variants.builder import patch_entry_js
-from cc_extractor.variants.wrapper import write_wrapper
-from cc_extractor.variants.wrapper import write_secrets
-from cc_extractor.workspace import NativeArtifact
+from ccsilo.variants.builder import patch_entry_js
+from ccsilo.variants.wrapper import write_wrapper
+from ccsilo.variants.wrapper import write_secrets
+from ccsilo.workspace import NativeArtifact
 from tests.helpers.bun_fixture import build_bun_fixture
 
 
@@ -96,7 +96,7 @@ def read_entry(binary_path):
 
 
 def stub_ccrouter_npm(monkeypatch):
-    import cc_extractor.variants.ccrouter as ccrouter_module
+    import ccsilo.variants.ccrouter as ccrouter_module
 
     calls = []
 
@@ -222,7 +222,7 @@ def test_install_candidate_detection_prefers_common_home_bins(tmp_path):
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink not supported")
 def test_install_variant_command_records_symlink_and_refuses_unmanaged_target(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     install_dir = tmp_path / "home" / ".local" / "bin"
     install_dir.mkdir(parents=True)
     variant = install_test_variant(root, root / "bin" / "demo")
@@ -235,7 +235,7 @@ def test_install_variant_command_records_symlink_and_refuses_unmanaged_target(tm
     assert result.path.resolve() == (root / "bin" / "demo").resolve()
     manifest = json.loads((variant.path / "variant.json").read_text(encoding="utf-8"))
     assert manifest["installs"][0]["alias"] == "demo"
-    assert manifest["installs"][0]["managedBy"] == "cc-extractor"
+    assert manifest["installs"][0]["managedBy"] == "ccsilo"
 
     second = install_variant_command(variant, bin_dir=install_dir)
     assert second.status == "already-installed"
@@ -250,7 +250,7 @@ def test_install_variant_command_records_symlink_and_refuses_unmanaged_target(tm
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink not supported")
 def test_uninstall_workspace_removes_managed_symlinks_and_workspace(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     install_dir = tmp_path / "home" / ".local" / "bin"
     install_dir.mkdir(parents=True)
     variant = install_test_variant(root, root / "bin" / "demo")
@@ -269,7 +269,7 @@ def test_uninstall_workspace_removes_managed_symlinks_and_workspace(tmp_path):
 
 
 def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
     original = artifact.path.read_bytes()
 
@@ -303,8 +303,8 @@ def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
     credential_export = 'export ANTHROPIC_API_KEY="${Z_AI_API_KEY}"'
     assert wrapper.index(credential_export) < wrapper.index("customApiKeyResponses") < wrapper.index("\nexec ")
     assert "++++++++" in wrapper
-    assert result.variant.manifest["env"]["CC_EXTRACTOR_SPLASH"] == "1"
-    assert result.variant.manifest["env"]["CC_EXTRACTOR_SPLASH_STYLE"] == "zai"
+    assert result.variant.manifest["env"]["CCSILO_SPLASH"] == "1"
+    assert result.variant.manifest["env"]["CCSILO_SPLASH_STYLE"] == "zai"
     assert result.variant.manifest["tweaks"] == [
         "themes",
         "prompt-overlays",
@@ -343,9 +343,9 @@ def test_create_variant_writes_isolated_layout_wrapper_and_metadata(tmp_path):
 
 
 def test_create_variant_with_source_binary_imports_without_download(tmp_path, monkeypatch):
-    import cc_extractor.variants as variants_module
+    import ccsilo.variants as variants_module
 
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
 
     def fail_download(*_args, **_kwargs):
@@ -377,9 +377,9 @@ def test_create_variant_with_source_binary_imports_without_download(tmp_path, mo
 
 
 def test_apply_variant_reuses_imported_source_binary_offline(tmp_path, monkeypatch):
-    import cc_extractor.variants as variants_module
+    import ccsilo.variants as variants_module
 
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
     result = create_variant(
         name="Offline Local",
@@ -404,7 +404,7 @@ def test_apply_variant_reuses_imported_source_binary_offline(tmp_path, monkeypat
 
 
 def test_apply_variant_reports_missing_or_changed_imported_source(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
     result = create_variant(
         name="Missing Local",
@@ -438,7 +438,7 @@ def test_apply_variant_reports_missing_or_changed_imported_source(tmp_path):
 
 
 def test_update_variant_can_replace_local_source_binary(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     first_dir = tmp_path / "first"
     first_dir.mkdir()
     first = write_source_artifact(first_dir)
@@ -486,12 +486,12 @@ def test_update_all_rejects_source_binary(tmp_path):
             all_variants=True,
             claude_version="2.1.122",
             source_binary=source,
-            root=tmp_path / ".cc-extractor",
+            root=tmp_path / ".ccsilo",
         )
 
 
 def test_create_ccrouter_variant_prepares_managed_runtime_and_isolated_config(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
     home = tmp_path / "home"
     global_config = home / ".claude-code-router" / "config.json"
@@ -541,7 +541,7 @@ def test_create_ccrouter_variant_prepares_managed_runtime_and_isolated_config(tm
 
 
 def test_create_variant_persists_base_url_override(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
 
     result = create_variant(
@@ -571,7 +571,7 @@ def test_variant_provider_payload_exposes_ccrouter_env_unset():
 
 
 def test_variant_cli_provider_quote_blocks(monkeypatch, capsys):
-    from cc_extractor import __main__ as cli
+    from ccsilo import __main__ as cli
     import sys
 
     monkeypatch.setattr(
@@ -589,7 +589,7 @@ def test_variant_cli_provider_quote_blocks(monkeypatch, capsys):
     )
 
     old_argv = sys.argv
-    sys.argv = ["cc-extractor", "variant", "providers", "--quote-blocks"]
+    sys.argv = ["ccsilo", "variant", "providers", "--quote-blocks"]
     try:
         cli.main()
     finally:
@@ -602,9 +602,9 @@ def test_variant_cli_provider_quote_blocks(monkeypatch, capsys):
 
 
 def test_create_and_reapply_variant_preserves_selected_optional_mcp(tmp_path, monkeypatch):
-    import cc_extractor.variants as variants_module
+    import ccsilo.variants as variants_module
 
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
 
     result = create_variant(
@@ -635,9 +635,9 @@ def test_create_and_reapply_variant_preserves_selected_optional_mcp(tmp_path, mo
 
 
 def test_macos_grow_skip_uses_unpacked_node_runtime(tmp_path, monkeypatch):
-    import cc_extractor.variants as variants_module
+    import ccsilo.variants as variants_module
 
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_macho_source_artifact(tmp_path)
     unpack_calls = []
 
@@ -697,9 +697,9 @@ def test_macos_grow_skip_uses_unpacked_node_runtime(tmp_path, monkeypatch):
 
 
 def test_macos_startup_regex_tweaks_use_in_place_binary_patch(tmp_path, monkeypatch):
-    import cc_extractor.variants as variants_module
+    import ccsilo.variants as variants_module
 
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_macho_source_artifact(tmp_path)
     patch_calls = []
 
@@ -744,9 +744,9 @@ def test_macos_startup_regex_tweaks_use_in_place_binary_patch(tmp_path, monkeypa
 
 
 def test_macos_default_startup_tweaks_do_not_force_node_runtime(tmp_path, monkeypatch):
-    import cc_extractor.variants as variants_module
+    import ccsilo.variants as variants_module
 
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_macho_source_artifact(tmp_path)
     patch_calls = []
 
@@ -829,9 +829,9 @@ def test_macos_default_startup_tweaks_do_not_force_node_runtime(tmp_path, monkey
 
 
 def test_macos_non_native_regex_tweak_uses_unpacked_node_runtime_not_in_place_binary_patch(tmp_path, monkeypatch):
-    import cc_extractor.variants as variants_module
+    import ccsilo.variants as variants_module
 
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_macho_source_artifact(tmp_path)
     unpack_calls = []
 
@@ -882,9 +882,9 @@ def test_macos_non_native_regex_tweak_uses_unpacked_node_runtime_not_in_place_bi
 
 
 def test_create_variant_build_error_includes_stages(tmp_path, monkeypatch):
-    import cc_extractor.variants as variants_module
+    import ccsilo.variants as variants_module
 
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_macho_source_artifact(tmp_path)
 
     def fake_apply_patches(_inputs):
@@ -917,7 +917,7 @@ def test_create_variant_build_error_includes_stages(tmp_path, monkeypatch):
 
 
 def test_create_variant_stored_secret_is_not_in_metadata(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
 
     result = create_variant(
@@ -949,7 +949,7 @@ def test_create_variant_stored_secret_is_not_in_metadata(tmp_path):
 
 
 def test_create_model_proxy_architect_variant_uses_oauth_safe_env(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
 
     result = create_variant(
@@ -992,16 +992,16 @@ def test_create_model_proxy_architect_variant_uses_oauth_safe_env(tmp_path):
     }
     assert "customApiKeyResponses" not in wrapper
     assert 'export ANTHROPIC_API_KEY="${DEEPSEEK_API_KEY}"' not in wrapper
-    assert "cc_extractor.model_proxy" in wrapper
+    assert "ccsilo.model_proxy" in wrapper
     assert "unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN" in wrapper
     assert "cleanup_model_proxy" in wrapper
-    assert "exec " not in wrapper.split('cc_extractor.model_proxy', 1)[1]
+    assert "exec " not in wrapper.split('ccsilo.model_proxy', 1)[1]
     assert doctor_checks["model-proxy-config"]["ok"] is True
     assert doctor_checks["model-proxy-python"]["ok"] is True
 
 
 def test_create_model_proxy_stores_only_backend_secret(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
 
     result = create_variant(
@@ -1031,7 +1031,7 @@ def test_create_model_proxy_stores_only_backend_secret(tmp_path):
 
 
 def test_create_model_proxy_openrouter_uses_bearer_backend_auth(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
 
     result = create_variant(
@@ -1062,7 +1062,7 @@ def test_create_model_proxy_openrouter_uses_bearer_backend_auth(tmp_path):
 
 
 def test_create_ccr_oauth_proxy_uses_managed_ccrouter_backend(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
     stub_ccrouter_npm(monkeypatch)
 
@@ -1149,7 +1149,7 @@ def test_write_wrapper_refuses_symlink_target(tmp_path):
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX mode check")
 def test_doctor_variant_fails_stored_secret_with_unsafe_mode(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
     create_variant(
         name="Secret Zai",
@@ -1192,7 +1192,7 @@ def test_doctor_variant_fails_unmarked_node_entry_with_bun_globals(tmp_path):
 
 
 def test_doctor_variant_reports_managed_ccrouter_running_and_missing_bin(tmp_path, monkeypatch):
-    import cc_extractor.variants.ccrouter as ccrouter_module
+    import ccsilo.variants.ccrouter as ccrouter_module
 
     monkeypatch.setattr(ccrouter_module, "node_version_ok", lambda: (True, "node 20.0.0"))
     root = _write_managed_ccrouter_variant(tmp_path, pid=os.getpid())
@@ -1212,7 +1212,7 @@ def test_doctor_variant_reports_managed_ccrouter_running_and_missing_bin(tmp_pat
 
 
 def test_doctor_variant_reports_managed_ccrouter_stopped_and_bad_config(tmp_path, monkeypatch):
-    import cc_extractor.variants.ccrouter as ccrouter_module
+    import ccsilo.variants.ccrouter as ccrouter_module
 
     monkeypatch.setattr(ccrouter_module, "node_version_ok", lambda: (True, "node 20.0.0"))
     root = _write_managed_ccrouter_variant(tmp_path, config_text="{not json", pid=None)
@@ -1226,7 +1226,7 @@ def test_doctor_variant_reports_managed_ccrouter_stopped_and_bad_config(tmp_path
 
 
 def _write_node_variant(tmp_path, entry_js):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     variant_dir = root / "variants" / "node-compat"
     entry_path = variant_dir / "unpacked" / "src" / "cli.js"
     wrapper = root / "bin" / "node-compat"
@@ -1264,7 +1264,7 @@ def _write_node_variant(tmp_path, entry_js):
 
 
 def _write_managed_ccrouter_variant(tmp_path, *, config_text=None, pid=None):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     variant_dir = root / "variants" / "ccr-managed"
     wrapper = root / "bin" / "ccr-managed"
     settings = variant_dir / "config" / "settings.json"
@@ -1425,9 +1425,9 @@ def test_write_wrapper_splash_tty_and_machine_output_controls(tmp_path):
     manifest = wrapper_manifest(
         tmp_path,
         {
-            "CC_EXTRACTOR_SPLASH": "1",
-            "CC_EXTRACTOR_SPLASH_STYLE": "zai",
-            "CC_EXTRACTOR_PROVIDER_LABEL": "Zai Cloud",
+            "CCSILO_SPLASH": "1",
+            "CCSILO_SPLASH_STYLE": "zai",
+            "CCSILO_PROVIDER_LABEL": "Zai Cloud",
         },
     )
     wrapper = write_wrapper(manifest)
@@ -1451,9 +1451,9 @@ def test_write_wrapper_splash_disable_and_fallback_style(tmp_path):
     disabled = wrapper_manifest(
         tmp_path / "disabled",
         {
-            "CC_EXTRACTOR_SPLASH": "0",
-            "CC_EXTRACTOR_SPLASH_STYLE": "zai",
-            "CC_EXTRACTOR_PROVIDER_LABEL": "Zai Cloud",
+            "CCSILO_SPLASH": "0",
+            "CCSILO_SPLASH_STYLE": "zai",
+            "CCSILO_PROVIDER_LABEL": "Zai Cloud",
         },
     )
     disabled_output = run_in_pty([str(write_wrapper(disabled))])
@@ -1463,21 +1463,21 @@ def test_write_wrapper_splash_disable_and_fallback_style(tmp_path):
     fallback = wrapper_manifest(
         tmp_path / "fallback",
         {
-            "CC_EXTRACTOR_SPLASH": "1",
-            "CC_EXTRACTOR_SPLASH_STYLE": "unknown",
-            "CC_EXTRACTOR_PROVIDER_LABEL": "Mystery Provider",
+            "CCSILO_SPLASH": "1",
+            "CCSILO_SPLASH_STYLE": "unknown",
+            "CCSILO_PROVIDER_LABEL": "Mystery Provider",
         },
     )
     fallback_output = run_in_pty([str(write_wrapper(fallback))])
-    assert "CC EXTRACTOR" in fallback_output
+    assert "CCSILO" in fallback_output
     assert "Mystery Provider" in fallback_output
     assert "RUN:" in fallback_output
 
 
 def test_apply_variant_rebuilds_from_saved_metadata(tmp_path, monkeypatch):
-    import cc_extractor.variants as variants_module
+    import ccsilo.variants as variants_module
 
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
     create_variant(
         name="Zai Test",
@@ -1504,9 +1504,9 @@ def test_apply_variant_rebuilds_from_saved_metadata(tmp_path, monkeypatch):
 
 
 def test_apply_variant_removes_unchecked_default_tweak_env(tmp_path, monkeypatch):
-    import cc_extractor.variants as variants_module
+    import ccsilo.variants as variants_module
 
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
     create_variant(
         name="Remove Defaults",
@@ -1537,9 +1537,9 @@ def test_apply_variant_removes_unchecked_default_tweak_env(tmp_path, monkeypatch
 
 
 def test_update_variant_models_rewrites_manifest_and_wrapper_without_rebuild(tmp_path, monkeypatch):
-    import cc_extractor.variants as variants_module
+    import ccsilo.variants as variants_module
 
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
     create_variant(
         name="LM Local",
@@ -1584,7 +1584,7 @@ def test_update_variant_models_rewrites_manifest_and_wrapper_without_rebuild(tmp
 
 
 def test_update_variant_models_blocks_missing_required_core_aliases(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
     create_variant(
         name="LM Local",
@@ -1616,7 +1616,7 @@ def test_patch_entry_js_rejects_tampered_entrypoint(tmp_path):
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink not supported")
 def test_remove_variant_requires_confirmation_and_removes_wrapper(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     artifact = write_source_artifact(tmp_path)
     result = create_variant(
         name="Zai Test",
@@ -1643,7 +1643,7 @@ def test_remove_variant_requires_confirmation_and_removes_wrapper(tmp_path):
 
 
 def test_remove_variant_ignores_tampered_manifest_wrapper(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     variant_dir = root / "variants" / "fake"
     canonical_wrapper = root / "bin" / "fake"
     outside_wrapper = tmp_path / "outside-wrapper"
@@ -1671,7 +1671,7 @@ def test_remove_variant_ignores_tampered_manifest_wrapper(tmp_path):
 
 
 def test_run_variant_ignores_tampered_manifest_wrapper(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     variant_dir = root / "variants" / "fake"
     canonical_wrapper = root / "bin" / "fake"
     outside_wrapper = tmp_path / "outside-wrapper"
@@ -1700,7 +1700,7 @@ def test_run_variant_ignores_tampered_manifest_wrapper(tmp_path):
 
 
 def test_variant_cli_list_and_show_json(monkeypatch, tmp_path, capsys):
-    from cc_extractor import __main__ as cli
+    from ccsilo import __main__ as cli
     import sys
 
     class FakeVariant:
@@ -1718,7 +1718,7 @@ def test_variant_cli_list_and_show_json(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setattr(cli, "scan_variants", lambda: [FakeVariant()])
     old_argv = sys.argv
-    sys.argv = ["cc-extractor", "variant", "list", "--json"]
+    sys.argv = ["ccsilo", "variant", "list", "--json"]
     try:
         cli.main()
     finally:
@@ -1729,7 +1729,7 @@ def test_variant_cli_list_and_show_json(monkeypatch, tmp_path, capsys):
 
 
 def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys):
-    from cc_extractor import __main__ as cli
+    from ccsilo import __main__ as cli
     import sys
 
     calls = []
@@ -1783,7 +1783,7 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
         cli,
         "uninstall_workspace",
         lambda yes=False: SimpleNamespace(
-            workspace=tmp_path / ".cc-extractor",
+            workspace=tmp_path / ".ccsilo",
             removed_workspace=True,
             removed_symlinks=[],
             skipped_symlinks=[],
@@ -1792,14 +1792,14 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
 
     old_argv = sys.argv
     try:
-        sys.argv = ["cc-extractor", "variant", "mcp", "--provider", "zai", "--json"]
+        sys.argv = ["ccsilo", "variant", "mcp", "--provider", "zai", "--json"]
         cli.main()
         mcp_payload = json.loads(capsys.readouterr().out)
         assert "github" in [item["id"] for item in mcp_payload["optionalMcpServers"]]
         assert "web-reader" in [item["id"] for item in mcp_payload["providerMcpServers"]]
 
         sys.argv = [
-            "cc-extractor",
+            "ccsilo",
             "variant",
             "create",
             "--name",
@@ -1831,7 +1831,7 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
         assert calls[0]["model_proxy_port"] == "4321"
 
         sys.argv = [
-            "cc-extractor",
+            "ccsilo",
             "variant",
             "create",
             "--name",
@@ -1852,7 +1852,7 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
         assert calls[-1]["source_platform"] == "linux-x64"
 
         sys.argv = [
-            "cc-extractor",
+            "ccsilo",
             "variant",
             "create",
             "--name",
@@ -1880,7 +1880,7 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
         assert calls[-1]["ccrouter_autostart"] is False
 
         sys.argv = [
-            "cc-extractor",
+            "ccsilo",
             "variant",
             "create",
             "--name",
@@ -1896,7 +1896,7 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
         assert install_calls[-1][1:] == (None, None, False)
 
         sys.argv = [
-            "cc-extractor",
+            "ccsilo",
             "variant",
             "install",
             "Fake",
@@ -1912,19 +1912,19 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
         assert install_payload["alias"] == "cc-fake"
         assert install_calls[-1][1:] == ("cc-fake", str(tmp_path / "home" / "bin"), True)
 
-        sys.argv = ["cc-extractor", "variant", "show", "fake", "--json"]
+        sys.argv = ["ccsilo", "variant", "show", "fake", "--json"]
         cli.main()
         assert json.loads(capsys.readouterr().out)["id"] == "fake"
 
-        sys.argv = ["cc-extractor", "variant", "doctor", "fake", "--json"]
+        sys.argv = ["ccsilo", "variant", "doctor", "fake", "--json"]
         cli.main()
         assert json.loads(capsys.readouterr().out)[0]["ok"] is True
 
-        sys.argv = ["cc-extractor", "variant", "remove", "fake", "--yes"]
+        sys.argv = ["ccsilo", "variant", "remove", "fake", "--yes"]
         cli.main()
         assert "Removed variant" in capsys.readouterr().out
 
-        sys.argv = ["cc-extractor", "uninstall", "--yes", "--json"]
+        sys.argv = ["ccsilo", "uninstall", "--yes", "--json"]
         cli.main()
         uninstall_payload = json.loads(capsys.readouterr().out)
         assert uninstall_payload["removedWorkspace"] is True
@@ -1933,7 +1933,7 @@ def test_variant_cli_create_show_doctor_and_remove(monkeypatch, tmp_path, capsys
 
 
 def test_variant_cli_update_passes_source_binary_args(monkeypatch, tmp_path, capsys):
-    from cc_extractor import __main__ as cli
+    from ccsilo import __main__ as cli
     import sys
 
     calls = []
@@ -1967,7 +1967,7 @@ def test_variant_cli_update_passes_source_binary_args(monkeypatch, tmp_path, cap
     monkeypatch.setattr(cli, "update_variants", fake_update_variants)
     old_argv = sys.argv
     sys.argv = [
-        "cc-extractor",
+        "ccsilo",
         "variant",
         "update",
         "Fake",
@@ -1993,15 +1993,16 @@ def test_variant_cli_update_passes_source_binary_args(monkeypatch, tmp_path, cap
 
 
 def test_provider_shortcut_install_creates_missing_setup(monkeypatch, tmp_path, capsys):
-    from cc_extractor import __main__ as cli
+    from ccsilo import __main__ as cli
     import sys
 
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(tmp_path / ".ccsilo"))
     calls = []
 
     class FakeVariant:
         variant_id = "zai"
         name = "zai"
-        path = tmp_path / ".cc-extractor" / "variants" / "zai"
+        path = tmp_path / ".ccsilo" / "variants" / "zai"
         manifest = {
             "schemaVersion": 1,
             "id": "zai",
@@ -2010,7 +2011,7 @@ def test_provider_shortcut_install_creates_missing_setup(monkeypatch, tmp_path, 
             "source": {"version": "latest"},
             "paths": {
                 "root": str(path),
-                "wrapper": str(tmp_path / ".cc-extractor" / "bin" / "zai"),
+                "wrapper": str(tmp_path / ".ccsilo" / "bin" / "zai"),
                 "configDir": str(path / "config"),
             },
             "credential": {"mode": "env", "source": "Z_AI_API_KEY", "targets": ["ANTHROPIC_API_KEY", "Z_AI_API_KEY"]},
@@ -2021,7 +2022,7 @@ def test_provider_shortcut_install_creates_missing_setup(monkeypatch, tmp_path, 
     class FakeResult:
         variant = FakeVariant()
         binary_path = tmp_path / "claude"
-        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "zai"
+        wrapper_path = tmp_path / ".ccsilo" / "bin" / "zai"
         output_sha256 = "a" * 64
         applied_tweaks = []
         skipped_tweaks = []
@@ -2050,7 +2051,7 @@ def test_provider_shortcut_install_creates_missing_setup(monkeypatch, tmp_path, 
     monkeypatch.setattr(cli, "install_variant_command", fake_install_variant_command)
 
     old_argv = sys.argv
-    sys.argv = ["cc-extractor", "--provider", "zai", "install", "--json"]
+    sys.argv = ["ccsilo", "--provider", "zai", "install", "--json"]
     try:
         cli.main()
     finally:
@@ -2060,6 +2061,8 @@ def test_provider_shortcut_install_creates_missing_setup(monkeypatch, tmp_path, 
     assert payload["id"] == "zai"
     assert payload["install"]["alias"] == "zai"
     assert payload["nextSteps"]["command"] == "zai"
+    assert payload["nextSteps"]["workspace"] == str(tmp_path / ".ccsilo")
+    assert payload["nextSteps"]["doctor"] == "ccsilo variant doctor zai"
     assert payload["nextSteps"]["credentialEnv"] == ["ANTHROPIC_API_KEY", "Z_AI_API_KEY"]
     assert calls[0]["provider_key"] == "zai"
     assert calls[0]["claude_version"] == "latest"
@@ -2067,20 +2070,22 @@ def test_provider_shortcut_install_creates_missing_setup(monkeypatch, tmp_path, 
 
 
 def test_provider_shortcut_install_repairs_existing_setup(monkeypatch, tmp_path, capsys):
-    from cc_extractor import __main__ as cli
+    from ccsilo import __main__ as cli
     import sys
+
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(tmp_path / ".ccsilo"))
 
     class FakeVariant:
         variant_id = "zai"
         name = "zai"
-        path = tmp_path / ".cc-extractor" / "variants" / "zai"
+        path = tmp_path / ".ccsilo" / "variants" / "zai"
         manifest = {
             "schemaVersion": 1,
             "id": "zai",
             "name": "zai",
             "provider": {"key": "zai", "label": "Zai Cloud"},
             "source": {"version": "2.1.0"},
-            "paths": {"wrapper": str(tmp_path / ".cc-extractor" / "bin" / "zai")},
+            "paths": {"wrapper": str(tmp_path / ".ccsilo" / "bin" / "zai")},
             "createdAt": "2026-01-01T00:00:00Z",
             "updatedAt": "2026-01-01T00:00:00Z",
         }
@@ -2105,7 +2110,7 @@ def test_provider_shortcut_install_repairs_existing_setup(monkeypatch, tmp_path,
     )
 
     old_argv = sys.argv
-    sys.argv = ["cc-extractor", "install", "--provider", "zai", "--bin-dir", str(tmp_path / "home" / "bin"), "--yes", "--json"]
+    sys.argv = ["ccsilo", "install", "--provider", "zai", "--bin-dir", str(tmp_path / "home" / "bin"), "--yes", "--json"]
     try:
         cli.main()
     finally:
@@ -2119,20 +2124,20 @@ def test_provider_shortcut_install_repairs_existing_setup(monkeypatch, tmp_path,
 
 
 def test_provider_shortcut_update_defaults_latest_and_reinstalls(monkeypatch, tmp_path, capsys):
-    from cc_extractor import __main__ as cli
+    from ccsilo import __main__ as cli
     import sys
 
     class FakeVariant:
         variant_id = "zai"
         name = "zai"
-        path = tmp_path / ".cc-extractor" / "variants" / "zai"
+        path = tmp_path / ".ccsilo" / "variants" / "zai"
         manifest = {
             "schemaVersion": 1,
             "id": "zai",
             "name": "zai",
             "provider": {"key": "zai", "label": "Zai Cloud"},
             "source": {"version": "latest"},
-            "paths": {"wrapper": str(tmp_path / ".cc-extractor" / "bin" / "zai")},
+            "paths": {"wrapper": str(tmp_path / ".ccsilo" / "bin" / "zai")},
             "createdAt": "2026-01-01T00:00:00Z",
             "updatedAt": "2026-01-01T00:00:00Z",
         }
@@ -2140,7 +2145,7 @@ def test_provider_shortcut_update_defaults_latest_and_reinstalls(monkeypatch, tm
     class FakeResult:
         variant = FakeVariant()
         binary_path = tmp_path / "claude"
-        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "zai"
+        wrapper_path = tmp_path / ".ccsilo" / "bin" / "zai"
         output_sha256 = "a" * 64
         applied_tweaks = []
         skipped_tweaks = []
@@ -2164,7 +2169,7 @@ def test_provider_shortcut_update_defaults_latest_and_reinstalls(monkeypatch, tm
     )
 
     old_argv = sys.argv
-    sys.argv = ["cc-extractor", "--provider", "zai", "update", "--json"]
+    sys.argv = ["ccsilo", "--provider", "zai", "update", "--json"]
     try:
         cli.main()
     finally:
@@ -2176,7 +2181,7 @@ def test_provider_shortcut_update_defaults_latest_and_reinstalls(monkeypatch, tm
 
 
 def test_provider_shortcut_uninstall_removes_only_provider_setup(monkeypatch, capsys):
-    from cc_extractor import __main__ as cli
+    from ccsilo import __main__ as cli
     import sys
 
     class FakeVariant:
@@ -2192,7 +2197,7 @@ def test_provider_shortcut_uninstall_removes_only_provider_setup(monkeypatch, ca
     monkeypatch.setattr(cli, "uninstall_workspace", lambda yes=False: workspace_calls.append(yes))
 
     old_argv = sys.argv
-    sys.argv = ["cc-extractor", "--provider", "zai", "uninstall", "--yes", "--json"]
+    sys.argv = ["ccsilo", "--provider", "zai", "uninstall", "--yes", "--json"]
     try:
         cli.main()
     finally:
@@ -2205,12 +2210,12 @@ def test_provider_shortcut_uninstall_removes_only_provider_setup(monkeypatch, ca
 
 
 def test_provider_shortcut_bare_provider_prints_help_without_mutation(monkeypatch, capsys):
-    from cc_extractor import __main__ as cli
+    from ccsilo import __main__ as cli
     import sys
 
     monkeypatch.setattr(cli, "create_variant", lambda **kwargs: pytest.fail("bare provider mutated state"))
     old_argv = sys.argv
-    sys.argv = ["cc-extractor", "--provider", "zai"]
+    sys.argv = ["ccsilo", "--provider", "zai"]
     try:
         cli.main()
     finally:
@@ -2218,11 +2223,32 @@ def test_provider_shortcut_bare_provider_prints_help_without_mutation(monkeypatc
 
     output = capsys.readouterr().out
     assert "Provider shortcut commands" in output
-    assert "cc-extractor --provider zai install" in output
+    assert "ccsilo --provider zai install" in output
+
+
+def test_paths_command_reports_workspace_override(monkeypatch, tmp_path, capsys):
+    from ccsilo import __main__ as cli
+    import sys
+
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(tmp_path / "workspace"))
+    monkeypatch.setattr(cli, "which", lambda _name: "")
+    command_path = tmp_path / "venv" / "bin" / "ccsilo"
+    old_argv = sys.argv
+    sys.argv = [str(command_path), "paths", "--json"]
+    try:
+        cli.main()
+    finally:
+        sys.argv = old_argv
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == str(command_path)
+    assert payload["workspace"] == str(tmp_path / "workspace")
+    assert payload["workspaceOverride"] is True
+    assert payload["workspaceOverrideEnv"] == "CCSILO_WORKSPACE"
 
 
 def test_provider_shortcut_multiple_matching_setups_errors(monkeypatch):
-    from cc_extractor import __main__ as cli
+    from ccsilo import __main__ as cli
 
     variants = [
         SimpleNamespace(name="One", variant_id="one", manifest={"provider": {"key": "zai"}}),
@@ -2236,10 +2262,10 @@ def test_provider_shortcut_multiple_matching_setups_errors(monkeypatch):
 
 
 def test_provider_shortcut_resolves_single_matching_setup_from_workspace(monkeypatch, tmp_path):
-    from cc_extractor import __main__ as cli
-    from cc_extractor.workspace import write_json
+    from ccsilo import __main__ as cli
+    from ccsilo.workspace import write_json
 
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     variant_dir = root / "variants" / "custom-zai"
     variant_dir.mkdir(parents=True)
     write_json(
@@ -2255,7 +2281,7 @@ def test_provider_shortcut_resolves_single_matching_setup_from_workspace(monkeyp
             "updatedAt": "2026-01-01T00:00:00Z",
         },
     )
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
 
     resolved = cli._resolve_provider_variant("zai", required=True)
 

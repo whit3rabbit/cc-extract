@@ -1,9 +1,9 @@
 """Cross-patch invariants. Runs against the live registry; passes against
 an empty registry too."""
 
-from cc_extractor.patches._registry import REGISTRY
-from cc_extractor.patches._pinned_default import DEFAULT_VERSION_RANGES
-from cc_extractor.patches._versions import (
+from ccsilo.patches._registry import REGISTRY
+from ccsilo.patches._pinned_default import DEFAULT_VERSION_RANGES
+from ccsilo.patches._versions import (
     SemverRangeError,
     parse_range,
     range_contains_range,
@@ -46,7 +46,7 @@ def test_versions_tested_subset_of_versions_supported():
 
 
 def test_blacklisted_versions_do_not_satisfy_tested():
-    from cc_extractor.patches._versions import version_in_range
+    from ccsilo.patches._versions import version_in_range
     for patch in REGISTRY.values():
         for blacklisted in patch.versions_blacklisted:
             for tested in patch.versions_tested:
@@ -61,7 +61,7 @@ def test_blacklisted_versions_do_not_satisfy_tested():
 
 
 def test_each_versions_tested_resolves_to_concrete_version():
-    from cc_extractor.download_index import load_seed_download_index
+    from ccsilo.download_index import load_seed_download_index
     index = load_seed_download_index()
     if not index.get("binary", {}).get("versions"):
         return  # empty index: pre-flight succeeded; nothing else to assert

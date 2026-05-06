@@ -1,7 +1,7 @@
 # Claude Code Router Support
 
-cc-extractor supports Claude Code Router through the `ccrouter` provider. The
-default mode is managed and isolated: cc-extractor installs CCR inside the
+ccsilo supports Claude Code Router through the `ccrouter` provider. The
+default mode is managed and isolated: ccsilo installs CCR inside the
 setup, creates a setup-local home directory, copies or seeds CCR config, starts
 CCR on demand, and runs the patched Claude Code binary directly.
 
@@ -15,15 +15,15 @@ CCR.
 Create a managed setup:
 
 ```bash
-cc-extractor variant create --name ccrouter --provider ccrouter
+ccsilo variant create --name ccrouter --provider ccrouter
 ```
 
 Managed files live under the setup:
 
 ```text
-.cc-extractor/variants/<setup-id>/ccr-runtime/
-.cc-extractor/variants/<setup-id>/ccr-home/.claude-code-router/config.json
-.cc-extractor/variants/<setup-id>/tmp/ccrouter.log
+.ccsilo/variants/<setup-id>/ccr-runtime/
+.ccsilo/variants/<setup-id>/ccr-home/.claude-code-router/config.json
+.ccsilo/variants/<setup-id>/tmp/ccrouter.log
 ```
 
 Important behavior:
@@ -40,23 +40,23 @@ Important behavior:
   `--ccrouter-port` is supplied.
 - The wrapper starts `ccr start` when auto-start is enabled, parses the isolated
   config safely, exports the Anthropic-compatible CCR endpoint, and then execs
-  the cc-extractor patched Claude binary. It does not call `ccr code`.
+  the ccsilo patched Claude binary. It does not call `ccr code`.
 
 Useful create options:
 
 ```bash
-cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-config empty
-cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-config copy-global
-cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-package @musistudio/claude-code-router@2.0.0
-cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-port 4567
-cc-extractor variant create --name ccrouter --provider ccrouter --no-ccrouter-autostart
+ccsilo variant create --name ccrouter --provider ccrouter --ccrouter-config empty
+ccsilo variant create --name ccrouter --provider ccrouter --ccrouter-config copy-global
+ccsilo variant create --name ccrouter --provider ccrouter --ccrouter-package @musistudio/claude-code-router@2.0.0
+ccsilo variant create --name ccrouter --provider ccrouter --ccrouter-port 4567
+ccsilo variant create --name ccrouter --provider ccrouter --no-ccrouter-autostart
 ```
 
 Use `variant doctor` to check the wrapper, config, local `ccr` install, Node
 version, and CCR running state:
 
 ```bash
-cc-extractor variant doctor ccrouter
+ccsilo variant doctor ccrouter
 ```
 
 ## External CCR
@@ -68,12 +68,12 @@ yourself:
 npm install -g @musistudio/claude-code-router
 # edit ~/.claude-code-router/config.json
 ccr start
-cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-mode external
+ccsilo variant create --name ccrouter --provider ccrouter --ccrouter-mode external
 ```
 
-In external mode, cc-extractor keeps the old behavior: the setup points Claude
+In external mode, ccsilo keeps the old behavior: the setup points Claude
 Code at `http://127.0.0.1:3456` unless you override the endpoint, and
-cc-extractor does not install or start CCR.
+ccsilo does not install or start CCR.
 
 ## TUI Notes
 
@@ -120,7 +120,7 @@ How requests route:
 Create with the Architect Mode tweak:
 
 ```bash
-cc-extractor variant create \
+ccsilo variant create \
   --name architect-proxy \
   --provider deepseek \
   --credential-env DEEPSEEK_API_KEY \
@@ -131,7 +131,7 @@ cc-extractor variant create \
 OpenRouter example with explicit worker models:
 
 ```bash
-cc-extractor variant create \
+ccsilo variant create \
   --name openrouter-architect \
   --provider openrouter \
   --credential-env OPENROUTER_API_KEY \

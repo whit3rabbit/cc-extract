@@ -1,7 +1,7 @@
 import argparse
 import json
 
-from cc_extractor.patches import Patch, PatchOutcome
+from ccsilo.patches import Patch, PatchOutcome
 from tools import check_patch_releases
 
 

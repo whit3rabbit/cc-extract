@@ -99,7 +99,7 @@ Useful options:
    `--since-existing-latest`, or `--all`.
 2. Download or reuse the native Claude Code binary.
 3. Parse the Bun standalone layout with `parse_bun_binary`.
-4. Extract embedded modules with `cc_extractor.bun_extract.extract_all`.
+4. Extract embedded modules with `ccsilo.bun_extract.extract_all`.
 5. Locate the bundled CLI entry file from `.bundle_manifest.json` or
    `src/entrypoints/cli.js`.
 6. Select a seed catalog for metadata recovery.
@@ -266,4 +266,4 @@ Before committing prompt catalog changes:
 | A known short prompt is missing | It is below `min_length` and not present in the seed catalog. | Add or update the seed catalog, then regenerate. |
 | Extracted count is higher than vendor count | The extractor found extra prompt-like docs or embedded references. | Leave unmatched extras unnamed unless a verified catalog match exists. |
 | Prompt names attach to the wrong item | Matching is too broad or ambiguous. | Add a regression test and require exact or unambiguous normalized matching. |
-| Parse/extraction fails for a binary | Bun layout parser or entry-point detection changed. | Inspect `.bundle_manifest.json`, `info.entry_point_id`, and `cc_extractor/bun_extract`. |
+| Parse/extraction fails for a binary | Bun layout parser or entry-point detection changed. | Inspect `.bundle_manifest.json`, `info.entry_point_id`, and `ccsilo/bun_extract`. |

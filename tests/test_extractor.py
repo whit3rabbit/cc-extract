@@ -1,5 +1,5 @@
 import struct
-from cc_extractor.extractor import extract_all, read_u32, read_u64
+from ccsilo.extractor import extract_all, read_u32, read_u64
 
 def create_mock_macho(bun_offset, bun_size):
     """Create a minimal valid Mach-O 64-bit binary with a __BUN section."""

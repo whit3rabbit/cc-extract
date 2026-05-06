@@ -1,7 +1,7 @@
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.mcp_startup import MCP_BATCH_SIZE_PATCH, MCP_NON_BLOCKING_PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.mcp_startup import MCP_BATCH_SIZE_PATCH, MCP_NON_BLOCKING_PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 

@@ -2,10 +2,10 @@ import struct
 
 import pytest
 
-from cc_extractor.binary_patcher import replace_entry_js
-from cc_extractor.binary_patcher.pe_resize import PeNotLastSectionError, repack_pe
-from cc_extractor.bun_extract import parse_bun_binary
-from cc_extractor.bun_extract.constants import OFFSETS_SIZE, TRAILER
+from ccsilo.binary_patcher import replace_entry_js
+from ccsilo.binary_patcher.pe_resize import PeNotLastSectionError, repack_pe
+from ccsilo.bun_extract import parse_bun_binary
+from ccsilo.bun_extract.constants import OFFSETS_SIZE, TRAILER
 from tests.helpers.bun_fixture import build_bun_fixture
 
 

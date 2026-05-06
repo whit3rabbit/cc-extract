@@ -37,7 +37,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
-.cc-extractor/
+.ccsilo/
 downloads/
 eggs/
 .eggs/

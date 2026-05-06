@@ -1,6 +1,6 @@
 import pytest
 
-from cc_extractor.patches._versions import (
+from ccsilo.patches._versions import (
     SemverRangeError,
     parse_version,
     resolve_range_to_version,

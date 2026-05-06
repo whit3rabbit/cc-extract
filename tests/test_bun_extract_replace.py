@@ -1,6 +1,6 @@
 import pytest
 
-from cc_extractor.bun_extract import ModuleNotFound, SizeMismatch, parse_bun_binary, replace_module
+from ccsilo.bun_extract import ModuleNotFound, SizeMismatch, parse_bun_binary, replace_module
 from tests.helpers.bun_fixture import build_bun_fixture
 
 

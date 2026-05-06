@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from cc_extractor.binary_patcher import PatchInputs, apply_patches
-from cc_extractor.bun_extract import parse_bun_binary
-from cc_extractor.downloader import download_binary
-from cc_extractor.extractor import extract_all
+from ccsilo.binary_patcher import PatchInputs, apply_patches
+from ccsilo.bun_extract import parse_bun_binary
+from ccsilo.downloader import download_binary
+from ccsilo.extractor import extract_all
 
 
-RUN_ENV = "CC_EXTRACTOR_RUN_REAL_BINARY_TEST"
-VERSION_ENV = "CC_EXTRACTOR_REAL_BINARY_VERSION"
+RUN_ENV = "CCSILO_RUN_REAL_BINARY_TEST"
+VERSION_ENV = "CCSILO_REAL_BINARY_VERSION"
 
 pytestmark = pytest.mark.skipif(
     os.environ.get(RUN_ENV) != "1",

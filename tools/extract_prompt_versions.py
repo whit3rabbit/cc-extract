@@ -16,9 +16,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from cc_extractor.bun_extract import parse_bun_binary
-from cc_extractor.bun_extract.extract import extract_all as extract_bun_modules
-from cc_extractor.downloader import download_binary, list_available_binary_versions
+from ccsilo.bun_extract import parse_bun_binary
+from ccsilo.bun_extract.extract import extract_all as extract_bun_modules
+from ccsilo.downloader import download_binary, list_available_binary_versions
 
 from tools.prompt_extractor import extract_prompts
 

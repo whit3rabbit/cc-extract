@@ -8,10 +8,10 @@ from typing import Callable, List
 
 import pytest
 
-from cc_extractor.bun_extract import parse_bun_binary
-from cc_extractor.download_index import load_download_index
-from cc_extractor.downloader import download_binary
-from cc_extractor.patches._versions import resolve_range_to_version
+from ccsilo.bun_extract import parse_bun_binary
+from ccsilo.download_index import load_download_index
+from ccsilo.downloader import download_binary
+from ccsilo.patches._versions import resolve_range_to_version
 
 
 def resolve_tested_versions(patch) -> List[str]:

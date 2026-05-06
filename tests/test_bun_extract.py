@@ -4,14 +4,14 @@ import importlib
 
 import pytest
 
-from cc_extractor.bun_extract import BunFormatError, extract_all, parse_bun_binary
-from cc_extractor.bun_extract.constants import MACHO_MAGIC_64, OFFSETS_SIZE, PE_DOS_MAGIC, TRAILER
-from cc_extractor.bun_extract.parser import MAX_MODULES
-from cc_extractor.__main__ import inspect_binary
-from cc_extractor.extractor import extract_all as extract_binary
+from ccsilo.bun_extract import BunFormatError, extract_all, parse_bun_binary
+from ccsilo.bun_extract.constants import MACHO_MAGIC_64, OFFSETS_SIZE, PE_DOS_MAGIC, TRAILER
+from ccsilo.bun_extract.parser import MAX_MODULES
+from ccsilo.__main__ import inspect_binary
+from ccsilo.extractor import extract_all as extract_binary
 from tests.helpers.bun_fixture import build_bun_fixture
 
-extract_module = importlib.import_module("cc_extractor.bun_extract.extract")
+extract_module = importlib.import_module("ccsilo.bun_extract.extract")
 
 
 SAMPLE_MODULES = [

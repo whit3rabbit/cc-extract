@@ -1,6 +1,6 @@
 """L4 fixtures: build/run/capture one variant per test.
 
-Gated: every test in this directory skips unless CC_EXTRACTOR_TUI_MCP=1.
+Gated: every test in this directory skips unless CCSILO_TUI_MCP=1.
 The Codex TUI MCP is used by the developer harness, but pytest cannot call
 agent-scoped MCP tools directly. These tests use a local PTY capture so they
 can still assert the same terminal behavior when the gate is enabled.
@@ -17,8 +17,8 @@ import pytest
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("CC_EXTRACTOR_TUI_MCP") != "1",
-    reason="CC_EXTRACTOR_TUI_MCP=1 not set",
+    os.environ.get("CCSILO_TUI_MCP") != "1",
+    reason="CCSILO_TUI_MCP=1 not set",
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -36,7 +36,7 @@ def variant_factory(tmp_path):
     def build(name: str, claude_version: str, tweak_ids, provider: str = "ccrouter"):
         workspace = tmp_path / "workspace"
         workspace.mkdir(exist_ok=True)
-        env = {**os.environ, "CC_EXTRACTOR_WORKSPACE": str(workspace)}
+        env = {**os.environ, "CCSILO_WORKSPACE": str(workspace)}
         cmd = [
             ".venv/bin/python", "main.py", "variant", "create",
             "--name", name,
@@ -122,9 +122,9 @@ SNAPSHOT_DIR.mkdir(exist_ok=True)
 
 def assert_snapshot(actual: str, snapshot_name: str) -> None:
     """Compare `actual` to snapshots/<snapshot_name>.txt. Update with
-    CC_EXTRACTOR_UPDATE_SNAPSHOTS=1."""
+    CCSILO_UPDATE_SNAPSHOTS=1."""
     path = SNAPSHOT_DIR / f"{snapshot_name}.txt"
-    if os.environ.get("CC_EXTRACTOR_UPDATE_SNAPSHOTS") == "1":
+    if os.environ.get("CCSILO_UPDATE_SNAPSHOTS") == "1":
         path.write_text(actual)
         return
     if not path.exists():

@@ -1,6 +1,6 @@
 import pytest
 
-from cc_extractor.variant_tweaks import (
+from ccsilo.variant_tweaks import (
     BOOLEAN_ENV_TWEAKS,
     DEFAULT_TWEAK_IDS,
     RTK_SHELL_PREFIX_TEXT,
@@ -124,9 +124,9 @@ def test_curated_tweak_ports_patch_fixture_patterns():
     assert "return null;" in result.js
     assert 'if(false)p("tengu_external_editor_hint_shown"' in result.js
     assert "return C}function next" in result.js
-    assert "cc-extractor:suppress-model-launch-notice" in result.js
+    assert "ccsilo:suppress-model-launch-notice" in result.js
     assert "Claude Code has switched from npm to native installer" not in result.js
-    assert "cc-extractor:suppress-prompt-caching-warning" in result.js
+    assert "ccsilo:suppress-prompt-caching-warning" in result.js
     assert "Prompt caching disabled via" not in result.js
     assert "onOpenRateLimitOptions:()=>{}" in result.js
     assert "isTranscriptMode:true," in result.js
@@ -214,7 +214,7 @@ def test_boolean_env_tweaks_emit_documented_on_off_values():
 
 
 def test_sync_tweak_env_removes_unselected_managed_env():
-    from cc_extractor.variant_tweaks import sync_tweak_env
+    from ccsilo.variant_tweaks import sync_tweak_env
 
     env = {
         "ANTHROPIC_BASE_URL": "https://example.test",

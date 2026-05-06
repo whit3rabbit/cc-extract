@@ -4,12 +4,13 @@ import os
 
 import pytest
 
-from cc_extractor.extractor import extract_all
-from cc_extractor.patch_workflow import apply_dashboard_tweaks_to_native, apply_patch_packages_to_native
-from cc_extractor.workspace import (
+from ccsilo.extractor import extract_all
+from ccsilo.patch_workflow import apply_dashboard_tweaks_to_native, apply_patch_packages_to_native
+from ccsilo.workspace import (
     ARTIFACT_METADATA,
     EXTRACTION_METADATA,
     TUI_SETTINGS,
+    default_workspace_root,
     delete_dashboard_tweak_profile,
     delete_patch_profile,
     import_local_native_binary,
@@ -62,22 +63,54 @@ def write_patch_package(root, patch_id="replace-before", version="0.1.0"):
     return package_dir
 
 
-def test_workspace_root_defaults_to_repo_local_directory(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+def test_workspace_root_defaults_to_platform_user_data_directory(tmp_path, monkeypatch):
+    monkeypatch.delenv("CCSILO_WORKSPACE", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr("ccsilo.workspace.paths.sys.platform", "darwin")
 
-    assert workspace_root() == tmp_path / ".cc-extractor"
+    expected = tmp_path / "home" / "Library" / "Application Support" / "ccsilo"
+    assert workspace_root() == expected
+
+
+def test_workspace_root_env_override_wins(tmp_path, monkeypatch):
+    override = tmp_path / "custom-workspace"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(override))
+
+    assert workspace_root() == override
+
+
+def test_default_workspace_root_platform_paths(tmp_path):
+    home = tmp_path / "home"
+    env = {
+        "HOME": str(home),
+        "XDG_DATA_HOME": str(tmp_path / "xdg-data"),
+        "APPDATA": str(tmp_path / "AppData" / "Roaming"),
+    }
+
+    assert (
+        default_workspace_root(env=env, platform_key="darwin")
+        == home / "Library" / "Application Support" / "ccsilo"
+    )
+    assert (
+        default_workspace_root(env=env, platform_key="linux")
+        == tmp_path / "xdg-data" / "ccsilo"
+    )
+    assert (
+        default_workspace_root(env=env, platform_key="win32")
+        == tmp_path / "AppData" / "Roaming" / "ccsilo"
+    )
 
 
 def test_ensure_workspace_creates_gitignore(tmp_path):
-    from cc_extractor.workspace import ensure_workspace
+    from ccsilo.workspace import ensure_workspace
 
-    root = ensure_workspace(tmp_path / ".cc-extractor")
+    root = ensure_workspace(tmp_path / ".ccsilo")
 
     assert (root / ".gitignore").read_text(encoding="utf-8") == "*\n"
 
 
 def test_tui_settings_roundtrip_uses_workspace_json(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
 
     saved = save_tui_settings({"themeId": "unicorn"}, root=root)
 
@@ -101,7 +134,7 @@ def test_write_json_refuses_symlink_target(tmp_path):
 
 
 def test_tui_settings_roundtrip_includes_setup_list(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     setup_list = {
         "searchText": "openrouter",
         "providerFilter": "openrouter",
@@ -119,7 +152,7 @@ def test_tui_settings_roundtrip_includes_setup_list(tmp_path):
 
 
 def test_tui_settings_preserves_theme_when_saving_setup_list(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     save_tui_settings({"themeId": "unicorn"}, root=root)
 
     saved = save_tui_settings({
@@ -135,7 +168,7 @@ def test_tui_settings_preserves_theme_when_saving_setup_list(tmp_path):
 
 
 def test_tui_settings_invalid_schema_falls_back_to_empty(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     root.mkdir()
     settings_path = root / TUI_SETTINGS
 
@@ -153,7 +186,7 @@ def test_tui_settings_invalid_schema_falls_back_to_empty(tmp_path):
 
 
 def test_store_and_scan_native_download(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     staged = tmp_path / "claude"
     staged.write_bytes(b"native-binary")
     sha256 = hashlib.sha256(b"native-binary").hexdigest()
@@ -173,7 +206,7 @@ def test_store_and_scan_native_download(tmp_path):
 
 
 def test_import_local_native_binary_copies_to_managed_downloads(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     source_dir = tmp_path / "external"
     source_dir.mkdir()
     source = source_dir / "claude-local"
@@ -203,10 +236,10 @@ def test_import_local_native_binary_rejects_invalid_inputs(tmp_path):
     invalid.write_bytes(b"not a bun binary")
 
     with pytest.raises(ValueError, match="concrete Claude Code semver"):
-        import_local_native_binary(invalid, "latest", "linux-x64", root=tmp_path / ".cc-extractor")
+        import_local_native_binary(invalid, "latest", "linux-x64", root=tmp_path / ".ccsilo")
 
     with pytest.raises(ValueError, match="Bun standalone"):
-        import_local_native_binary(invalid, "2.1.123", "linux-x64", root=tmp_path / ".cc-extractor")
+        import_local_native_binary(invalid, "2.1.123", "linux-x64", root=tmp_path / ".ccsilo")
 
 
 def test_import_local_native_binary_rejects_platform_mismatch(tmp_path):
@@ -218,11 +251,11 @@ def test_import_local_native_binary_rejects_platform_mismatch(tmp_path):
     source.write_bytes(fixture["buf"])
 
     with pytest.raises(ValueError, match="not compatible with platform"):
-        import_local_native_binary(source, "2.1.123", "linux-x64", root=tmp_path / ".cc-extractor")
+        import_local_native_binary(source, "2.1.123", "linux-x64", root=tmp_path / ".ccsilo")
 
 
 def test_store_and_scan_npm_download(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     staged = tmp_path / "anthropic-ai-claude-code-1.2.3.tgz"
     staged.write_bytes(b"npm-tarball")
     sha256 = hashlib.sha256(b"npm-tarball").hexdigest()
@@ -237,6 +270,8 @@ def test_store_and_scan_npm_download(tmp_path):
 
 def test_extract_all_uses_central_extraction_for_central_download(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
     fixture = build_bun_fixture(
         platform="macho",
         modules=[{"name": "src/index.js", "content": "console.log('before');"}],
@@ -249,8 +284,7 @@ def test_extract_all_uses_central_extraction_for_central_download(tmp_path, monk
     manifest = extract_all(str(source_path))
 
     bundle_path = (
-        tmp_path
-        / ".cc-extractor"
+        root
         / "extractions"
         / "native"
         / "1.2.3"
@@ -269,6 +303,8 @@ def test_extract_all_uses_central_extraction_for_central_download(tmp_path, monk
 
 def test_patch_workflow_writes_patched_copy_without_mutating_download(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
     fixture = build_bun_fixture(
         platform="macho",
         modules=[{"name": "src/index.js", "content": "console.log('before');"}],
@@ -278,13 +314,13 @@ def test_patch_workflow_writes_patched_copy_without_mutating_download(tmp_path, 
     sha256 = hashlib.sha256(fixture["buf"]).hexdigest()
     source_path = store_native_download(staged, "1.2.3", "darwin-arm64", sha256)
     source_artifact = scan_native_downloads()[0]
-    package = load_patch_package(write_patch_package(tmp_path / ".cc-extractor"))
+    package = load_patch_package(write_patch_package(root))
 
     result = apply_patch_packages_to_native(source_artifact, [package])
 
     assert source_path.read_bytes() == fixture["buf"]
     assert result.output_path.exists()
-    assert ".cc-extractor/patched/native/1.2.3/darwin-arm64" in str(result.output_path)
+    assert ".ccsilo/patched/native/1.2.3/darwin-arm64" in str(result.output_path)
     metadata = json.loads(result.metadata_path.read_text(encoding="utf-8"))
     assert metadata["sourceSha256"] == sha256
     assert metadata["patches"][0]["id"] == "replace-before"
@@ -296,6 +332,8 @@ def test_patch_workflow_writes_patched_copy_without_mutating_download(tmp_path, 
 
 def test_dashboard_tweak_workflow_rewrites_entry_js_and_writes_metadata(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
     fixture = build_bun_fixture(
         platform="macho",
         modules=[{"name": "src/index.js", "content": "const version=`${pkg.VERSION} (Claude Code)`;"}],
@@ -318,11 +356,11 @@ def test_dashboard_tweak_workflow_rewrites_entry_js_and_writes_metadata(tmp_path
     roundtrip_dir = tmp_path / "roundtrip-dashboard"
     extract_all(str(result.output_path), str(roundtrip_dir))
     entry_js = (roundtrip_dir / "src/index.js").read_text(encoding="utf-8")
-    assert "(Claude Code, cc-extractor variant)" in entry_js
+    assert "(Claude Code, ccsilo variant)" in entry_js
 
 
 def test_dashboard_entry_path_rejects_tampered_entrypoint(tmp_path):
-    from cc_extractor.patch_workflow import _entry_path
+    from ccsilo.patch_workflow import _entry_path
 
     extract_dir = tmp_path / "bundle"
     extract_dir.mkdir()
@@ -332,7 +370,7 @@ def test_dashboard_entry_path_rejects_tampered_entrypoint(tmp_path):
 
 
 def test_patch_profile_lifecycle_uses_workspace_json(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
 
     profile = save_patch_profile(
         "Focus Build",
@@ -355,7 +393,7 @@ def test_patch_profile_lifecycle_uses_workspace_json(tmp_path):
 
 
 def test_dashboard_tweak_profile_lifecycle_uses_separate_workspace_json(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
 
     profile = save_dashboard_tweak_profile(
         "Focus Build",
@@ -415,7 +453,7 @@ def test_dashboard_tweak_profile_validation_rejects_bad_schema():
 
 
 def test_patch_profile_rename_refuses_id_collision(tmp_path):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     save_patch_profile("Alpha", [{"id": "replace-before", "version": "0.1.0"}], root=root)
     save_patch_profile("Beta", [{"id": "replace-before", "version": "0.1.0"}], root=root)
 

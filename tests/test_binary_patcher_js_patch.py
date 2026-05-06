@@ -2,10 +2,10 @@ import json
 
 import pytest
 
-from cc_extractor.binary_patcher.js_patch import UnpackedManifestError, patch_unpacked_entry, resolve_entry_path
-from cc_extractor.binary_patcher.bun_compat import BUN_NODE_COMPAT_MARKER
-from cc_extractor.binary_patcher.prompts import OVERLAY_MARKERS
-from cc_extractor.binary_patcher.theme import ThemeAnchorNotFound
+from ccsilo.binary_patcher.js_patch import UnpackedManifestError, patch_unpacked_entry, resolve_entry_path
+from ccsilo.binary_patcher.bun_compat import BUN_NODE_COMPAT_MARKER
+from ccsilo.binary_patcher.prompts import OVERLAY_MARKERS
+from ccsilo.binary_patcher.theme import ThemeAnchorNotFound
 
 
 THEMES = [

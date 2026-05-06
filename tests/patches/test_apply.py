@@ -1,7 +1,7 @@
 import warnings
 import pytest
 
-from cc_extractor.patches import (
+from ccsilo.patches import (
     Patch,
     PatchAnchorMissError,
     PatchBlacklistedError,

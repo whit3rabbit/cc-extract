@@ -5,7 +5,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from cc_extractor.model_proxy import ModelProxyConfig, start_model_proxy
+from ccsilo.model_proxy import ModelProxyConfig, start_model_proxy
 
 
 class _RecordingServer:

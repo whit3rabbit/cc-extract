@@ -1,7 +1,7 @@
 import pytest
 
-from cc_extractor.download_index import load_download_index
-from cc_extractor.patches._versions import resolve_range_to_version
+from ccsilo.download_index import load_download_index
+from ccsilo.patches._versions import resolve_range_to_version
 
 
 pytestmark = pytest.mark.skipif(

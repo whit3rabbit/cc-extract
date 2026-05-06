@@ -4,17 +4,17 @@ import importlib
 
 import pytest
 
-from cc_extractor.binary_patcher.unpack_and_patch import (
+from ccsilo.binary_patcher.unpack_and_patch import (
     RUNTIME_DEPENDENCIES,
     UnpackAndPatchError,
     UnpackAndPatchInputs,
     unpack_and_patch,
 )
-from cc_extractor.binary_patcher.bun_compat import BUN_NODE_COMPAT_MARKER
-from cc_extractor.binary_patcher.prompts import OVERLAY_MARKERS
+from ccsilo.binary_patcher.bun_compat import BUN_NODE_COMPAT_MARKER
+from ccsilo.binary_patcher.prompts import OVERLAY_MARKERS
 from tests.helpers.bun_fixture import build_bun_fixture
 
-unpack_and_patch_module = importlib.import_module("cc_extractor.binary_patcher.unpack_and_patch")
+unpack_and_patch_module = importlib.import_module("ccsilo.binary_patcher.unpack_and_patch")
 
 
 THEMES = [
@@ -81,7 +81,7 @@ def test_unpack_and_patch_extracts_patches_package_json_and_runs_npm(tmp_path, m
     assert OVERLAY_MARKERS["start"] in written
     package_json = json.loads((unpacked_dir / "package.json").read_text(encoding="utf-8"))
     assert package_json["dependencies"] == RUNTIME_DEPENDENCIES
-    assert (unpacked_dir / ".cc-extractor-unpacked").exists()
+    assert (unpacked_dir / ".ccsilo-unpacked").exists()
     assert calls[0][0] == [
         "npm",
         "install",
@@ -166,7 +166,7 @@ def test_unpack_and_patch_refuses_to_delete_non_generated_directory(tmp_path):
     user_file = unpacked_dir / "user-file.txt"
     user_file.write_text("keep me", encoding="utf-8")
 
-    with pytest.raises(UnpackAndPatchError, match="without .cc-extractor-unpacked") as exc:
+    with pytest.raises(UnpackAndPatchError, match="without .ccsilo-unpacked") as exc:
         unpack_and_patch(
             pristine_binary_path=str(tmp_path / "missing"),
             unpacked_dir=str(unpacked_dir),
@@ -181,7 +181,7 @@ def test_unpack_and_patch_refuses_empty_directory_without_sentinel(tmp_path):
     unpacked_dir = tmp_path / "unpacked"
     unpacked_dir.mkdir()
 
-    with pytest.raises(UnpackAndPatchError, match="without .cc-extractor-unpacked"):
+    with pytest.raises(UnpackAndPatchError, match="without .ccsilo-unpacked"):
         unpack_and_patch(
             pristine_binary_path=str(tmp_path / "missing"),
             unpacked_dir=str(unpacked_dir),
@@ -241,15 +241,15 @@ def test_unpack_and_patch_cleans_matching_generated_dir_inside_managed_root(tmp_
     )
 
     assert not stale.exists()
-    assert (unpacked_dir / ".cc-extractor-unpacked").exists()
+    assert (unpacked_dir / ".ccsilo-unpacked").exists()
 
 
 def test_unpack_and_patch_refuses_mismatched_generated_metadata(tmp_path):
     unpacked_dir = tmp_path / "variant" / "unpacked"
     unpacked_dir.mkdir(parents=True)
-    (unpacked_dir / ".cc-extractor-unpacked").write_text(
+    (unpacked_dir / ".ccsilo-unpacked").write_text(
         json.dumps({
-            "tool": "cc-extractor",
+            "tool": "ccsilo",
             "kind": "unpacked-node-runtime",
             "path": str(tmp_path / "other"),
         }),

@@ -1,6 +1,6 @@
 import pytest
 
-from cc_extractor.binary_patcher.prompts import OVERLAY_MARKERS, apply_prompts
+from ccsilo.binary_patcher.prompts import OVERLAY_MARKERS, apply_prompts
 
 
 WEBFETCH_TAIL = "- For GitHub URLs, prefer using the gh CLI via Bash instead (e.g., gh pr view, gh issue view, gh api)."

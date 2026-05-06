@@ -1,7 +1,7 @@
 import pytest
 
-from cc_extractor import download_picker
-from cc_extractor.download_picker import _select_with_prompt
+from ccsilo import download_picker
+from ccsilo.download_picker import _select_with_prompt
 
 
 def test_select_with_prompt_returns_latest_on_blank(monkeypatch):

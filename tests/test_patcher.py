@@ -4,10 +4,10 @@ import struct
 
 import pytest
 
-from cc_extractor.bundler import pack_bundle
-from cc_extractor.extractor import extract_all
-import cc_extractor.patcher as patcher_module
-from cc_extractor.patcher import apply_patch, init_patch, write_source_metadata
+from ccsilo.bundler import pack_bundle
+from ccsilo.extractor import extract_all
+import ccsilo.patcher as patcher_module
+from ccsilo.patcher import apply_patch, init_patch, write_source_metadata
 
 
 def create_mock_macho(bun_offset, bun_size):

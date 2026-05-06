@@ -1,1 +1,1 @@
-"""Developer tools for cc-extractor."""
+"""Developer tools for ccsilo."""

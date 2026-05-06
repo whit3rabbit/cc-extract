@@ -5,19 +5,19 @@ Status: Draft (awaiting user review)
 
 ## Goals
 
-1. Establish a uniform per-file patch module layout under `cc_extractor/patches/<id>.py`, with metadata-driven version compatibility.
-2. Migrate the 11 existing tweaks from `cc_extractor/variants/tweaks.py` into that layout, behind a backwards-compatible shim.
+1. Establish a uniform per-file patch module layout under `ccsilo/patches/<id>.py`, with metadata-driven version compatibility.
+2. Migrate the 11 existing tweaks from `ccsilo/variants/tweaks.py` into that layout, behind a backwards-compatible shim.
 3. Ship a tiered test framework so we can answer "does patch X still work against Claude Code version Y" before porting any of the ~30 remaining tweakcc patches.
 
 ## Non-goals
 
 - Porting more patches beyond the existing 11. Deferred until the framework lands and we validate it against the existing set.
-- Changing the workspace patch-package format (`.cc-extractor/patches/packages/<id>/<version>/patch.json`). That is the binary-operation manifest layer; this work is the regex/JS-rewrite layer.
-- Re-architecting `cc_extractor/variants/`, `cc_extractor/binary_patcher/`, or the TUI.
+- Changing the workspace patch-package format (`.ccsilo/patches/packages/<id>/<version>/patch.json`). That is the binary-operation manifest layer; this work is the regex/JS-rewrite layer.
+- Re-architecting `ccsilo/variants/`, `ccsilo/binary_patcher/`, or the TUI.
 
 ## Background
 
-`vendor/tweakcc/src/patches/` contains ~45 TypeScript patches that rewrite the minified `cli.js` shipped inside Claude Code. Today, 11 of those have Python ports living as functions in `cc_extractor/variants/tweaks.py` (themes, prompt-overlays, show-more-items, model-customizations, hide-startup-banner, hide-startup-clawd, hide-ctrl-g, suppress-line-numbers, auto-accept-plan-mode, allow-custom-agent-models, patches-applied-indication; plus three env-backed tweaks: context-limit, file-read-limit, subagent-model).
+`vendor/tweakcc/src/patches/` contains ~45 TypeScript patches that rewrite the minified `cli.js` shipped inside Claude Code. Today, 11 of those have Python ports living as functions in `ccsilo/variants/tweaks.py` (themes, prompt-overlays, show-more-items, model-customizations, hide-startup-banner, hide-startup-clawd, hide-ctrl-g, suppress-line-numbers, auto-accept-plan-mode, allow-custom-agent-models, patches-applied-indication; plus three env-backed tweaks: context-limit, file-read-limit, subagent-model).
 
 The current setup has three problems:
 
@@ -32,7 +32,7 @@ Decision: build the framework first, validate it against the existing 11, then p
 ### Module layout
 
 ```
-cc_extractor/
+ccsilo/
   patches/
     __init__.py            # Patch dataclass, PatchContext, PatchOutcome, exceptions, apply_patches
     _registry.py           # explicit list of (id -> Patch) imports + lookups
@@ -69,9 +69,9 @@ tests/
     test_themes.py
     test_hide_startup_banner.py
     ...
-  patches_smoke/           # NEW: L3 - gated by CC_EXTRACTOR_REAL_BINARY=1
+  patches_smoke/           # NEW: L3 - gated by CCSILO_REAL_BINARY=1
     test_variant_smoke.py
-  patches_behavioral/      # NEW: L4 - gated by CC_EXTRACTOR_TUI_MCP=1
+  patches_behavioral/      # NEW: L4 - gated by CCSILO_TUI_MCP=1
     conftest.py            # variant_factory fixture, one variant per test
     test_<patch_id>.py     # Python tests for flow-driven patches
     snapshots/<patch_id>.txt
@@ -82,18 +82,18 @@ tests/
 - `patches/__init__.py` exports `Patch`, `PatchContext`, `PatchOutcome`, `AggregateResult`, `PatchAnchorMissError`, `PatchUnsupportedVersionError`, `PatchBlacklistedError`, `apply_patches(js, ids, ctx) -> AggregateResult`. No dependency on `variants/` or `binary_patcher/`.
 - `patches/_registry.py` is the single source of truth for `id -> Patch`. Explicit imports (`from . import themes; REGISTRY = {themes.PATCH.id: themes.PATCH, ...}`). No auto-discovery: ordering and gating stay readable in one place.
 - `patches/_helpers.py` is shared regex utilities (port of `vendor/tweakcc/src/patches/helpers.ts`). No dependency on individual patch modules.
-- `variants/tweaks.py` becomes a thin compatibility shim. Existing `monkeypatch.setattr("cc_extractor.variants.tweaks.X", ...)` patterns keep working.
+- `variants/tweaks.py` becomes a thin compatibility shim. Existing `monkeypatch.setattr("ccsilo.variants.tweaks.X", ...)` patterns keep working.
 
 ### Why this shape
 
 - Mirrors `vendor/tweakcc/src/patches/` 1:1, so future ports are mechanical: open `<name>.ts`, write `<name>.py`.
 - Each patch has one home for its code and its test (`tests/patches/test_<id>.py`).
 - Test tiers live in their own directories, gated by env vars (matches existing `tests/test_integration_real_binary.py` pattern).
-- The shim keeps the public surface stable: nothing outside `cc_extractor/patches/` and `cc_extractor/variants/tweaks.py` needs to change in this work.
+- The shim keeps the public surface stable: nothing outside `ccsilo/patches/` and `ccsilo/variants/tweaks.py` needs to change in this work.
 
 ## Data types
 
-Defined in `cc_extractor/patches/__init__.py`.
+Defined in `ccsilo/patches/__init__.py`.
 
 ```python
 @dataclass(frozen=True)
@@ -114,7 +114,7 @@ class Patch:
 @dataclass(frozen=True)
 class PatchContext:
     claude_version: Optional[str]         # None when caller cannot supply it
-    provider_label: str = "cc-extractor"
+    provider_label: str = "ccsilo"
     config: Mapping[str, Any] = field(default_factory=dict)
     overlays: Mapping[str, str] = field(default_factory=dict)
     force: bool = False                   # bypass blacklist + unsupported-version refusal
@@ -171,9 +171,9 @@ Vendored, ~40 lines, no runtime dependency. Rationale: the project keeps its run
 
 ### `claude_version` plumbing
 
-The new `apply_patches` lives in `cc_extractor/patches/__init__.py`. It is distinct from the existing `cc_extractor.binary_patcher.index.apply_patches` (which is the workspace-patch-package apply layer and is unaffected by this work).
+The new `apply_patches` lives in `ccsilo/patches/__init__.py`. It is distinct from the existing `ccsilo.binary_patcher.index.apply_patches` (which is the workspace-patch-package apply layer and is unaffected by this work).
 
-- `apply_variant_tweaks(...)` (the existing public surface in `variants/tweaks.py`) gains an optional `claude_version` parameter and forwards it into `PatchContext` when delegating to `cc_extractor.patches.apply_patches`.
+- `apply_variant_tweaks(...)` (the existing public surface in `variants/tweaks.py`) gains an optional `claude_version` parameter and forwards it into `PatchContext` when delegating to `ccsilo.patches.apply_patches`.
 - Callers in `variant_actions.py` and `patch_workflow.py` pass it through when known.
 - Existing callers that do not pass it get `None` and preserve current behavior (no version checks run, no warnings).
 - New CLI handlers populate `claude_version` from the binary metadata when available.
@@ -214,17 +214,17 @@ def test_themes_synthetic_minimal(cli_js_synthetic):
 
 **Fixtures:**
 
-- `cli_js_real(version)`: extracts the entry JS from a Claude Code binary in `downloads/`. `version` is concrete (resolved from a range upstream). If absent, downloads it via `cc_extractor.downloader` and caches. First run on a fresh checkout pulls each resolved binary (~30s each); subsequent runs are seconds. Cache location is the existing `downloads/` directory; gitignored.
+- `cli_js_real(version)`: extracts the entry JS from a Claude Code binary in `downloads/`. `version` is concrete (resolved from a range upstream). If absent, downloads it via `ccsilo.downloader` and caches. First run on a fresh checkout pulls each resolved binary (~30s each); subsequent runs are seconds. Cache location is the existing `downloads/` directory; gitignored.
 - `parse_js(js)`: shells out to `node --check -`. Asserts exit code 0. Skip-with-message (not fail) if Node is not on PATH so L1 stays runnable on minimal envs while still catching parse errors when Node is available. CI has Node.
 - `cli_js_synthetic(patch_id)`: returns a small handcrafted snippet from `fixtures/synthetic.py`. One snippet per patch, kept minimal. Goal: "anchor regex still matches the shape" for fast iteration during a port.
 
-**Range resolver** (in `cc_extractor/patches/_versions.py`, used by tests and CLI alike):
+**Range resolver** (in `ccsilo/patches/_versions.py`, used by tests and CLI alike):
 ```python
 def resolve_range_to_version(range_expr: str, *, index: Mapping[str, Any]) -> Optional[str]:
     """Return the highest concrete version in `index` that satisfies `range_expr`,
     or None if nothing satisfies. `index` is the parsed download-index JSON."""
 ```
-The download index is `cc_extractor/data/download-index.seed.json` plus the live cache; same source the existing `download_index.py` uses. The resolver gives the matrix two important properties: (a) **self-updating** — when a new Claude Code release ships and lands in the index, the matrix automatically picks it up without spec edits; (b) **stable across machines** — given the same index, every machine resolves the same concrete version, so test results are reproducible.
+The download index is `ccsilo/data/download-index.seed.json` plus the live cache; same source the existing `download_index.py` uses. The resolver gives the matrix two important properties: (a) **self-updating** — when a new Claude Code release ships and lands in the index, the matrix automatically picks it up without spec edits; (b) **stable across machines** — given the same index, every machine resolves the same concrete version, so test results are reproducible.
 
 `resolve_tested_versions(patch)` is a thin pytest helper that calls `resolve_range_to_version` for each entry in `patch.versions_tested` and returns the concrete versions, deduplicated. If a range resolves to `None` (no version available), the test is parametrized to skip that bucket with a clear message.
 
@@ -250,15 +250,15 @@ Patches with narrower compatibility (e.g., a tweak that only works on 2.1.x) ove
 
 ### L3 (gated, real binary smoke)
 
-`tests/patches_smoke/test_variant_smoke.py`. Skipped unless `CC_EXTRACTOR_REAL_BINARY=1`. Builds a variant with the default tweak set against each pinned version, launches the binary with a probe argument (`--version` or `--help`, whichever short-circuits Bun init), asserts exit code 0 and a known string in stdout. Mirrors the existing `tests/test_integration_real_binary.py` pattern.
+`tests/patches_smoke/test_variant_smoke.py`. Skipped unless `CCSILO_REAL_BINARY=1`. Builds a variant with the default tweak set against each pinned version, launches the binary with a probe argument (`--version` or `--help`, whichever short-circuits Bun init), asserts exit code 0 and a known string in stdout. Mirrors the existing `tests/test_integration_real_binary.py` pattern.
 
 ### L4 (gated, TUI MCP behavioral)
 
-`tests/patches_behavioral/`. Skipped unless `CC_EXTRACTOR_TUI_MCP=1`. **One variant per test** (clean isolation, ~10s setup each). The conftest fixture builds, runs, and tears down a fresh variant per test function.
+`tests/patches_behavioral/`. Skipped unless `CCSILO_TUI_MCP=1`. **One variant per test** (clean isolation, ~10s setup each). The conftest fixture builds, runs, and tears down a fresh variant per test function.
 
 Two test styles:
 
-1. **Snapshot tests** for visibility-toggle patches. Launch variant, send a fixed key sequence, capture rendered screen, diff against `snapshots/<patch_id>.txt`. Update workflow: re-run with `CC_EXTRACTOR_UPDATE_SNAPSHOTS=1` to regenerate. Use case: hide-startup-banner, hide-startup-clawd, patches-applied-indication, suppress-line-numbers.
+1. **Snapshot tests** for visibility-toggle patches. Launch variant, send a fixed key sequence, capture rendered screen, diff against `snapshots/<patch_id>.txt`. Update workflow: re-run with `CCSILO_UPDATE_SNAPSHOTS=1` to regenerate. Use case: hide-startup-banner, hide-startup-clawd, patches-applied-indication, suppress-line-numbers.
 2. **Flow tests** for patches with branching/conditional checks. Python test that drives the variant through a multi-step interaction with assertions between steps. Use case: auto-accept-plan-mode, model-customizations.
 
 Skip-by-default when TUI MCP is not reachable. Pytest collects the tests and prints `SKIPPED [reason: TUI MCP not available]` so the suite stays informational on machines without the MCP wired up.
@@ -267,8 +267,8 @@ Skip-by-default when TUI MCP is not reachable. Pytest collects the tests and pri
 
 - `pytest -q` runs L1 + L2 only. Fast, no network unless fixtures need to download.
 - `pytest -q tests/patches/test_themes.py` runs one patch's tests.
-- `CC_EXTRACTOR_REAL_BINARY=1 pytest -q tests/patches_smoke` runs L3.
-- `CC_EXTRACTOR_TUI_MCP=1 pytest -q tests/patches_behavioral` runs L4.
+- `CCSILO_REAL_BINARY=1 pytest -q tests/patches_smoke` runs L3.
+- `CCSILO_TUI_MCP=1 pytest -q tests/patches_behavioral` runs L4.
 - `tests/run_all.sh` runs the full ladder for someone who wants the works.
 
 ## Errors and observability
@@ -295,7 +295,7 @@ The shim in `variants/tweaks.py` catches the new errors and re-raises as `TweakP
 
 Each step is independently reviewable and leaves the test suite green.
 
-1. **Scaffold the framework.** Add `cc_extractor/patches/__init__.py` types, `_registry.py` (initially empty), `_helpers.py`, `_versions.py`. Add `tests/patches/test_registry.py` with a placeholder that passes against an empty registry. No behavior change.
+1. **Scaffold the framework.** Add `ccsilo/patches/__init__.py` types, `_registry.py` (initially empty), `_helpers.py`, `_versions.py`. Add `tests/patches/test_registry.py` with a placeholder that passes against an empty registry. No behavior change.
 
 2. **Migrate one patch as a worked example.** `hide_startup_banner.py`: move the function out of `variants/tweaks.py`, wrap in `Patch`, register it. Update the shim in `tweaks.py` to delegate this id to the registry while keeping the rest in place. Add `tests/patches/test_hide_startup_banner.py` (L1 + L2). Run the full existing test suite; should pass unchanged.
 
@@ -303,9 +303,9 @@ Each step is independently reviewable and leaves the test suite green.
 
 4. **Migrate themes and prompt-overlays.** These are special: they wrap `binary_patcher/theme.py` and `binary_patcher/prompts.py`. The patch module is a thin adapter. Existing tests for `binary_patcher/theme.py` etc. stay where they are; the new `tests/patches/test_themes.py` and `test_prompt_overlays.py` cover the adapter.
 
-5. **Add L3 smoke harness.** One parametrized test that builds a default-tweak variant against each version resolved from `DEFAULT_VERSION_RANGES`, runs the binary with a probe arg, asserts clean exit. Gated by `CC_EXTRACTOR_REAL_BINARY=1`.
+5. **Add L3 smoke harness.** One parametrized test that builds a default-tweak variant against each version resolved from `DEFAULT_VERSION_RANGES`, runs the binary with a probe arg, asserts clean exit. Gated by `CCSILO_REAL_BINARY=1`.
 
-6. **Add L4 harness skeleton + one snapshot test.** `hide_startup_banner` is the simplest case (banner appears or does not). Gated by `CC_EXTRACTOR_TUI_MCP=1`. Subsequent L4 coverage is incremental and not blocking framework completion.
+6. **Add L4 harness skeleton + one snapshot test.** `hide_startup_banner` is the simplest case (banner appears or does not). Gated by `CCSILO_TUI_MCP=1`. Subsequent L4 coverage is incremental and not blocking framework completion.
 
 7. **Document.** A short `docs/patches.md`: how to add a patch, the metadata fields, how to run each test tier, how to update snapshots.
 

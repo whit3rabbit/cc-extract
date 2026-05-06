@@ -1,8 +1,8 @@
 import pytest
 
-from cc_extractor.binary_patcher.index import PatchInputs, apply_patches as apply_binary_patches
-from cc_extractor.bun_extract import parse_bun_binary
-from cc_extractor.binary_patcher.theme import ThemeAnchorNotFound, apply_theme
+from ccsilo.binary_patcher.index import PatchInputs, apply_patches as apply_binary_patches
+from ccsilo.bun_extract import parse_bun_binary
+from ccsilo.binary_patcher.theme import ThemeAnchorNotFound, apply_theme
 from tests.helpers.bun_fixture import build_bun_fixture
 
 

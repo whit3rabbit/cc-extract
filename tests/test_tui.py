@@ -3,8 +3,8 @@ import threading
 import time
 from pathlib import Path
 
-from cc_extractor import tui
-from cc_extractor.workspace import (
+from ccsilo import tui
+from ccsilo.workspace import (
     DashboardTweakProfile,
     NativeArtifact,
     PatchPackage,
@@ -123,7 +123,7 @@ def test_screen_text_contains_dashboard_first_tab():
 
     assert "Workspace:" in screen
     assert "Dashboard: Source | Manage Setup [Dashboard] Inspect Extract Patch" in screen
-    assert "cc-extractor |" not in screen
+    assert "ccsilo |" not in screen
     assert "Dashboard Source | Step 1/4" in screen
     assert "Latest native binary" in screen
     assert "Native 2.1.121" in screen
@@ -141,8 +141,8 @@ def test_default_theme_is_hacker_bbs():
 
 
 def test_cycle_theme_saves_workspace_setting(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
     state = tui.TuiState()
 
     seen = []
@@ -156,25 +156,25 @@ def test_cycle_theme_saves_workspace_setting(tmp_path, monkeypatch):
 
 
 def test_load_saved_theme_id_uses_workspace_setting(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     save_tui_settings({"themeId": "high-contrast"}, root=root)
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
 
     assert tui._load_saved_theme_id() == "high-contrast"
     assert tui._theme_name("high-contrast") == "High Contrast"
 
 
 def test_load_saved_theme_id_falls_back_for_unknown_theme(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     save_tui_settings({"themeId": "unknown-theme"}, root=root)
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
 
     assert tui._load_saved_theme_id() == "hacker-bbs"
 
 
 def test_dashboard_theme_key_does_not_probe_variant_helpers(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
 
     def fail_variant_text_check(state):
         raise AssertionError("dashboard key handling should not check variant name text")
@@ -187,8 +187,8 @@ def test_dashboard_theme_key_does_not_probe_variant_helpers(tmp_path, monkeypatc
 
 
 def test_variant_name_text_accepts_lowercase_t(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
     state = tui.TuiState(mode="variants", variant_step=1, selected_index=0)
 
     assert tui._handle_char_key(state, "t") is True
@@ -495,7 +495,7 @@ def test_render_frame_places_tabs_in_body_title():
 
     assert "No Claude Code setups found: Name | [Manage Setup] Dashboard Inspect Extract Patch" in lines[0]
     assert context_text in lines[1]
-    assert all("cc-extractor |" not in line for line in lines[:4])
+    assert all("ccsilo |" not in line for line in lines[:4])
 
 
 def test_render_frame_uses_stable_chrome_for_dashboard_and_inspect():
@@ -543,10 +543,10 @@ def test_dashboard_selects_specific_version_without_downloading():
 
 
 def test_version_list_loads_once_until_manual_refresh(monkeypatch, tmp_path):
-    root = tmp_path / ".cc-extractor"
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
-    from cc_extractor.tui import dashboard as dashboard_module
-    from cc_extractor.tui import state as state_module
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
+    from ccsilo.tui import dashboard as dashboard_module
+    from ccsilo.tui import state as state_module
 
     monkeypatch.setattr(state_module, "scan_native_downloads", lambda: [])
     monkeypatch.setattr(state_module, "scan_npm_downloads", lambda: [])
@@ -661,7 +661,7 @@ def test_dashboard_run_rejects_legacy_patch_profile_id():
 
 def test_dashboard_creates_profile_from_selected_patches(tmp_path, monkeypatch):
     first = tui.DASHBOARD_TWEAK_IDS[0]
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(tmp_path / ".cc-extractor"))
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(tmp_path / ".ccsilo"))
     state = tui.TuiState(
         mode="dashboard",
         dashboard_step=2,
@@ -671,15 +671,15 @@ def test_dashboard_creates_profile_from_selected_patches(tmp_path, monkeypatch):
 
     tui._create_dashboard_profile(state)
 
-    profile = load_dashboard_tweak_profile("focus-build", root=tmp_path / ".cc-extractor")
+    profile = load_dashboard_tweak_profile("focus-build", root=tmp_path / ".ccsilo")
     assert profile.name == "Focus Build"
     assert profile.tweak_ids == [first]
     assert state.dashboard_loaded_profile_id == "focus-build"
 
 
 def test_dashboard_delete_profile_requires_confirmation(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
     state = tui.TuiState(
         mode="dashboard",
         dashboard_step=2,
@@ -785,8 +785,8 @@ def test_move_tab_clears_stale_status():
 
 
 def test_inspect_delete_native_artifact_requires_yes(monkeypatch, tmp_path):
-    root = tmp_path / ".cc-extractor"
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
     staged = tmp_path / "claude"
     staged.write_bytes(b"fake-binary")
     sha = "b" * 64
@@ -975,7 +975,7 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     release_create = threading.Event()
 
     class Result:
-        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "mirror"
+        wrapper_path = tmp_path / ".ccsilo" / "bin" / "mirror"
 
     def fake_create_variant(**kwargs):
         calls.append(kwargs)
@@ -1063,7 +1063,7 @@ def test_variants_wizard_selects_specific_claude_code_version_for_create(monkeyp
     calls = []
 
     class Result:
-        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "mirror"
+        wrapper_path = tmp_path / ".ccsilo" / "bin" / "mirror"
 
     def fake_create_variant(**kwargs):
         calls.append(kwargs)
@@ -1184,7 +1184,7 @@ def test_variants_create_preview_redacts_stored_key_and_create_kwargs(monkeypatc
     calls = []
 
     class Result:
-        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "cclmstudio"
+        wrapper_path = tmp_path / ".ccsilo" / "bin" / "cclmstudio"
 
     def fake_create_variant(**kwargs):
         calls.append(kwargs)
@@ -1263,27 +1263,27 @@ def test_run_variant_create_installs_selected_command(monkeypatch, tmp_path):
     class FakeVariant:
         variant_id = "mirror"
         name = "mirror"
-        path = tmp_path / ".cc-extractor" / "variants" / "mirror"
+        path = tmp_path / ".ccsilo" / "variants" / "mirror"
         manifest = {
             "schemaVersion": 1,
             "id": "mirror",
             "name": "mirror",
             "provider": {"key": "mirror"},
             "source": {"version": "latest"},
-            "paths": {"wrapper": str(tmp_path / ".cc-extractor" / "bin" / "mirror")},
+            "paths": {"wrapper": str(tmp_path / ".ccsilo" / "bin" / "mirror")},
             "createdAt": "2026-01-01T00:00:00Z",
             "updatedAt": "2026-01-01T00:00:00Z",
         }
 
     class Result:
         variant = FakeVariant()
-        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "mirror"
+        wrapper_path = tmp_path / ".ccsilo" / "bin" / "mirror"
         stages = []
 
     class InstallResult:
         alias = "mirror"
         path = tmp_path / "home" / ".local" / "bin" / "mirror"
-        target = tmp_path / ".cc-extractor" / "bin" / "mirror"
+        target = tmp_path / ".ccsilo" / "bin" / "mirror"
         status = "installed"
         on_path = True
         warning = ""
@@ -1547,8 +1547,8 @@ def test_variants_wizard_provider_mcp_copy_clarifies_auto_enabled():
 
 
 def test_create_failure_summary_reports_verified_path_state(monkeypatch, tmp_path):
-    root = tmp_path / ".cc-extractor"
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
 
     def fake_create_variant(**_kwargs):
         setup_dir = root / "variants" / "mirror"
@@ -1685,7 +1685,7 @@ def test_run_variant_create_passes_ccrouter_options(monkeypatch, tmp_path):
     calls = []
 
     class Result:
-        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "ccrouter"
+        wrapper_path = tmp_path / ".ccsilo" / "bin" / "ccrouter"
 
         class variant:
             variant_id = "ccrouter"
@@ -1734,7 +1734,7 @@ def test_run_variant_create_passes_model_proxy_options(monkeypatch, tmp_path):
     calls = []
 
     class Result:
-        wrapper_path = tmp_path / ".cc-extractor" / "bin" / "ccr-oauth"
+        wrapper_path = tmp_path / ".ccsilo" / "bin" / "ccr-oauth"
 
         class variant:
             variant_id = "ccr-oauth"
@@ -1895,7 +1895,7 @@ def test_models_editor_refresh_applies_selected_model(monkeypatch):
 # -- Tweaks tab tests ----------------------------------------------------------
 
 def _variant(variant_id="my-variant", name="My Variant", tweaks=None, version="2.1.123"):
-    from cc_extractor.variants.model import Variant
+    from ccsilo.variants.model import Variant
     tweaks = list(tweaks or [])
     return Variant(
         variant_id=variant_id,
@@ -1951,8 +1951,8 @@ def test_setup_manager_lists_rows_and_opens_detail():
 
 
 def test_setup_detail_run_action_queues_command(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
     wrapper = root / "bin" / "deepseek-main"
     wrapper.parent.mkdir(parents=True)
     wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -2040,8 +2040,8 @@ def test_setup_detail_explains_model_proxy_account_requirement():
 
 
 def test_setup_manager_run_shortcut_requires_row_then_queues(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
     wrapper = root / "bin" / "deepseek-main"
     wrapper.parent.mkdir(parents=True)
     wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -2136,8 +2136,8 @@ def test_setup_manager_search_filters_rows_and_keeps_create_action():
 
 
 def test_setup_manager_search_input_does_not_trigger_global_hotkeys(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
     state = tui.TuiState(mode="setup-manager", variants=[_variant("deepseek-main")])
 
     assert tui._handle_char_key(state, "/") is True
@@ -2164,8 +2164,8 @@ def test_ctrl_c_requests_quit():
 
 
 def test_setup_manager_loads_and_saves_setup_list_preferences(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
     save_tui_settings({
         "themeId": "dark",
         "setupList": {
@@ -2201,9 +2201,9 @@ def test_setup_manager_loads_and_saves_setup_list_preferences(tmp_path, monkeypa
 
 
 def test_setup_manager_provider_filter_cycles_and_refresh_resets(monkeypatch, tmp_path):
-    root = tmp_path / ".cc-extractor"
-    monkeypatch.setenv("CC_EXTRACTOR_WORKSPACE", str(root))
-    from cc_extractor.tui import state as state_module
+    root = tmp_path / ".ccsilo"
+    monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
+    from ccsilo.tui import state as state_module
 
     deepseek = _variant("deepseek-main")
     deepseek.manifest["provider"]["key"] = "deepseek"
@@ -2392,7 +2392,7 @@ def test_upgrade_preview_y_enters_busy_then_finishes(monkeypatch, tmp_path):
 
 
 def test_upgrade_failure_summary_reports_verified_state(monkeypatch, tmp_path):
-    from cc_extractor.variants.model import VariantBuildError, VariantBuildStage
+    from ccsilo.variants.model import VariantBuildError, VariantBuildStage
 
     variant = _variant("deepseek-main", version="2.1.122")
     variant.path = tmp_path / "deepseek-main"
@@ -2462,7 +2462,7 @@ def test_delete_requires_typed_setup_id(monkeypatch, tmp_path):
     variant.manifest["paths"]["wrapper"] = str(wrapper)
     variant.manifest["installs"] = [
         {
-            "managedBy": "cc-extractor",
+            "managedBy": "ccsilo",
             "alias": "deepseek-main",
             "path": str(installed),
             "target": str(wrapper),
@@ -2788,10 +2788,10 @@ def test_tweaks_apply_calls_apply_variant(monkeypatch, tmp_path):
         state_arg.variants = [variant]
         return True
 
-    monkeypatch.setattr("cc_extractor.variants.apply_variant", fake_apply_variant)
-    monkeypatch.setattr("cc_extractor.variants.load_variant", fake_load_variant)
-    monkeypatch.setattr("cc_extractor.variants.model.validate_variant_manifest", fake_validate)
-    monkeypatch.setattr("cc_extractor.workspace.write_json", fake_write_json)
+    monkeypatch.setattr("ccsilo.variants.apply_variant", fake_apply_variant)
+    monkeypatch.setattr("ccsilo.variants.load_variant", fake_load_variant)
+    monkeypatch.setattr("ccsilo.variants.model.validate_variant_manifest", fake_validate)
+    monkeypatch.setattr("ccsilo.workspace.write_json", fake_write_json)
     monkeypatch.setattr(tui, "_refresh_state", fake_refresh)
 
     tui._apply_tweaks(state)

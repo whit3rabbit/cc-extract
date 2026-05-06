@@ -1,6 +1,6 @@
 import struct
 
-from cc_extractor.bun_extract.constants import OFFSETS_SIZE, TRAILER
+from ccsilo.bun_extract.constants import OFFSETS_SIZE, TRAILER
 
 
 def build_bun_fixture(

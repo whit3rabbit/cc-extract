@@ -1,20 +1,20 @@
 # Patches
 
 Patches rewrite Claude Code's bundled JS to add custom behavior. Each
-patch lives in `cc_extractor/patches/<id>.py` and is registered in
-`cc_extractor/patches/_registry.py`.
+patch lives in `ccsilo/patches/<id>.py` and is registered in
+`ccsilo/patches/_registry.py`.
 
 ## Authoring a new patch
 
 1. Find the upstream tweakcc patch in `vendor/tweakcc/src/patches/<name>.ts`.
-2. Create `cc_extractor/patches/<id>.py` with a `_apply(js, ctx)` function
+2. Create `ccsilo/patches/<id>.py` with a `_apply(js, ctx)` function
    and a `PATCH = Patch(...)` constant. Mirror the regex shape from the
    tweakcc TS file. Use `[$\w]+` not `\w+` for identifiers.
 3. Add a synthetic snippet for `<id>` to `tests/patches/fixtures/synthetic.py`.
 4. Add `tests/patches/test_<id>.py` covering synthetic + real fixtures.
-5. Register in `cc_extractor/patches/_registry.py`.
+5. Register in `ccsilo/patches/_registry.py`.
 6. If users should be able to select it, add the ID to `CURATED_TWEAK_IDS` in
-   `cc_extractor/variants/tweaks.py`.
+   `ccsilo/variants/tweaks.py`.
 7. If it is safe for Dashboard one-click use, leave it out of
    `DASHBOARD_EXCLUDED_TWEAK_IDS`; otherwise add it there.
 8. Run `pytest -q tests/patches/test_<id>.py` until green.
@@ -111,7 +111,7 @@ failure.
 
 For committed smoke reports, prefer `tools/run_patch_smoke_docker.sh`. It builds
 `docker/patch-smoke/Dockerfile`, mounts the repository at `/work`, keeps Linux
-downloads in `.cc-extractor/docker-linux`, writes reports back to
+downloads in `.ccsilo/docker-linux`, writes reports back to
 `reports/patch-compat`, and defaults to `DOCKER_PLATFORM=linux/amd64` for stable
 runtime results. Set `DOCKER_PLATFORM=linux/arm64` only when intentionally
 checking that platform.
@@ -127,21 +127,21 @@ is manual-only because it downloads and executes upstream native binaries.
 - **L1 (anchor):** regex matches expected pattern. Run via `pytest tests/patches/`.
 - **L2 (parse):** patched JS parses cleanly under `node --check`. Same command; skipped if Node missing.
 - **L3 (boot smoke):** built variant binary boots and exits cleanly.
-  Run with `CC_EXTRACTOR_REAL_BINARY=1 pytest tests/patches_smoke/`.
+  Run with `CCSILO_REAL_BINARY=1 pytest tests/patches_smoke/`.
 - **L4 (behavioral):** TUI MCP drives the variant, screen state captured
   and diffed against snapshots.
-  Run with `CC_EXTRACTOR_TUI_MCP=1 pytest tests/patches_behavioral/`.
+  Run with `CCSILO_TUI_MCP=1 pytest tests/patches_behavioral/`.
 
 ## Updating L4 snapshots
 
 ```bash
-CC_EXTRACTOR_TUI_MCP=1 CC_EXTRACTOR_UPDATE_SNAPSHOTS=1 \
+CCSILO_TUI_MCP=1 CCSILO_UPDATE_SNAPSHOTS=1 \
   pytest tests/patches_behavioral/test_<id>_snapshot.py
 ```
 
 ## Running everything
 
 ```bash
-CC_EXTRACTOR_REAL_BINARY=1 CC_EXTRACTOR_TUI_MCP=1 \
+CCSILO_REAL_BINARY=1 CCSILO_TUI_MCP=1 \
   .venv/bin/python -m pytest -q
 ```

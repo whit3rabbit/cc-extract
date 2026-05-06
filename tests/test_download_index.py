@@ -1,8 +1,8 @@
-from cc_extractor import download_index
+from ccsilo import download_index
 
 
 def test_load_download_index_uses_seed_when_cache_missing(tmp_path):
-    index = download_index.load_download_index(tmp_path / ".cc-extractor")
+    index = download_index.load_download_index(tmp_path / ".ccsilo")
 
     assert index["schemaVersion"] == 1
     assert index["source"] == "seed"
@@ -10,7 +10,7 @@ def test_load_download_index_uses_seed_when_cache_missing(tmp_path):
 
 
 def test_refresh_download_index_writes_workspace_cache(tmp_path, monkeypatch):
-    root = tmp_path / ".cc-extractor"
+    root = tmp_path / ".ccsilo"
     monkeypatch.setattr(download_index, "get_platform_key", lambda: "darwin-arm64")
     monkeypatch.setattr(download_index, "list_available_binary_versions", lambda: ["2.1.4", "2.1.3"])
     monkeypatch.setattr(download_index, "fetch_latest_binary_version", lambda: "2.1.4")

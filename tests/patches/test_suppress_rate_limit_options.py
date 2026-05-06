@@ -1,7 +1,7 @@
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.suppress_rate_limit_options import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.suppress_rate_limit_options import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 

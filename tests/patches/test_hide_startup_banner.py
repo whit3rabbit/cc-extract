@@ -1,7 +1,7 @@
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.hide_startup_banner import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.hide_startup_banner import PATCH
 
 
 def test_synthetic_applies(cli_js_synthetic):

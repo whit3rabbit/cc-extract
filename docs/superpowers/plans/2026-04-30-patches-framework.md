@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a tested, version-aware patch framework under `cc_extractor/patches/`, migrate the 11 existing tweaks from `cc_extractor/variants/tweaks.py` into per-file modules behind a backwards-compatible shim, and ship a tiered test harness (L1 anchor / L2 JS-parses / L3 boot smoke / L4 TUI MCP behavioral).
+**Goal:** Build a tested, version-aware patch framework under `ccsilo/patches/`, migrate the 11 existing tweaks from `ccsilo/variants/tweaks.py` into per-file modules behind a backwards-compatible shim, and ship a tiered test harness (L1 anchor / L2 JS-parses / L3 boot smoke / L4 TUI MCP behavioral).
 
-**Architecture:** Each patch becomes a per-file module exposing a `Patch` dataclass with version metadata. The new `cc_extractor.patches.apply_patches` runs pre-flight version checks, calls `patch.apply`, and aggregates results. `variants/tweaks.py` shrinks to a ~50-line shim so existing callers and tests stay green. Tests are tiered: L1+L2 run under default `pytest`, L3+L4 are gated by env vars.
+**Architecture:** Each patch becomes a per-file module exposing a `Patch` dataclass with version metadata. The new `ccsilo.patches.apply_patches` runs pre-flight version checks, calls `patch.apply`, and aggregates results. `variants/tweaks.py` shrinks to a ~50-line shim so existing callers and tests stay green. Tests are tiered: L1+L2 run under default `pytest`, L3+L4 are gated by env vars.
 
 **Tech Stack:** Python 3.8+, pytest, stdlib `re`/`urllib`, optional Node (for L2 `node --check`), TUI MCP (for L4).
 
@@ -14,7 +14,7 @@
 
 ## File Structure
 
-**New under `cc_extractor/patches/`:**
+**New under `ccsilo/patches/`:**
 - `__init__.py` — `Patch`, `PatchContext`, `PatchOutcome`, `AggregateResult`, exceptions, `apply_patches`
 - `_registry.py` — explicit `REGISTRY: dict[str, Patch]`, `get_patch(id)`, `registered_ids()`
 - `_versions.py` — SemVer range parser, `version_in_range`, `resolve_range_to_version`
@@ -32,8 +32,8 @@
 - `prompt_overlays.py`
 
 **Modified:**
-- `cc_extractor/variants/tweaks.py` — shim delegating to `cc_extractor.patches.apply_patches`
-- `cc_extractor/patches/__init__.py` — already has `PatchResult`/helpers; new symbols added alongside
+- `ccsilo/variants/tweaks.py` — shim delegating to `ccsilo.patches.apply_patches`
+- `ccsilo/patches/__init__.py` — already has `PatchResult`/helpers; new symbols added alongside
 
 **New under `tests/patches/`:**
 - `conftest.py` — `cli_js_real`, `cli_js_synthetic`, `parse_js`, `resolve_tested_versions`
@@ -54,7 +54,7 @@
 ## Task 1: SemVer parser core (parse + compare)
 
 **Files:**
-- Create: `cc_extractor/patches/_versions.py`
+- Create: `ccsilo/patches/_versions.py`
 - Create: `tests/patches/test_versions.py`
 - Test: `tests/patches/test_versions.py`
 
@@ -64,7 +64,7 @@
 # tests/patches/test_versions.py
 import pytest
 
-from cc_extractor.patches._versions import (
+from ccsilo.patches._versions import (
     SemverRangeError,
     parse_version,
     version_in_range,
@@ -125,11 +125,11 @@ def test_version_in_range_rejects_bad_version_in_range():
 - [ ] **Step 2: Run tests to verify they fail (module missing)**
 
 Run: `.venv/bin/python -m pytest tests/patches/test_versions.py -v`
-Expected: All FAIL with "ModuleNotFoundError: No module named 'cc_extractor.patches._versions'"
+Expected: All FAIL with "ModuleNotFoundError: No module named 'ccsilo.patches._versions'"
 
 - [ ] **Step 3: Implement parser**
 
-Create `cc_extractor/patches/_versions.py`:
+Create `ccsilo/patches/_versions.py`:
 
 ```python
 """SemVer range parser scoped to Claude Code's MAJOR.MINOR.PATCH scheme."""
@@ -227,7 +227,7 @@ Expected: All PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add cc_extractor/patches/_versions.py tests/patches/test_versions.py
+git add ccsilo/patches/_versions.py tests/patches/test_versions.py
 git commit -m "Add SemVer range parser for patch version metadata"
 ```
 
@@ -236,7 +236,7 @@ git commit -m "Add SemVer range parser for patch version metadata"
 ## Task 2: Range-to-concrete-version resolver
 
 **Files:**
-- Modify: `cc_extractor/patches/_versions.py`
+- Modify: `ccsilo/patches/_versions.py`
 - Modify: `tests/patches/test_versions.py`
 
 - [ ] **Step 1: Add failing resolver tests**
@@ -244,7 +244,7 @@ git commit -m "Add SemVer range parser for patch version metadata"
 Append to `tests/patches/test_versions.py`:
 
 ```python
-from cc_extractor.patches._versions import resolve_range_to_version
+from ccsilo.patches._versions import resolve_range_to_version
 
 
 def test_resolve_picks_highest_in_range():
@@ -271,13 +271,13 @@ Expected: 3 new tests FAIL with `ImportError: cannot import name 'resolve_range_
 
 - [ ] **Step 3: Implement resolver**
 
-Append to `cc_extractor/patches/_versions.py`:
+Append to `ccsilo/patches/_versions.py`:
 
 ```python
 def resolve_range_to_version(expr: str, *, index: Mapping[str, object]) -> Optional[str]:
     """Return the highest concrete version in `index` that satisfies `expr`,
     or None if nothing satisfies. `index` follows the schema in
-    cc_extractor/data/download-index.seed.json (top-level "binary.versions"
+    ccsilo/data/download-index.seed.json (top-level "binary.versions"
     list of dicts with "version" keys)."""
     binary = index.get("binary") if isinstance(index, Mapping) else None
     versions_list = binary.get("versions") if isinstance(binary, Mapping) else None
@@ -313,7 +313,7 @@ Expected: All PASS (12 tests).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add cc_extractor/patches/_versions.py tests/patches/test_versions.py
+git add ccsilo/patches/_versions.py tests/patches/test_versions.py
 git commit -m "Add SemVer range-to-concrete-version resolver"
 ```
 
@@ -322,7 +322,7 @@ git commit -m "Add SemVer range-to-concrete-version resolver"
 ## Task 3: Patch types and exceptions
 
 **Files:**
-- Modify: `cc_extractor/patches/__init__.py`
+- Modify: `ccsilo/patches/__init__.py`
 - Create: `tests/patches/__init__.py`
 - Create: `tests/patches/test_types.py`
 
@@ -333,7 +333,7 @@ Create `tests/patches/__init__.py` (empty file).
 Create `tests/patches/test_types.py`:
 
 ```python
-from cc_extractor.patches import (
+from ccsilo.patches import (
     AggregateResult,
     Patch,
     PatchAnchorMissError,
@@ -358,7 +358,7 @@ def test_patch_is_frozen_dataclass():
 
 def test_patch_context_defaults():
     ctx = PatchContext(claude_version=None)
-    assert ctx.provider_label == "cc-extractor"
+    assert ctx.provider_label == "ccsilo"
     assert ctx.config == {}
     assert ctx.overlays == {}
     assert ctx.force is False
@@ -385,14 +385,14 @@ def test_exceptions_are_value_errors():
 - [ ] **Step 2: Run to confirm failure**
 
 Run: `.venv/bin/python -m pytest tests/patches/test_types.py -v`
-Expected: FAIL with `ImportError: cannot import name 'AggregateResult' from 'cc_extractor.patches'`.
+Expected: FAIL with `ImportError: cannot import name 'AggregateResult' from 'ccsilo.patches'`.
 
 - [ ] **Step 3: Read existing `__init__.py`, then add new types alongside**
 
-The existing `cc_extractor/patches/__init__.py` defines `PatchResult`, `compute_md5`, etc. Keep all of that. Add new types at the bottom:
+The existing `ccsilo/patches/__init__.py` defines `PatchResult`, `compute_md5`, etc. Keep all of that. Add new types at the bottom:
 
 ```python
-# Append to cc_extractor/patches/__init__.py:
+# Append to ccsilo/patches/__init__.py:
 
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Optional, Tuple
@@ -401,7 +401,7 @@ from typing import Any, Callable, Mapping, Optional, Tuple
 @dataclass(frozen=True)
 class PatchContext:
     claude_version: Optional[str] = None
-    provider_label: str = "cc-extractor"
+    provider_label: str = "ccsilo"
     config: Mapping[str, Any] = field(default_factory=dict)
     overlays: Mapping[str, str] = field(default_factory=dict)
     force: bool = False
@@ -465,12 +465,12 @@ Expected: All 5 tests PASS.
 Also run the full existing suite to confirm no regressions:
 
 Run: `.venv/bin/python -m pytest -q`
-Expected: All existing tests PASS (no symbols removed from `cc_extractor.patches`).
+Expected: All existing tests PASS (no symbols removed from `ccsilo.patches`).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add cc_extractor/patches/__init__.py tests/patches/__init__.py tests/patches/test_types.py
+git add ccsilo/patches/__init__.py tests/patches/__init__.py tests/patches/test_types.py
 git commit -m "Add Patch dataclasses and exceptions"
 ```
 
@@ -479,8 +479,8 @@ git commit -m "Add Patch dataclasses and exceptions"
 ## Task 4: Empty registry + apply_patches function
 
 **Files:**
-- Create: `cc_extractor/patches/_registry.py`
-- Modify: `cc_extractor/patches/__init__.py`
+- Create: `ccsilo/patches/_registry.py`
+- Modify: `ccsilo/patches/__init__.py`
 - Create: `tests/patches/test_apply.py`
 
 - [ ] **Step 1: Create failing apply_patches tests**
@@ -491,7 +491,7 @@ Create `tests/patches/test_apply.py`:
 import warnings
 import pytest
 
-from cc_extractor.patches import (
+from ccsilo.patches import (
     AggregateResult,
     Patch,
     PatchAnchorMissError,
@@ -605,10 +605,10 @@ Expected: FAIL with `ImportError: cannot import name 'apply_patches'`.
 
 - [ ] **Step 3: Create empty registry**
 
-Create `cc_extractor/patches/_registry.py`:
+Create `ccsilo/patches/_registry.py`:
 
 ```python
-"""Explicit registry of `cc_extractor.patches` Patch objects.
+"""Explicit registry of `ccsilo.patches` Patch objects.
 
 Each migrated patch module exposes a `PATCH` constant. This file imports
 them and assembles the `REGISTRY` dict keyed by patch id. Order matters:
@@ -635,7 +635,7 @@ def registered_ids() -> tuple:
 
 - [ ] **Step 4: Implement `apply_patches`**
 
-Append to `cc_extractor/patches/__init__.py`:
+Append to `ccsilo/patches/__init__.py`:
 
 ```python
 import logging
@@ -743,7 +743,7 @@ Expected: All existing tests PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add cc_extractor/patches/_registry.py cc_extractor/patches/__init__.py tests/patches/test_apply.py
+git add ccsilo/patches/_registry.py ccsilo/patches/__init__.py tests/patches/test_apply.py
 git commit -m "Add apply_patches with version pre-flight and miss handling"
 ```
 
@@ -774,8 +774,8 @@ Create `tests/patches/conftest.py`:
 
 from typing import List
 
-from cc_extractor.download_index import load_download_index
-from cc_extractor.patches._versions import resolve_range_to_version
+from ccsilo.download_index import load_download_index
+from ccsilo.patches._versions import resolve_range_to_version
 
 
 def resolve_tested_versions(patch) -> List[str]:
@@ -819,8 +819,8 @@ Create `tests/patches/test_fixtures.py`:
 ```python
 import pytest
 
-from cc_extractor.download_index import load_download_index
-from cc_extractor.patches._versions import resolve_range_to_version
+from ccsilo.download_index import load_download_index
+from ccsilo.patches._versions import resolve_range_to_version
 
 
 pytestmark = pytest.mark.skipif(
@@ -863,10 +863,10 @@ from typing import Callable
 
 import pytest
 
-from cc_extractor.bun_extract import parse_bun_binary
-from cc_extractor.download_index import download_version_entry, load_download_index
-from cc_extractor.downloader import download_native_binary, get_platform_key
-from cc_extractor.workspace import workspace_root
+from ccsilo.bun_extract import parse_bun_binary
+from ccsilo.download_index import download_version_entry, load_download_index
+from ccsilo.downloader import download_native_binary, get_platform_key
+from ccsilo.workspace import workspace_root
 
 
 _CLI_JS_CACHE = {}
@@ -928,12 +928,12 @@ def parse_js() -> Callable[[str], None]:
     return runner
 ```
 
-Verify the `download_native_binary` import name and signature against the actual `cc_extractor/downloader.py`. If the function has a different name (e.g., `download_binary` or `fetch_binary`), update the import + call accordingly.
+Verify the `download_native_binary` import name and signature against the actual `ccsilo/downloader.py`. If the function has a different name (e.g., `download_binary` or `fetch_binary`), update the import + call accordingly.
 
 - [ ] **Step 4: Verify downloader signature**
 
-Run: `.venv/bin/python -c "from cc_extractor.downloader import download_native_binary; help(download_native_binary)"`
-Expected: prints the function signature. If `ImportError`, run `grep -n '^def ' cc_extractor/downloader.py` and pick the function whose name and docstring describe "download a Claude Code binary by version, return the local path." Update conftest accordingly.
+Run: `.venv/bin/python -c "from ccsilo.downloader import download_native_binary; help(download_native_binary)"`
+Expected: prints the function signature. If `ImportError`, run `grep -n '^def ' ccsilo/downloader.py` and pick the function whose name and docstring describe "download a Claude Code binary by version, return the local path." Update conftest accordingly.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
@@ -1056,8 +1056,8 @@ Create `tests/patches/test_registry.py`:
 """Cross-patch invariants. Runs against the live registry; passes against
 an empty registry too."""
 
-from cc_extractor.patches._registry import REGISTRY
-from cc_extractor.patches._versions import (
+from ccsilo.patches._registry import REGISTRY
+from ccsilo.patches._versions import (
     SemverRangeError,
     parse_range,
     range_contains_range,
@@ -1095,7 +1095,7 @@ def test_versions_tested_subset_of_versions_supported():
 
 
 def test_blacklisted_versions_do_not_satisfy_tested():
-    from cc_extractor.patches._versions import version_in_range
+    from ccsilo.patches._versions import version_in_range
     for patch in REGISTRY.values():
         for blacklisted in patch.versions_blacklisted:
             for tested in patch.versions_tested:
@@ -1110,7 +1110,7 @@ def test_blacklisted_versions_do_not_satisfy_tested():
 
 
 def test_each_versions_tested_resolves_to_concrete_version():
-    from cc_extractor.download_index import load_download_index
+    from ccsilo.download_index import load_download_index
     index = load_download_index()
     if not index.get("binary", {}).get("versions"):
         return  # empty index: pre-flight succeeded; nothing else to assert
@@ -1142,9 +1142,9 @@ git commit -m "Add registry-level patch invariant tests"
 ## Task 9: Migrate hide-startup-banner (worked example)
 
 **Files:**
-- Create: `cc_extractor/patches/hide_startup_banner.py`
-- Modify: `cc_extractor/patches/_registry.py`
-- Modify: `cc_extractor/variants/tweaks.py`
+- Create: `ccsilo/patches/hide_startup_banner.py`
+- Modify: `ccsilo/patches/_registry.py`
+- Modify: `ccsilo/variants/tweaks.py`
 - Create: `tests/patches/test_hide_startup_banner.py`
 
 - [ ] **Step 1: Write the failing patch test**
@@ -1154,8 +1154,8 @@ Create `tests/patches/test_hide_startup_banner.py`:
 ```python
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.hide_startup_banner import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.hide_startup_banner import PATCH
 
 
 def test_synthetic_applies(cli_js_synthetic):
@@ -1200,16 +1200,16 @@ def test_real_l2_patched_js_parses(cli_js_real, real_js_versions, parse_js):
 - [ ] **Step 2: Run to confirm failure**
 
 Run: `.venv/bin/python -m pytest tests/patches/test_hide_startup_banner.py -v`
-Expected: FAIL with `ModuleNotFoundError: cc_extractor.patches.hide_startup_banner`.
+Expected: FAIL with `ModuleNotFoundError: ccsilo.patches.hide_startup_banner`.
 
 - [ ] **Step 3: Create the patch module**
 
-Create `cc_extractor/patches/hide_startup_banner.py`:
+Create `ccsilo/patches/hide_startup_banner.py`:
 
 ```python
 """Hide the startup banner / welcome screen.
 
-Adapted from cc_extractor/variants/tweaks.py::_hide_startup_banner.
+Adapted from ccsilo/variants/tweaks.py::_hide_startup_banner.
 Original tweakcc source: vendor/tweakcc/src/patches/hideStartupBanner.ts.
 """
 
@@ -1245,7 +1245,7 @@ PATCH = Patch(
 
 - [ ] **Step 4: Add the shared default-ranges module (so each patch can import it)**
 
-Create `cc_extractor/patches/_pinned_default.py`:
+Create `ccsilo/patches/_pinned_default.py`:
 
 ```python
 """Default versions_tested ranges shared by most patches."""
@@ -1255,10 +1255,10 @@ DEFAULT_VERSION_RANGES = (">=2.0.20,<2.1", ">=2.1.0,<3")
 
 - [ ] **Step 5: Register in `_registry.py`**
 
-Replace `cc_extractor/patches/_registry.py` with:
+Replace `ccsilo/patches/_registry.py` with:
 
 ```python
-"""Explicit registry of `cc_extractor.patches` Patch objects."""
+"""Explicit registry of `ccsilo.patches` Patch objects."""
 
 from typing import Dict
 
@@ -1282,7 +1282,7 @@ def registered_ids() -> tuple:
 
 - [ ] **Step 6: Update the shim in `variants/tweaks.py` to delegate this id to the registry**
 
-Open `cc_extractor/variants/tweaks.py`. Find the `_PATCHERS` dict and the `apply_variant_tweaks` function. Modify the loop in `apply_variant_tweaks` so that when a `tweak_id` is `"hide-startup-banner"`, it routes to the new registry instead of `_PATCHERS`. Patch must still pass through `applied`/`skipped` lists.
+Open `ccsilo/variants/tweaks.py`. Find the `_PATCHERS` dict and the `apply_variant_tweaks` function. Modify the loop in `apply_variant_tweaks` so that when a `tweak_id` is `"hide-startup-banner"`, it routes to the new registry instead of `_PATCHERS`. Patch must still pass through `applied`/`skipped` lists.
 
 Insert near the top of `apply_variant_tweaks`, after `missing: List[str] = []`:
 
@@ -1338,7 +1338,7 @@ Expected: All PASS.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add cc_extractor/patches/hide_startup_banner.py cc_extractor/patches/_pinned_default.py cc_extractor/patches/_registry.py cc_extractor/variants/tweaks.py tests/patches/test_hide_startup_banner.py
+git add ccsilo/patches/hide_startup_banner.py ccsilo/patches/_pinned_default.py ccsilo/patches/_registry.py ccsilo/variants/tweaks.py tests/patches/test_hide_startup_banner.py
 git commit -m "Migrate hide-startup-banner to per-file patch module"
 ```
 
@@ -1347,9 +1347,9 @@ git commit -m "Migrate hide-startup-banner to per-file patch module"
 ## Task 10: Migrate show-more-items
 
 **Files:**
-- Create: `cc_extractor/patches/show_more_items.py`
-- Modify: `cc_extractor/patches/_registry.py`
-- Modify: `cc_extractor/variants/tweaks.py`
+- Create: `ccsilo/patches/show_more_items.py`
+- Modify: `ccsilo/patches/_registry.py`
+- Modify: `ccsilo/variants/tweaks.py`
 - Create: `tests/patches/test_show_more_items.py`
 
 - [ ] **Step 1: Write the test**
@@ -1359,8 +1359,8 @@ Create `tests/patches/test_show_more_items.py`:
 ```python
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.show_more_items import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.show_more_items import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 
@@ -1397,12 +1397,12 @@ Expected: FAIL with `ModuleNotFoundError`.
 
 - [ ] **Step 3: Create the patch module**
 
-Create `cc_extractor/patches/show_more_items.py`:
+Create `ccsilo/patches/show_more_items.py`:
 
 ```python
 """Increase visibleOptionCount in select menus.
 
-Adapted from cc_extractor/variants/tweaks.py::_show_more_items.
+Adapted from ccsilo/variants/tweaks.py::_show_more_items.
 """
 
 import re
@@ -1450,7 +1450,7 @@ PATCH = Patch(
 
 - [ ] **Step 4: Register**
 
-Modify `cc_extractor/patches/_registry.py`. Add import and entry:
+Modify `ccsilo/patches/_registry.py`. Add import and entry:
 
 ```python
 from . import hide_startup_banner, show_more_items
@@ -1463,7 +1463,7 @@ REGISTRY: Dict[str, Patch] = {
 
 - [ ] **Step 5: Update shim**
 
-In `cc_extractor/variants/tweaks.py`, remove `"show-more-items-in-select-menus"` from `_PATCHERS` dict.
+In `ccsilo/variants/tweaks.py`, remove `"show-more-items-in-select-menus"` from `_PATCHERS` dict.
 
 - [ ] **Step 6: Run tests**
 
@@ -1476,7 +1476,7 @@ Expected: All PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add cc_extractor/patches/show_more_items.py cc_extractor/patches/_registry.py cc_extractor/variants/tweaks.py tests/patches/test_show_more_items.py
+git add ccsilo/patches/show_more_items.py ccsilo/patches/_registry.py ccsilo/variants/tweaks.py tests/patches/test_show_more_items.py
 git commit -m "Migrate show-more-items-in-select-menus to per-file module"
 ```
 
@@ -1485,9 +1485,9 @@ git commit -m "Migrate show-more-items-in-select-menus to per-file module"
 ## Task 11: Migrate model-customizations
 
 **Files:**
-- Create: `cc_extractor/patches/model_customizations.py`
-- Modify: `cc_extractor/patches/_registry.py`
-- Modify: `cc_extractor/variants/tweaks.py`
+- Create: `ccsilo/patches/model_customizations.py`
+- Modify: `ccsilo/patches/_registry.py`
+- Modify: `ccsilo/variants/tweaks.py`
 - Create: `tests/patches/test_model_customizations.py`
 
 - [ ] **Step 1: Write the test**
@@ -1497,8 +1497,8 @@ Create `tests/patches/test_model_customizations.py`:
 ```python
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.model_customizations import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.model_customizations import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 
@@ -1534,12 +1534,12 @@ Expected: FAIL with `ModuleNotFoundError`.
 
 - [ ] **Step 3: Create the module**
 
-Create `cc_extractor/patches/model_customizations.py`:
+Create `ccsilo/patches/model_customizations.py`:
 
 ```python
 """Add custom Claude model entries to the model picker.
 
-Adapted from cc_extractor/variants/tweaks.py::_model_customizations.
+Adapted from ccsilo/variants/tweaks.py::_model_customizations.
 """
 
 import json
@@ -1610,7 +1610,7 @@ Expected: All PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add cc_extractor/patches/model_customizations.py cc_extractor/patches/_registry.py cc_extractor/variants/tweaks.py tests/patches/test_model_customizations.py
+git add ccsilo/patches/model_customizations.py ccsilo/patches/_registry.py ccsilo/variants/tweaks.py tests/patches/test_model_customizations.py
 git commit -m "Migrate model-customizations to per-file module"
 ```
 
@@ -1619,9 +1619,9 @@ git commit -m "Migrate model-customizations to per-file module"
 ## Task 12: Migrate hide-startup-clawd
 
 **Files:**
-- Create: `cc_extractor/patches/hide_startup_clawd.py`
-- Modify: `cc_extractor/patches/_registry.py`
-- Modify: `cc_extractor/variants/tweaks.py`
+- Create: `ccsilo/patches/hide_startup_clawd.py`
+- Modify: `ccsilo/patches/_registry.py`
+- Modify: `ccsilo/variants/tweaks.py`
 - Create: `tests/patches/test_hide_startup_clawd.py`
 
 - [ ] **Step 1: Test**
@@ -1631,8 +1631,8 @@ Create `tests/patches/test_hide_startup_clawd.py`:
 ```python
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.hide_startup_clawd import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.hide_startup_clawd import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 
@@ -1664,12 +1664,12 @@ Expected: FAIL.
 
 - [ ] **Step 3: Create module**
 
-Create `cc_extractor/patches/hide_startup_clawd.py`:
+Create `ccsilo/patches/hide_startup_clawd.py`:
 
 ```python
 """Hide the ASCII clawed-claw startup banner.
 
-Adapted from cc_extractor/variants/tweaks.py::_hide_startup_clawd.
+Adapted from ccsilo/variants/tweaks.py::_hide_startup_clawd.
 """
 
 import re
@@ -1724,7 +1724,7 @@ Expected: All PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add cc_extractor/patches/hide_startup_clawd.py cc_extractor/patches/_registry.py cc_extractor/variants/tweaks.py tests/patches/test_hide_startup_clawd.py
+git add ccsilo/patches/hide_startup_clawd.py ccsilo/patches/_registry.py ccsilo/variants/tweaks.py tests/patches/test_hide_startup_clawd.py
 git commit -m "Migrate hide-startup-clawd to per-file module"
 ```
 
@@ -1733,9 +1733,9 @@ git commit -m "Migrate hide-startup-clawd to per-file module"
 ## Task 13: Migrate hide-ctrl-g-to-edit
 
 **Files:**
-- Create: `cc_extractor/patches/hide_ctrl_g.py`
-- Modify: `cc_extractor/patches/_registry.py`
-- Modify: `cc_extractor/variants/tweaks.py`
+- Create: `ccsilo/patches/hide_ctrl_g.py`
+- Modify: `ccsilo/patches/_registry.py`
+- Modify: `ccsilo/variants/tweaks.py`
 - Create: `tests/patches/test_hide_ctrl_g.py`
 
 - [ ] **Step 1: Test**
@@ -1745,8 +1745,8 @@ Create `tests/patches/test_hide_ctrl_g.py`:
 ```python
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.hide_ctrl_g import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.hide_ctrl_g import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 
@@ -1776,7 +1776,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Create module**
 
-Create `cc_extractor/patches/hide_ctrl_g.py`:
+Create `ccsilo/patches/hide_ctrl_g.py`:
 
 ```python
 """Hide the 'press Ctrl+G to edit' hint."""
@@ -1811,7 +1811,7 @@ PATCH = Patch(
 - [ ] **Step 4: Register, update shim, run tests, commit** (same pattern)
 
 ```bash
-git add cc_extractor/patches/hide_ctrl_g.py cc_extractor/patches/_registry.py cc_extractor/variants/tweaks.py tests/patches/test_hide_ctrl_g.py
+git add ccsilo/patches/hide_ctrl_g.py ccsilo/patches/_registry.py ccsilo/variants/tweaks.py tests/patches/test_hide_ctrl_g.py
 git commit -m "Migrate hide-ctrl-g-to-edit to per-file module"
 ```
 
@@ -1820,9 +1820,9 @@ git commit -m "Migrate hide-ctrl-g-to-edit to per-file module"
 ## Task 14: Migrate suppress-line-numbers
 
 **Files:**
-- Create: `cc_extractor/patches/suppress_line_numbers.py`
-- Modify: `cc_extractor/patches/_registry.py`
-- Modify: `cc_extractor/variants/tweaks.py`
+- Create: `ccsilo/patches/suppress_line_numbers.py`
+- Modify: `ccsilo/patches/_registry.py`
+- Modify: `ccsilo/variants/tweaks.py`
 - Create: `tests/patches/test_suppress_line_numbers.py`
 
 - [ ] **Step 1: Test**
@@ -1832,8 +1832,8 @@ Create `tests/patches/test_suppress_line_numbers.py`:
 ```python
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.suppress_line_numbers import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.suppress_line_numbers import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 
@@ -1863,7 +1863,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Create module**
 
-Create `cc_extractor/patches/suppress_line_numbers.py`:
+Create `ccsilo/patches/suppress_line_numbers.py`:
 
 ```python
 """Suppress per-line line number prefixes in file-read output."""
@@ -1911,7 +1911,7 @@ PATCH = Patch(
 - [ ] **Step 4: Register, update shim, run, commit**
 
 ```bash
-git add cc_extractor/patches/suppress_line_numbers.py cc_extractor/patches/_registry.py cc_extractor/variants/tweaks.py tests/patches/test_suppress_line_numbers.py
+git add ccsilo/patches/suppress_line_numbers.py ccsilo/patches/_registry.py ccsilo/variants/tweaks.py tests/patches/test_suppress_line_numbers.py
 git commit -m "Migrate suppress-line-numbers to per-file module"
 ```
 
@@ -1920,9 +1920,9 @@ git commit -m "Migrate suppress-line-numbers to per-file module"
 ## Task 15: Migrate auto-accept-plan-mode
 
 **Files:**
-- Create: `cc_extractor/patches/auto_accept_plan_mode.py`
-- Modify: `cc_extractor/patches/_registry.py`
-- Modify: `cc_extractor/variants/tweaks.py`
+- Create: `ccsilo/patches/auto_accept_plan_mode.py`
+- Modify: `ccsilo/patches/_registry.py`
+- Modify: `ccsilo/variants/tweaks.py`
 - Create: `tests/patches/test_auto_accept_plan_mode.py`
 
 - [ ] **Step 1: Test**
@@ -1932,8 +1932,8 @@ Create `tests/patches/test_auto_accept_plan_mode.py`:
 ```python
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.auto_accept_plan_mode import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.auto_accept_plan_mode import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 
@@ -1963,7 +1963,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Create module**
 
-Create `cc_extractor/patches/auto_accept_plan_mode.py`:
+Create `ccsilo/patches/auto_accept_plan_mode.py`:
 
 ```python
 """Auto-accept the 'Ready to code?' plan-mode prompt."""
@@ -2019,7 +2019,7 @@ PATCH = Patch(
 - [ ] **Step 4: Register, update shim, run, commit**
 
 ```bash
-git add cc_extractor/patches/auto_accept_plan_mode.py cc_extractor/patches/_registry.py cc_extractor/variants/tweaks.py tests/patches/test_auto_accept_plan_mode.py
+git add ccsilo/patches/auto_accept_plan_mode.py ccsilo/patches/_registry.py ccsilo/variants/tweaks.py tests/patches/test_auto_accept_plan_mode.py
 git commit -m "Migrate auto-accept-plan-mode to per-file module"
 ```
 
@@ -2028,9 +2028,9 @@ git commit -m "Migrate auto-accept-plan-mode to per-file module"
 ## Task 16: Migrate allow-custom-agent-models
 
 **Files:**
-- Create: `cc_extractor/patches/allow_custom_agent_models.py`
-- Modify: `cc_extractor/patches/_registry.py`
-- Modify: `cc_extractor/variants/tweaks.py`
+- Create: `ccsilo/patches/allow_custom_agent_models.py`
+- Modify: `ccsilo/patches/_registry.py`
+- Modify: `ccsilo/variants/tweaks.py`
 - Create: `tests/patches/test_allow_custom_agent_models.py`
 
 - [ ] **Step 1: Test**
@@ -2040,8 +2040,8 @@ Create `tests/patches/test_allow_custom_agent_models.py`:
 ```python
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.allow_custom_agent_models import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.allow_custom_agent_models import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 
@@ -2071,7 +2071,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Create module**
 
-Create `cc_extractor/patches/allow_custom_agent_models.py`:
+Create `ccsilo/patches/allow_custom_agent_models.py`:
 
 ```python
 """Relax agent model validation to accept arbitrary string values."""
@@ -2126,7 +2126,7 @@ PATCH = Patch(
 - [ ] **Step 4: Register, update shim, run, commit**
 
 ```bash
-git add cc_extractor/patches/allow_custom_agent_models.py cc_extractor/patches/_registry.py cc_extractor/variants/tweaks.py tests/patches/test_allow_custom_agent_models.py
+git add ccsilo/patches/allow_custom_agent_models.py ccsilo/patches/_registry.py ccsilo/variants/tweaks.py tests/patches/test_allow_custom_agent_models.py
 git commit -m "Migrate allow-custom-agent-models to per-file module"
 ```
 
@@ -2135,9 +2135,9 @@ git commit -m "Migrate allow-custom-agent-models to per-file module"
 ## Task 17: Migrate patches-applied-indication
 
 **Files:**
-- Create: `cc_extractor/patches/patches_applied_indication.py`
-- Modify: `cc_extractor/patches/_registry.py`
-- Modify: `cc_extractor/variants/tweaks.py`
+- Create: `ccsilo/patches/patches_applied_indication.py`
+- Modify: `ccsilo/patches/_registry.py`
+- Modify: `ccsilo/variants/tweaks.py`
 - Create: `tests/patches/test_patches_applied_indication.py`
 
 - [ ] **Step 1: Test**
@@ -2147,8 +2147,8 @@ Create `tests/patches/test_patches_applied_indication.py`:
 ```python
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.patches_applied_indication import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.patches_applied_indication import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 
@@ -2186,7 +2186,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Create module**
 
-Create `cc_extractor/patches/patches_applied_indication.py`:
+Create `ccsilo/patches/patches_applied_indication.py`:
 
 ```python
 """Append the provider label to the (Claude Code) version banner."""
@@ -2218,7 +2218,7 @@ PATCH = Patch(
 - [ ] **Step 4: Register, update shim, run, commit**
 
 ```bash
-git add cc_extractor/patches/patches_applied_indication.py cc_extractor/patches/_registry.py cc_extractor/variants/tweaks.py tests/patches/test_patches_applied_indication.py
+git add ccsilo/patches/patches_applied_indication.py ccsilo/patches/_registry.py ccsilo/variants/tweaks.py tests/patches/test_patches_applied_indication.py
 git commit -m "Migrate patches-applied-indication to per-file module"
 ```
 
@@ -2227,9 +2227,9 @@ git commit -m "Migrate patches-applied-indication to per-file module"
 ## Task 18: Migrate themes (adapter over binary_patcher.theme)
 
 **Files:**
-- Create: `cc_extractor/patches/themes.py`
-- Modify: `cc_extractor/patches/_registry.py`
-- Modify: `cc_extractor/variants/tweaks.py`
+- Create: `ccsilo/patches/themes.py`
+- Modify: `ccsilo/patches/_registry.py`
+- Modify: `ccsilo/variants/tweaks.py`
 - Create: `tests/patches/test_themes.py`
 
 - [ ] **Step 1: Test**
@@ -2239,8 +2239,8 @@ Create `tests/patches/test_themes.py`:
 ```python
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.themes import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.themes import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 
@@ -2300,12 +2300,12 @@ Expected: FAIL.
 
 - [ ] **Step 3: Create module**
 
-Create `cc_extractor/patches/themes.py`:
+Create `ccsilo/patches/themes.py`:
 
 ```python
 """Inject custom themes into Claude Code's theme registry.
 
-Adapter over cc_extractor.binary_patcher.theme.
+Adapter over ccsilo.binary_patcher.theme.
 """
 
 from ..binary_patcher.theme import apply_theme, themes_from_config
@@ -2337,7 +2337,7 @@ PATCH = Patch(
 
 In `_registry.py`, add import + entry. In `variants/tweaks.py`, the existing themes branch in `apply_variant_tweaks` is special-cased (calls `apply_theme` directly). Replace that branch with the registry-delegating branch the same way as Task 9 step 6 — the new branch handles config/themes the same.
 
-Concretely, in `cc_extractor/variants/tweaks.py`, find:
+Concretely, in `ccsilo/variants/tweaks.py`, find:
 
 ```python
         if tweak_id == "themes":
@@ -2362,7 +2362,7 @@ Expected: All PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add cc_extractor/patches/themes.py cc_extractor/patches/_registry.py cc_extractor/variants/tweaks.py tests/patches/test_themes.py
+git add ccsilo/patches/themes.py ccsilo/patches/_registry.py ccsilo/variants/tweaks.py tests/patches/test_themes.py
 git commit -m "Migrate themes patch to per-file adapter"
 ```
 
@@ -2371,9 +2371,9 @@ git commit -m "Migrate themes patch to per-file adapter"
 ## Task 19: Migrate prompt-overlays (adapter over binary_patcher.prompts)
 
 **Files:**
-- Create: `cc_extractor/patches/prompt_overlays.py`
-- Modify: `cc_extractor/patches/_registry.py`
-- Modify: `cc_extractor/variants/tweaks.py`
+- Create: `ccsilo/patches/prompt_overlays.py`
+- Modify: `ccsilo/patches/_registry.py`
+- Modify: `ccsilo/variants/tweaks.py`
 - Create: `tests/patches/test_prompt_overlays.py`
 
 - [ ] **Step 1: Test**
@@ -2383,8 +2383,8 @@ Create `tests/patches/test_prompt_overlays.py`:
 ```python
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.prompt_overlays import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.prompt_overlays import PATCH
 
 
 def test_synthetic_applies(cli_js_synthetic):
@@ -2426,12 +2426,12 @@ Expected: FAIL.
 
 - [ ] **Step 3: Create module**
 
-Create `cc_extractor/patches/prompt_overlays.py`:
+Create `ccsilo/patches/prompt_overlays.py`:
 
 ```python
 """Inject provider overlay blocks after known prompt anchors.
 
-Adapter over cc_extractor.binary_patcher.prompts.apply_prompts.
+Adapter over ccsilo.binary_patcher.prompts.apply_prompts.
 """
 
 from ..binary_patcher.prompts import apply_prompts
@@ -2473,7 +2473,7 @@ Expected: All PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add cc_extractor/patches/prompt_overlays.py cc_extractor/patches/_registry.py cc_extractor/variants/tweaks.py tests/patches/test_prompt_overlays.py
+git add ccsilo/patches/prompt_overlays.py ccsilo/patches/_registry.py ccsilo/variants/tweaks.py tests/patches/test_prompt_overlays.py
 git commit -m "Migrate prompt-overlays patch to per-file adapter"
 ```
 
@@ -2482,18 +2482,18 @@ git commit -m "Migrate prompt-overlays patch to per-file adapter"
 ## Task 20: Slim variants/tweaks.py to a thin shim
 
 **Files:**
-- Modify: `cc_extractor/variants/tweaks.py`
+- Modify: `ccsilo/variants/tweaks.py`
 
 - [ ] **Step 1: Audit what `_PATCHERS` and the legacy `_*` functions still hold**
 
-Run: `grep -n "_PATCHERS\|^def _" cc_extractor/variants/tweaks.py`
+Run: `grep -n "_PATCHERS\|^def _" ccsilo/variants/tweaks.py`
 Expected: `_PATCHERS = {}` (or close to it) and all the `_show_more_items`, `_model_customizations`, etc. functions still defined as dead code.
 
 - [ ] **Step 2: Delete the dead helper functions and the empty `_PATCHERS` dict**
 
-Open `cc_extractor/variants/tweaks.py`. Remove every `def _<...>(...)` whose id is now in the registry: `_show_more_items`, `_model_customizations`, `_hide_startup_banner`, `_hide_startup_clawd`, `_hide_ctrl_g_to_edit`, `_suppress_line_numbers`, `_auto_accept_plan_mode`, `_allow_custom_agent_models`, `_patches_applied_indication`. Remove the now-empty `_PATCHERS = {}` and the `else: patcher = _PATCHERS[tweak_id]` branch in `apply_variant_tweaks`. The remaining loop body is just `if env_id: skip; elif registry: delegate`.
+Open `ccsilo/variants/tweaks.py`. Remove every `def _<...>(...)` whose id is now in the registry: `_show_more_items`, `_model_customizations`, `_hide_startup_banner`, `_hide_startup_clawd`, `_hide_ctrl_g_to_edit`, `_suppress_line_numbers`, `_auto_accept_plan_mode`, `_allow_custom_agent_models`, `_patches_applied_indication`. Remove the now-empty `_PATCHERS = {}` and the `else: patcher = _PATCHERS[tweak_id]` branch in `apply_variant_tweaks`. The remaining loop body is just `if env_id: skip; elif registry: delegate`.
 
-- [ ] **Step 3: Remove now-unused imports** at the top of `tweaks.py`. The only import paths still needed are `cc_extractor.patches`, `cc_extractor.patches._registry`, plus `dataclasses.dataclass`, `typing.*`, and basic stdlib. The imports of `apply_prompts`, `apply_theme`, `themes_from_config` can be deleted if no remaining code references them.
+- [ ] **Step 3: Remove now-unused imports** at the top of `tweaks.py`. The only import paths still needed are `ccsilo.patches`, `ccsilo.patches._registry`, plus `dataclasses.dataclass`, `typing.*`, and basic stdlib. The imports of `apply_prompts`, `apply_theme`, `themes_from_config` can be deleted if no remaining code references them.
 
 - [ ] **Step 4: Run the full test suite**
 
@@ -2502,13 +2502,13 @@ Expected: All PASS, including `tests/test_variant_tweaks.py`.
 
 - [ ] **Step 5: Confirm the shim is small**
 
-Run: `wc -l cc_extractor/variants/tweaks.py`
+Run: `wc -l ccsilo/variants/tweaks.py`
 Expected: under 80 lines.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add cc_extractor/variants/tweaks.py
+git add ccsilo/variants/tweaks.py
 git commit -m "Slim variants/tweaks.py to thin registry-delegating shim"
 ```
 
@@ -2517,8 +2517,8 @@ git commit -m "Slim variants/tweaks.py to thin registry-delegating shim"
 ## Task 21: claude_version plumbing through apply_variant_tweaks
 
 **Files:**
-- Modify: `cc_extractor/variants/tweaks.py`
-- Modify: `cc_extractor/variants/__init__.py` (or wherever variant build calls into apply_variant_tweaks)
+- Modify: `ccsilo/variants/tweaks.py`
+- Modify: `ccsilo/variants/__init__.py` (or wherever variant build calls into apply_variant_tweaks)
 - Modify: `tests/test_variant_tweaks.py`
 
 - [ ] **Step 1: Add a failing test that verifies the warning fires**
@@ -2549,7 +2549,7 @@ Expected: FAIL with `TypeError: unexpected keyword argument 'claude_version'` or
 
 - [ ] **Step 3: Add `claude_version` and `force` parameters to `apply_variant_tweaks`**
 
-Edit the signature in `cc_extractor/variants/tweaks.py`:
+Edit the signature in `ccsilo/variants/tweaks.py`:
 
 ```python
 def apply_variant_tweaks(
@@ -2558,7 +2558,7 @@ def apply_variant_tweaks(
     tweak_ids: Iterable[str],
     config: Optional[Dict] = None,
     overlays: Optional[Dict[str, str]] = None,
-    provider_label: str = "cc-extractor",
+    provider_label: str = "ccsilo",
     claude_version: Optional[str] = None,
     force: bool = False,
 ) -> TweakResult:
@@ -2568,9 +2568,9 @@ Forward `claude_version` and `force` into the `PatchContext` constructed inside 
 
 - [ ] **Step 4: Plumb `claude_version` from the variant build path**
 
-Locate the call site in `cc_extractor/variants/__init__.py` (or a builder module). Pass `claude_version=manifest_version` (or whatever the manifest field is called — grep for `"claude_version"`/`"version"` in `variants/`). If the call site does not have a version handy, leave it as `None` (preserves current behavior).
+Locate the call site in `ccsilo/variants/__init__.py` (or a builder module). Pass `claude_version=manifest_version` (or whatever the manifest field is called — grep for `"claude_version"`/`"version"` in `variants/`). If the call site does not have a version handy, leave it as `None` (preserves current behavior).
 
-Run: `grep -rn "apply_variant_tweaks" cc_extractor/`
+Run: `grep -rn "apply_variant_tweaks" ccsilo/`
 Expected: 1-3 call sites; update each.
 
 - [ ] **Step 5: Run full suite**
@@ -2581,7 +2581,7 @@ Expected: All PASS, new warning test included.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add cc_extractor/variants/tweaks.py cc_extractor/variants/__init__.py tests/test_variant_tweaks.py
+git add ccsilo/variants/tweaks.py ccsilo/variants/__init__.py tests/test_variant_tweaks.py
 git commit -m "Plumb claude_version through apply_variant_tweaks"
 ```
 
@@ -2605,7 +2605,7 @@ Create `tests/patches_smoke/test_variant_smoke.py`:
 """L3 smoke: build a default-tweak variant against each resolved version
 and verify the resulting binary boots cleanly.
 
-Gated: skipped unless CC_EXTRACTOR_REAL_BINARY=1.
+Gated: skipped unless CCSILO_REAL_BINARY=1.
 """
 
 import os
@@ -2616,14 +2616,14 @@ from pathlib import Path
 
 import pytest
 
-from cc_extractor.download_index import load_download_index
-from cc_extractor.patches._versions import resolve_range_to_version
+from ccsilo.download_index import load_download_index
+from ccsilo.patches._versions import resolve_range_to_version
 from tests.patches._pinned import DEFAULT_VERSION_RANGES
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("CC_EXTRACTOR_REAL_BINARY") != "1",
-    reason="CC_EXTRACTOR_REAL_BINARY=1 not set",
+    os.environ.get("CCSILO_REAL_BINARY") != "1",
+    reason="CCSILO_REAL_BINARY=1 not set",
 )
 
 
@@ -2641,7 +2641,7 @@ def _resolved_versions():
 def test_variant_boots(version, tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    env = {**os.environ, "CC_EXTRACTOR_WORKSPACE": str(workspace)}
+    env = {**os.environ, "CCSILO_WORKSPACE": str(workspace)}
 
     cmd = [
         ".venv/bin/python",
@@ -2668,11 +2668,11 @@ def test_variant_boots(version, tmp_path):
 - [ ] **Step 3: Verify it skips by default**
 
 Run: `.venv/bin/python -m pytest tests/patches_smoke -v`
-Expected: All tests SKIPPED with reason "CC_EXTRACTOR_REAL_BINARY=1 not set".
+Expected: All tests SKIPPED with reason "CCSILO_REAL_BINARY=1 not set".
 
 - [ ] **Step 4: Manually run the gated smoke once to verify it works**
 
-Run: `CC_EXTRACTOR_REAL_BINARY=1 .venv/bin/python -m pytest tests/patches_smoke -v`
+Run: `CCSILO_REAL_BINARY=1 .venv/bin/python -m pytest tests/patches_smoke -v`
 Expected: PASS for at least one resolved version (or SKIP if `--claude-version` is not a recognized variant CLI flag — in which case adjust the cmd to whatever the CLI takes).
 
 - [ ] **Step 5: Commit**
@@ -2700,7 +2700,7 @@ Create `tests/patches_behavioral/conftest.py`:
 ```python
 """L4 fixtures: build/run/teardown one variant per test.
 
-Gated: every test in this directory skips unless CC_EXTRACTOR_TUI_MCP=1.
+Gated: every test in this directory skips unless CCSILO_TUI_MCP=1.
 The TUI MCP itself is not invoked from Python here; instead, this conftest
 is a thin shell that prepares variants. The actual screen capture and
 snapshot diff happen in test bodies (which call into the MCP via whatever
@@ -2716,8 +2716,8 @@ import pytest
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("CC_EXTRACTOR_TUI_MCP") != "1",
-    reason="CC_EXTRACTOR_TUI_MCP=1 not set",
+    os.environ.get("CCSILO_TUI_MCP") != "1",
+    reason="CCSILO_TUI_MCP=1 not set",
 )
 
 
@@ -2730,7 +2730,7 @@ def variant_factory(tmp_path):
     def build(name: str, claude_version: str, tweak_ids):
         workspace = tmp_path / "workspace"
         workspace.mkdir(exist_ok=True)
-        env = {**os.environ, "CC_EXTRACTOR_WORKSPACE": str(workspace)}
+        env = {**os.environ, "CCSILO_WORKSPACE": str(workspace)}
         cmd = [
             ".venv/bin/python", "main.py", "variant", "create", name,
             "--claude-version", claude_version,
@@ -2748,9 +2748,9 @@ SNAPSHOT_DIR.mkdir(exist_ok=True)
 
 def assert_snapshot(actual: str, snapshot_name: str) -> None:
     """Compare `actual` to snapshots/<snapshot_name>.txt. Update with
-    CC_EXTRACTOR_UPDATE_SNAPSHOTS=1."""
+    CCSILO_UPDATE_SNAPSHOTS=1."""
     path = SNAPSHOT_DIR / f"{snapshot_name}.txt"
-    if os.environ.get("CC_EXTRACTOR_UPDATE_SNAPSHOTS") == "1":
+    if os.environ.get("CCSILO_UPDATE_SNAPSHOTS") == "1":
         path.write_text(actual)
         return
     if not path.exists():
@@ -2782,8 +2782,8 @@ from tests.patches_behavioral.conftest import assert_snapshot
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("CC_EXTRACTOR_TUI_MCP") != "1",
-    reason="CC_EXTRACTOR_TUI_MCP=1 not set",
+    os.environ.get("CCSILO_TUI_MCP") != "1",
+    reason="CCSILO_TUI_MCP=1 not set",
 )
 
 
@@ -2805,7 +2805,7 @@ def test_banner_hidden(variant_factory):
 - [ ] **Step 3: Verify it skips by default**
 
 Run: `.venv/bin/python -m pytest tests/patches_behavioral -v`
-Expected: SKIPPED with "CC_EXTRACTOR_TUI_MCP=1 not set".
+Expected: SKIPPED with "CCSILO_TUI_MCP=1 not set".
 
 - [ ] **Step 4: Commit**
 
@@ -2829,18 +2829,18 @@ Create `docs/patches.md`:
 # Patches
 
 Patches rewrite Claude Code's bundled JS to add custom behavior. Each
-patch lives in `cc_extractor/patches/<id>.py` and is registered in
-`cc_extractor/patches/_registry.py`.
+patch lives in `ccsilo/patches/<id>.py` and is registered in
+`ccsilo/patches/_registry.py`.
 
 ## Authoring a new patch
 
 1. Find the upstream tweakcc patch in `vendor/tweakcc/src/patches/<name>.ts`.
-2. Create `cc_extractor/patches/<id>.py` with a `_apply(js, ctx)` function
+2. Create `ccsilo/patches/<id>.py` with a `_apply(js, ctx)` function
    and a `PATCH = Patch(...)` constant. Mirror the regex shape from the
    tweakcc TS file. Use `[$\w]+` not `\w+` for identifiers.
 3. Add a synthetic snippet for `<id>` to `tests/patches/fixtures/synthetic.py`.
 4. Add `tests/patches/test_<id>.py` covering synthetic + real fixtures.
-5. Register in `cc_extractor/patches/_registry.py`.
+5. Register in `ccsilo/patches/_registry.py`.
 6. Run `pytest -q tests/patches/test_<id>.py` until green.
 
 ## Patch metadata fields
@@ -2861,22 +2861,22 @@ patch lives in `cc_extractor/patches/<id>.py` and is registered in
 - **L1 (anchor):** regex matches expected pattern. Run via `pytest tests/patches/`.
 - **L2 (parse):** patched JS parses cleanly under `node --check`. Same command; skipped if Node missing.
 - **L3 (boot smoke):** built variant binary boots and exits cleanly.
-  Run with `CC_EXTRACTOR_REAL_BINARY=1 pytest tests/patches_smoke/`.
+  Run with `CCSILO_REAL_BINARY=1 pytest tests/patches_smoke/`.
 - **L4 (behavioral):** TUI MCP drives the variant, screen state captured
   and diffed against snapshots.
-  Run with `CC_EXTRACTOR_TUI_MCP=1 pytest tests/patches_behavioral/`.
+  Run with `CCSILO_TUI_MCP=1 pytest tests/patches_behavioral/`.
 
 ## Updating L4 snapshots
 
 ```bash
-CC_EXTRACTOR_TUI_MCP=1 CC_EXTRACTOR_UPDATE_SNAPSHOTS=1 \
+CCSILO_TUI_MCP=1 CCSILO_UPDATE_SNAPSHOTS=1 \
   pytest tests/patches_behavioral/test_<id>_snapshot.py
 ```
 
 ## Running everything
 
 ```bash
-CC_EXTRACTOR_REAL_BINARY=1 CC_EXTRACTOR_TUI_MCP=1 \
+CCSILO_REAL_BINARY=1 CCSILO_TUI_MCP=1 \
   .venv/bin/python -m pytest -q
 ```
 ```
@@ -2901,20 +2901,20 @@ Expected: All PASS, no warnings about deprecated APIs, no SKIPPED beyond expecte
 
 - [ ] **Step 2: Run gated suites**
 
-Run: `CC_EXTRACTOR_REAL_BINARY=1 .venv/bin/python -m pytest -q tests/patches_smoke/`
+Run: `CCSILO_REAL_BINARY=1 .venv/bin/python -m pytest -q tests/patches_smoke/`
 Expected: PASS or clear SKIP messages.
 
-Run: `CC_EXTRACTOR_TUI_MCP=1 .venv/bin/python -m pytest -q tests/patches_behavioral/`
+Run: `CCSILO_TUI_MCP=1 .venv/bin/python -m pytest -q tests/patches_behavioral/`
 Expected: PASS (snapshot skeleton skips intentionally; that is acceptable for this milestone).
 
 - [ ] **Step 3: Verify the shim is small**
 
-Run: `wc -l cc_extractor/variants/tweaks.py`
+Run: `wc -l ccsilo/variants/tweaks.py`
 Expected: under 80 lines.
 
 - [ ] **Step 4: Verify all 11 tweaks live in patches/**
 
-Run: `ls cc_extractor/patches/*.py | grep -v "^cc_extractor/patches/_" | grep -v "system_prompts" | wc -l`
+Run: `ls ccsilo/patches/*.py | grep -v "^ccsilo/patches/_" | grep -v "system_prompts" | wc -l`
 Expected: 11 (themes, prompt_overlays, hide_startup_banner, hide_startup_clawd, hide_ctrl_g, show_more_items, model_customizations, suppress_line_numbers, auto_accept_plan_mode, allow_custom_agent_models, patches_applied_indication).
 
 - [ ] **Step 5: Open a final review commit (no-op if nothing changed)**

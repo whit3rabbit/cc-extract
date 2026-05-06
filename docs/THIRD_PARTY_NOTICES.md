@@ -9,8 +9,8 @@ their original licenses. Attribution and relevant license text live here.
 - Referenced commit: `303b7560290679127f3d32a6e42c66272d6f0c01`
 - License: MIT
 
-`cc-extractor` ports binary-patching anchor patterns for theme and prompt
-rewrites into `cc_extractor/binary_patcher/`.
+`ccsilo` ports binary-patching anchor patterns for theme and prompt
+rewrites into `ccsilo/binary_patcher/`.
 
 The upstream MIT terms follow:
 

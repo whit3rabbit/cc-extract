@@ -48,11 +48,20 @@ jobs:
 
       - name: Ruff
         run: |
-          .venv/bin/ruff check cc_extractor tests tools
+          .venv/bin/ruff check ccsilo tests tools
 
       - name: Pytest
         run: |
           .venv/bin/python -m pytest -q
+
+      - name: Wheel install smoke
+        run: |
+          .venv/bin/python -m build
+          python -m venv /tmp/ccsilo-wheel-smoke
+          /tmp/ccsilo-wheel-smoke/bin/python -m pip install --upgrade pip
+          /tmp/ccsilo-wheel-smoke/bin/python -m pip install dist/*.whl
+          /tmp/ccsilo-wheel-smoke/bin/ccsilo --help
+          /tmp/ccsilo-wheel-smoke/bin/ccsilo variant providers --json
 
   docker-patch-smoke:
     name: Docker Patch Smoke

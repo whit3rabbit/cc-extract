@@ -20,19 +20,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from cc_extractor.bun_extract import parse_bun_binary
-from cc_extractor._utils import atomic_write_text_no_symlink
-from cc_extractor.bundler import pack_bundle
-from cc_extractor.binary_patcher.codesign import try_adhoc_sign
-from cc_extractor.downloader import (
+from ccsilo.bun_extract import parse_bun_binary
+from ccsilo._utils import atomic_write_text_no_symlink
+from ccsilo.bundler import pack_bundle
+from ccsilo.binary_patcher.codesign import try_adhoc_sign
+from ccsilo.downloader import (
     download_binary,
     fetch_latest_binary_version,
     get_platform_key,
     list_available_binary_versions,
 )
-from cc_extractor.extractor import extract_all
-from cc_extractor.patch_workflow import _entry_path
-from cc_extractor.patches import (
+from ccsilo.extractor import extract_all
+from ccsilo.patch_workflow import _entry_path
+from ccsilo.patches import (
     Patch,
     PatchAnchorMissError,
     PatchBlacklistedError,
@@ -40,8 +40,8 @@ from cc_extractor.patches import (
     PatchUnsupportedVersionError,
     apply_patches,
 )
-from cc_extractor.patches._registry import REGISTRY
-from cc_extractor.patches._versions import SemverRangeError, version_in_range
+from ccsilo.patches._registry import REGISTRY
+from ccsilo.patches._versions import SemverRangeError, version_in_range
 
 
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -262,7 +262,7 @@ def smoke_environment(root: Path) -> Dict[str, str]:
             "XDG_DATA_HOME": str(data),
             "CLAUDE_CONFIG_DIR": str(config / "claude"),
             "CLAUDE_CODE_CONFIG_DIR": str(config / "claude-code"),
-            "CC_EXTRACTOR_WORKSPACE": str(workspace),
+            "CCSILO_WORKSPACE": str(workspace),
         }
     )
     return env

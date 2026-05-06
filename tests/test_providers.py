@@ -4,8 +4,8 @@ from urllib.error import URLError
 
 import pytest
 
-import cc_extractor.providers.model_discovery as model_discovery
-from cc_extractor.providers import (
+import ccsilo.providers.model_discovery as model_discovery
+from ccsilo.providers import (
     apply_provider_claude_config,
     build_provider_env,
     fetch_provider_models,
@@ -17,9 +17,9 @@ from cc_extractor.providers import (
     provider_models_url,
     provider_prompt_overlays,
 )
-from cc_extractor.providers.schema import ProviderSchemaError, provider_from_json
-from cc_extractor.variants import list_variant_providers
-from cc_extractor.variants.splash import has_style, splash_ascii_art, splash_lines, splash_quote_block
+from ccsilo.providers.schema import ProviderSchemaError, provider_from_json
+from ccsilo.variants import list_variant_providers
+from ccsilo.variants.splash import has_style, splash_ascii_art, splash_lines, splash_quote_block
 
 
 def _minimal_provider_payload(mcp_servers):
@@ -252,15 +252,15 @@ def test_provider_patch_assets_are_safe_and_prompt_pack_skips_mirror():
 
 def test_provider_splash_metadata_matches_art_registry():
     for provider in list_providers():
-        assert provider.env["CC_EXTRACTOR_SPLASH"] == "1"
-        assert provider.env["CC_EXTRACTOR_PROVIDER_LABEL"] == provider.label
-        assert has_style(provider.env["CC_EXTRACTOR_SPLASH_STYLE"])
+        assert provider.env["CCSILO_SPLASH"] == "1"
+        assert provider.env["CCSILO_PROVIDER_LABEL"] == provider.label
+        assert has_style(provider.env["CCSILO_SPLASH_STYLE"])
 
 
 def test_provider_ascii_art_is_unique_plain_and_quoteable():
     art_by_key = {}
     for provider in list_providers():
-        style = provider.env["CC_EXTRACTOR_SPLASH_STYLE"]
+        style = provider.env["CCSILO_SPLASH_STYLE"]
         art = splash_ascii_art(style)
         quote_block = splash_quote_block(style)
 
@@ -274,7 +274,7 @@ def test_provider_ascii_art_is_unique_plain_and_quoteable():
 
 
 def test_zai_ascii_art_loads_from_text_file_and_keeps_palette():
-    art_path = Path(__file__).parents[1] / "cc_extractor" / "variants" / "ascii" / "zai.txt"
+    art_path = Path(__file__).parents[1] / "ccsilo" / "variants" / "ascii" / "zai.txt"
     expected = art_path.read_text(encoding="utf-8").strip("\n")
 
     art = splash_ascii_art("zai")

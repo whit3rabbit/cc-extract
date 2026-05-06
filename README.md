@@ -1,9 +1,9 @@
-# cc-extractor
+# ccsilo
 
 > [!IMPORTANT]
 > This project is not affiliated with Anthropic or Claude Code. It is for research and controlled local patching of Claude Code packaged binaries. Do not use it to silently mutate a global Claude Code install.
 
-`cc-extractor` is a Claude Code setup and tweak manager. Think ccmirror/tweakcc-style workflows first: it creates isolated Claude Code commands, routes them through provider presets, applies curated UI/system/prompt tweaks, manages local setup config, and can build patched binaries from selected tweaks.
+`ccsilo` creates isolated Claude Code silos with provider-specific patching. Think ccmirror/tweakcc-style workflows first: it creates isolated commands, routes them through provider presets, applies curated UI/system/prompt tweaks, manages local setup config, and can build patched binaries from selected tweaks.
 
 The extractor/repacker is still here, but it is the advanced layer. Most users should use the TUI to create a setup, then run the generated wrapper command.
 
@@ -11,19 +11,49 @@ Based in part on work by https://github.com/vicnaum/bun-demincer. Theme and prom
 
 ## Quick Start
 
-From this checkout:
+Stable install, once the package is published to PyPI:
 
 ```bash
-.venv/bin/python -m cc_extractor
+pipx install ccsilo
+ccsilo --provider mirror install --yes
+mirror --version
 ```
 
-If installed as a command:
+Provider setup in one command:
 
 ```bash
-cc-extractor
+ccsilo --provider kimi install --credential-env KIMI_API_KEY --yes
+kimi --version
 ```
 
-Running with no arguments in a TTY opens the TUI. If no setups exist, it starts the first-run setup wizard. If setups already exist, it opens `Manage Setup`.
+If `ccsilo` is not found after a pipx install:
+
+```bash
+pipx ensurepath
+```
+
+Then restart your shell.
+
+To run once from GitHub before the first PyPI release, or without keeping an installed command:
+
+```bash
+pipx run --spec git+https://github.com/whit3rabbit/ccsilo.git ccsilo
+```
+
+If you already use `uv`, the equivalent one-shot command is:
+
+```bash
+uv tool run --from git+https://github.com/whit3rabbit/ccsilo.git ccsilo
+```
+
+From a developer checkout:
+
+```bash
+.venv/bin/python -m pip install -e .
+.venv/bin/python -m ccsilo
+```
+
+Running `ccsilo` with no arguments in a TTY opens the TUI. If no setups exist, it starts the first-run setup wizard. If setups already exist, it opens `Manage Setup`.
 
 The fastest path:
 
@@ -34,46 +64,34 @@ The fastest path:
 5. Pick optional MCP servers. Provider-owned MCP servers are enabled automatically.
 6. Set model aliases if the provider needs them.
 7. Choose recommended tweaks, review, then create the setup.
-8. Run it from `Manage Setup`, from `.cc-extractor/bin/<setup-id>`, or with `cc-extractor variant run <setup-id> -- ...`.
+8. Run it from `Manage Setup`, from the installed provider command, from the workspace wrapper, or with `ccsilo variant run <setup-id> -- ...`.
 
-<details>
-<summary>Install as a user command</summary>
-
-Use `pipx` to keep the command isolated from your system Python:
+Inspect the resolved command and workspace paths:
 
 ```bash
-pipx install git+https://github.com/whit3rabbit/cc-extract.git
-cc-extractor --help
+ccsilo paths
 ```
 
-If `cc-extractor` is not found after install, run:
+## Where Files Go
+
+By default, installed usage stores managed setups in the platform user data directory:
+
+| Platform | Default workspace |
+|----------|-------------------|
+| macOS | `~/Library/Application Support/ccsilo` |
+| Linux | `${XDG_DATA_HOME:-~/.local/share}/ccsilo` |
+| Windows | `%APPDATA%\ccsilo` |
+
+Set `CCSILO_WORKSPACE=/path/to/workspace` to use a project-local or disposable workspace. For repository development, this keeps the old local layout:
 
 ```bash
-pipx ensurepath
+CCSILO_WORKSPACE="$PWD/.ccsilo" .venv/bin/python -m ccsilo
 ```
 
-Then restart your shell.
-
-To run once from GitHub without keeping an installed command:
-
-```bash
-pipx run --spec git+https://github.com/whit3rabbit/cc-extract.git cc-extractor
-```
-
-If you already use `uv`, the equivalent one-shot command is:
-
-```bash
-uv tool run --from git+https://github.com/whit3rabbit/cc-extract.git cc-extractor
-```
-
-</details>
-
-## What Gets Created
-
-The default workspace is `.cc-extractor/` in the current working directory. Set `CC_EXTRACTOR_WORKSPACE=/path/to/workspace` to use a different workspace.
+The workspace contains:
 
 ```text
-.cc-extractor/
+<workspace>/
   variants/<setup-id>/variant.json
   variants/<setup-id>/native/
   variants/<setup-id>/config/
@@ -90,13 +108,13 @@ Important paths:
 
 | Path | Purpose |
 |------|---------|
-| `.cc-extractor/bin/<setup-id>` | Wrapper command for the finished setup. This is the preferred thing to run. |
-| `.cc-extractor/variants/<setup-id>/variant.json` | Setup manifest: provider, source version, selected tweaks, model overrides, MCP choices, and wrapper paths. |
-| `.cc-extractor/variants/<setup-id>/config/` | Isolated Claude Code config for the setup. |
-| `.cc-extractor/variants/<setup-id>/secrets.env` | Optional setup-local credential file, only written when you choose stored credentials. |
-| `.cc-extractor/downloads/native/` | Checksum-verified downloaded or imported native Claude Code binaries. |
-| `.cc-extractor/patches/tweak-profiles/` | Saved Dashboard tweak selections. |
-| `.cc-extractor/patched/native/` | Dashboard-built patched native binaries. |
+| `<workspace>/bin/<setup-id>` | Wrapper command for the finished setup. |
+| `<workspace>/variants/<setup-id>/variant.json` | Setup manifest: provider, source version, selected tweaks, model overrides, MCP choices, and wrapper paths. |
+| `<workspace>/variants/<setup-id>/config/` | Isolated Claude Code config for the setup. |
+| `<workspace>/variants/<setup-id>/secrets.env` | Optional setup-local credential file, only written when you choose stored credentials. |
+| `<workspace>/downloads/native/` | Checksum-verified downloaded or imported native Claude Code binaries. |
+| `<workspace>/patches/tweak-profiles/` | Saved Dashboard tweak selections. |
+| `<workspace>/patched/native/` | Dashboard-built patched native binaries. |
 
 Deleting a setup removes its setup directory and wrapper command. Shared downloads and caches are not removed.
 
@@ -107,41 +125,67 @@ From the TUI, select a setup in `Manage Setup`, then choose `Run Claude`.
 From a shell, run the generated wrapper:
 
 ```bash
-.cc-extractor/bin/my-setup
-.cc-extractor/bin/my-setup --version
-.cc-extractor/bin/my-setup --print "hello"
+ccsilo variant run my-setup -- --version
+ccsilo variant run my-setup -- --print "hello"
 ```
 
-Or run through the CLI:
+Or run the workspace wrapper directly:
 
 ```bash
-cc-extractor variant run my-setup -- --version
-cc-extractor variant run my-setup -- --print "hello"
+"$(ccsilo paths --json | python -c 'import json,sys; print(json.load(sys.stdin)["workspace"])')/bin/my-setup" --version
 ```
 
 To install a stable command into a home PATH directory:
 
 ```bash
-cc-extractor variant install my-setup
-cc-extractor variant install my-setup --alias claude-kimi
-cc-extractor variant install my-setup --bin-dir ~/.local/bin --yes
+ccsilo variant install my-setup
+ccsilo variant install my-setup --alias claude-kimi
+ccsilo variant install my-setup --bin-dir ~/.local/bin --yes
 ```
 
 `variant install` creates a managed symlink to the setup wrapper. It refuses to overwrite non-symlinks or symlinks owned by something else.
 
-Provider shortcuts can create or update the default setup for a provider and install the command in one step:
+Provider shortcuts can create or update the default setup for a provider and install the command in one step. By default, the installed command is the provider key, for example `kimi`, `zai`, or `ccrouter`.
 
 ```bash
-cc-extractor --provider kimi install --credential-env KIMI_API_KEY
-cc-extractor install --provider openrouter --credential-env OPENROUTER_API_KEY --alias claude-openrouter
-cc-extractor --provider kimi update
-cc-extractor --provider kimi uninstall --yes
+ccsilo --provider kimi install --credential-env KIMI_API_KEY
+ccsilo --provider zai install --credential-env Z_AI_API_KEY
+ccsilo install --provider openrouter --credential-env OPENROUTER_API_KEY --alias claude-openrouter
+ccsilo --provider kimi update
+ccsilo --provider kimi uninstall --yes
 ```
 
-To remove managed symlinks and the current workspace:
+## How To Uninstall
+
+Remove one provider setup:
 
 ```bash
-cc-extractor uninstall --yes
+ccsilo --provider kimi uninstall --yes
+```
+
+Remove managed symlinks and the current workspace:
+
+```bash
+ccsilo uninstall --yes
+```
+
+Remove the `ccsilo` command installed by pipx:
+
+```bash
+pipx uninstall ccsilo
+```
+
+## Troubleshooting PATH
+
+Use `ccsilo paths` to see the active workspace and whether `ccsilo` is on PATH.
+
+If `ccsilo` itself is missing after pipx install, run `pipx ensurepath` and restart your shell.
+
+If a setup command such as `kimi` is missing, rerun the provider install with `--yes` to create `~/.local/bin`, or pass an explicit bin directory:
+
+```bash
+ccsilo --provider kimi install --credential-env KIMI_API_KEY --yes
+ccsilo --provider kimi install --credential-env KIMI_API_KEY --bin-dir ~/.local/bin --yes
 ```
 
 ## TUI Guide
@@ -210,28 +254,28 @@ Provider presets configure endpoint environment variables, credentials, optional
 List provider details from the CLI:
 
 ```bash
-cc-extractor variant providers
-cc-extractor variant providers --json
-cc-extractor variant mcp
-cc-extractor variant mcp --provider kimi
+ccsilo variant providers
+ccsilo variant providers --json
+ccsilo variant mcp
+ccsilo variant mcp --provider kimi
 ```
 
 ### CC Router
 
-The `ccrouter` provider can manage Claude Code Router inside the setup workspace. By default, cc-extractor installs CCR locally under the setup, copies `~/.claude-code-router/config.json` into the setup when it exists, assigns an isolated local port, and runs CCR with `HOME` pointed at the setup-local home.
+The `ccrouter` provider can manage Claude Code Router inside the setup workspace. By default, ccsilo installs CCR locally under the setup, copies `~/.claude-code-router/config.json` into the setup when it exists, assigns an isolated local port, and runs CCR with `HOME` pointed at the setup-local home.
 
 ```bash
-cc-extractor variant create --name ccrouter --provider ccrouter
-cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-config empty
-cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-package @musistudio/claude-code-router@2.0.0
-cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-port 4567
-cc-extractor variant create --name ccrouter --provider ccrouter --no-ccrouter-autostart
+ccsilo variant create --name ccrouter --provider ccrouter
+ccsilo variant create --name ccrouter --provider ccrouter --ccrouter-config empty
+ccsilo variant create --name ccrouter --provider ccrouter --ccrouter-package @musistudio/claude-code-router@2.0.0
+ccsilo variant create --name ccrouter --provider ccrouter --ccrouter-port 4567
+ccsilo variant create --name ccrouter --provider ccrouter --no-ccrouter-autostart
 ```
 
 Managed CCR config lives at:
 
 ```text
-.cc-extractor/variants/<setup-id>/ccr-home/.claude-code-router/config.json
+.ccsilo/variants/<setup-id>/ccr-home/.claude-code-router/config.json
 ```
 
 Use `--ccrouter-mode external` when you want to install, configure, and start CCR yourself:
@@ -239,7 +283,7 @@ Use `--ccrouter-mode external` when you want to install, configure, and start CC
 ```bash
 npm install -g @musistudio/claude-code-router
 ccr start
-cc-extractor variant create --name ccrouter --provider ccrouter --ccrouter-mode external
+ccsilo variant create --name ccrouter --provider ccrouter --ccrouter-mode external
 ```
 
 For managed setups, edit the setup-local CCR config instead of the global CCR config. The wrapper starts the local `ccr` service when needed and runs the patched Claude binary directly. It does not call `ccr code`. See [docs/CCR.md](docs/CCR.md) for the longer flow.
@@ -247,7 +291,7 @@ For managed setups, edit the setup-local CCR config instead of the global CCR co
 `ccr-oauth` plus the Architect Mode tweak can use a planner model in plan mode and worker models otherwise:
 
 ```bash
-cc-extractor variant create \
+ccsilo variant create \
   --name architect \
   --provider ccr-oauth \
   --model-proxy architect \
@@ -262,11 +306,11 @@ The wrapper command is the recommended runtime. Direct binary paths are managed 
 
 | Source or binary | Supported container | Main workflow | Notes |
 |------------------|---------------------|---------------|-------|
-| Downloaded native Claude Code binary | macOS Mach-O, Linux ELF, Windows PE | TUI setup creation, Dashboard builds, CLI `download` | Cached under `.cc-extractor/downloads/native/<version>/<platform>/<sha256>/`. |
+| Downloaded native Claude Code binary | macOS Mach-O, Linux ELF, Windows PE | TUI setup creation, Dashboard builds, CLI `download` | Cached under `<workspace>/downloads/native/<version>/<platform>/<sha256>/`. |
 | Imported local native binary | Mach-O, ELF, or PE matching `--source-platform` | CLI-only `variant create/update --source-binary` | Requires a concrete semver in `--claude-version`. The original file is copied into the managed cache. |
 | NPM tarball | Anthropic NPM package tarball | CLI `download --npm` | Separate cache, mainly useful for advanced inspection/source comparison. Requires `npm`. |
 | Extracted bundle directory | `.bundle_manifest.json` plus extracted modules | `extract`, `unpack`, `pack`, legacy patch manifests | Advanced workflow for bundle research and controlled patch packages. |
-| Dashboard patched binary | Same native platform as selected source | Dashboard tab | Written under `.cc-extractor/patched/native/`; a setup wrapper is still the normal thing to run. |
+| Dashboard patched binary | Same native platform as selected source | Dashboard tab | Written under `<workspace>/patched/native/`; a setup wrapper is still the normal thing to run. |
 
 Normal setup creation and Dashboard builds use centralized downloads. The TUI loads the local download index first, then refreshes the live Claude Code version index once at startup. If no live index is available, the packaged seed index is used until refresh succeeds.
 
@@ -343,29 +387,30 @@ For non-`mirror` providers, new setups also select these env-backed defaults: `d
 
 ## Setup CLI
 
-The installed command is `cc-extractor`. From a checkout, the canonical equivalent is `.venv/bin/python -m cc_extractor`.
+The installed command is `ccsilo`. From a checkout, the canonical equivalent is `.venv/bin/python -m ccsilo`.
 
 ```bash
-cc-extractor variant providers
-cc-extractor variant mcp
-cc-extractor variant create --name my-cc --provider kimi
-cc-extractor variant create --name my-cc --provider kimi --credential-env KIMI_API_KEY
-cc-extractor variant create --name local --provider lmstudio --api-key token --store-secret
-cc-extractor variant create --name offline --provider mirror --claude-version 2.1.123 --source-binary /path/to/claude
-cc-extractor variant list
-cc-extractor variant show my-cc --json
-cc-extractor variant apply my-cc
-cc-extractor variant update my-cc
-cc-extractor variant update offline --claude-version 2.1.124 --source-binary /path/to/claude
-cc-extractor variant update --all
-cc-extractor variant doctor my-cc
-cc-extractor variant doctor --all
-cc-extractor variant run my-cc -- [args...]
-cc-extractor variant install my-cc
-cc-extractor variant remove my-cc --yes
-cc-extractor --provider kimi install
-cc-extractor --provider kimi update
-cc-extractor --provider kimi uninstall --yes
+ccsilo variant providers
+ccsilo variant mcp
+ccsilo variant create --name my-cc --provider kimi
+ccsilo variant create --name my-cc --provider kimi --credential-env KIMI_API_KEY
+ccsilo variant create --name local --provider lmstudio --api-key token --store-secret
+ccsilo variant create --name offline --provider mirror --claude-version 2.1.123 --source-binary /path/to/claude
+ccsilo variant list
+ccsilo variant show my-cc --json
+ccsilo variant apply my-cc
+ccsilo variant update my-cc
+ccsilo variant update offline --claude-version 2.1.124 --source-binary /path/to/claude
+ccsilo variant update --all
+ccsilo variant doctor my-cc
+ccsilo variant doctor --all
+ccsilo variant run my-cc -- [args...]
+ccsilo variant install my-cc
+ccsilo variant remove my-cc --yes
+ccsilo --provider kimi install
+ccsilo --provider zai install --credential-env Z_AI_API_KEY
+ccsilo --provider kimi update
+ccsilo --provider kimi uninstall --yes
 ```
 
 Create options:
@@ -395,7 +440,7 @@ Create options:
 Rules for local source binaries:
 
 - `--claude-version` must be a concrete semver such as `2.1.123`. `latest` and `stable` are rejected.
-- `--source-platform` may be omitted. When omitted, cc-extractor uses the current host platform key.
+- `--source-platform` may be omitted. When omitted, ccsilo uses the current host platform key.
 - The binary must parse as a Bun standalone binary. Mach-O requires a `darwin-*` platform, ELF requires `linux-*`, and PE requires `win32-*`.
 - Rebuilds use the imported managed copy, not the original path.
 - If the managed copy is missing or its hash changes, re-import it with `variant update <name> --claude-version <version> --source-binary <path>`.
@@ -404,28 +449,28 @@ Rules for local source binaries:
 ## Downloads And Cache
 
 ```bash
-cc-extractor download
-cc-extractor download --latest
-cc-extractor download 2.1.123
-cc-extractor download --npm 2.1.123
+ccsilo download
+ccsilo download --latest
+ccsilo download 2.1.123
+ccsilo download --npm 2.1.123
 ```
 
 When `--outdir` is omitted, downloads go into the centralized workspace cache. Use `--outdir` only when you intentionally want the legacy output layout outside the workspace:
 
 ```bash
-cc-extractor download 2.1.123 --outdir ./downloads
+ccsilo download 2.1.123 --outdir ./downloads
 ```
 
 Native cache layout:
 
 ```text
-.cc-extractor/downloads/native/<version>/<platform>/<sha256>/claude
+<workspace>/downloads/native/<version>/<platform>/<sha256>/claude
 ```
 
 NPM tarball cache layout:
 
 ```text
-.cc-extractor/downloads/npm/<version>/<sha256>/<tarball>.tgz
+<workspace>/downloads/npm/<version>/<sha256>/<tarball>.tgz
 ```
 
 ## Advanced Binary And Patch Commands
@@ -435,16 +480,16 @@ These commands are for research, fixture work, patch development, and controlled
 ### Inspect
 
 ```bash
-cc-extractor inspect /path/to/claude
-cc-extractor inspect /path/to/claude --json
+ccsilo inspect /path/to/claude
+ccsilo inspect /path/to/claude --json
 ```
 
 ### Extract And Unpack
 
 ```bash
-cc-extractor extract /path/to/claude ./extracted_files
-cc-extractor extract /path/to/claude ./extracted_files --include-sourcemaps
-cc-extractor unpack /path/to/claude --out ./extracted_files
+ccsilo extract /path/to/claude ./extracted_files
+ccsilo extract /path/to/claude ./extracted_files --include-sourcemaps
+ccsilo unpack /path/to/claude --out ./extracted_files
 ```
 
 Extraction writes module files plus `.bundle_manifest.json`. The manifest records platform, module struct size, entry point, byte count, section metadata, and per-module offsets needed by repack.
@@ -452,7 +497,7 @@ Extraction writes module files plus `.bundle_manifest.json`. The manifest record
 ### Replace Entry JS
 
 ```bash
-cc-extractor replace-entry /path/to/claude ./entry.js --out ./claude-patched
+ccsilo replace-entry /path/to/claude ./entry.js --out ./claude-patched
 ```
 
 This resizes only the Bun entry module and repacks the binary through `binary_patcher.repack_binary`.
@@ -460,8 +505,8 @@ This resizes only the Bun entry module and repacks the binary through `binary_pa
 ### Apply Binary Theme And Prompt Patches
 
 ```bash
-cc-extractor apply-binary /path/to/claude --config ./config.json
-cc-extractor apply-binary /path/to/claude --config ./config.json --overlays ./overlays.json
+ccsilo apply-binary /path/to/claude --config ./config.json
+ccsilo apply-binary /path/to/claude --config ./config.json --overlays ./overlays.json
 ```
 
 `config.json` may provide themes as either `{"themes": [...]}` or `{"settings": {"themes": [...]}}`. Prompt overlay misses are reported in the structured JSON result and are not fatal. Theme anchor misses return `anchor-not-found`.
@@ -471,10 +516,10 @@ On Mach-O binaries, patches that would grow the bundled entry JS may use the unp
 ### Patch Manifests
 
 ```bash
-cc-extractor patch init ./my_patch
-cc-extractor patch apply ./my_patch ./extracted_files
-cc-extractor patch apply ./my_patch ./extracted_files --check
-cc-extractor patch apply ./my_patch ./extracted_files --binary /path/to/claude --source-version 1.2.3
+ccsilo patch init ./my_patch
+ccsilo patch apply ./my_patch ./extracted_files
+ccsilo patch apply ./my_patch ./extracted_files --check
+ccsilo patch apply ./my_patch ./extracted_files --binary /path/to/claude --source-version 1.2.3
 ```
 
 Creates or applies text patch manifests against extracted bundle files. `--check` validates without writing. `--binary` and `--source-version` override source metadata for cross-version patches.
@@ -482,7 +527,7 @@ Creates or applies text patch manifests against extracted bundle files. `--check
 ### Pack
 
 ```bash
-cc-extractor pack ./modified_files /path/to/original_claude ./new_claude
+ccsilo pack ./modified_files /path/to/original_claude ./new_claude
 ```
 
 Rebuilds raw Bun bytes from `.bundle_manifest.json`, parses the base binary, and delegates container rewriting to `binary_patcher.repack_binary`.
@@ -490,7 +535,7 @@ Rebuilds raw Bun bytes from `.bundle_manifest.json`, parses the base binary, and
 ## Python API
 
 ```python
-from cc_extractor import (
+from ccsilo import (
     apply_patches,
     download_binary,
     download_npm,
@@ -502,7 +547,7 @@ from cc_extractor import (
 )
 ```
 
-The core model is `BunBinaryInfo` and `BunModule` from `cc_extractor.bun_extract.types`.
+The core model is `BunBinaryInfo` and `BunModule` from `ccsilo.bun_extract.types`.
 
 ## Development
 
@@ -517,14 +562,16 @@ Run checks:
 
 ```bash
 .venv/bin/python -m pytest -q
-ruff check cc_extractor tests tools
+ruff check ccsilo tests tools
 ```
+
+Build and publish release artifacts with the checklist in [docs/RELEASE.md](docs/RELEASE.md).
 
 The default test suite does not download real Claude Code binaries. Run gated integration tests explicitly when you need live binary coverage:
 
 ```bash
-CC_EXTRACTOR_RUN_REAL_BINARY_TEST=1 .venv/bin/python -m pytest -q tests/test_integration_real_binary.py
-CC_EXTRACTOR_RUN_REAL_BINARY_TEST=1 CC_EXTRACTOR_REAL_BINARY_VERSION=2.1.119 .venv/bin/python -m pytest -q tests/test_integration_real_binary.py
+CCSILO_RUN_REAL_BINARY_TEST=1 .venv/bin/python -m pytest -q tests/test_integration_real_binary.py
+CCSILO_RUN_REAL_BINARY_TEST=1 CCSILO_REAL_BINARY_VERSION=2.1.119 .venv/bin/python -m pytest -q tests/test_integration_real_binary.py
 ```
 
 Docker runtime smoke is preferred for release-prep patch proof:
@@ -549,7 +596,7 @@ The extractor downloads each native binary, extracts the bundled entry JS, extra
 ### Architecture
 
 ```text
-cc_extractor/
+ccsilo/
   __main__.py                  CLI entry point, variant dispatcher, and TUI launch
   cli/                         argparse tree, command handlers, JSON payload helpers
   tui/                         setup manager, dashboard, rendering, state, navigation, keys

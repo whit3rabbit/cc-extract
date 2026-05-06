@@ -1,8 +1,8 @@
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches._registry import REGISTRY
-from cc_extractor.patches.opusplan1m import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches._registry import REGISTRY
+from ccsilo.patches.opusplan1m import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 

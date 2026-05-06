@@ -1,6 +1,6 @@
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.prompt_overlays import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.prompt_overlays import PATCH
 
 
 def test_synthetic_applies(cli_js_synthetic):

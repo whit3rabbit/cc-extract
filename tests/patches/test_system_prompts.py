@@ -1,4 +1,4 @@
-from cc_extractor.patches.system_prompts import apply_system_prompts
+from ccsilo.patches.system_prompts import apply_system_prompts
 
 
 def test_apply_system_prompts_escapes_js_string_line_breaks_and_delimiter():

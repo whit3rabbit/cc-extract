@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from cc_extractor.binary_patcher.bun_compat import BUN_NODE_COMPAT_MARKER, ensure_bun_node_compat
+from ccsilo.binary_patcher.bun_compat import BUN_NODE_COMPAT_MARKER, ensure_bun_node_compat
 
 
 def test_ensure_bun_node_compat_prepends_marker_and_preserves_source():

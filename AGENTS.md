@@ -1,4 +1,4 @@
-`cc-extractor` is a Python toolkit for inspecting, extracting, patching, repacking, and managing Claude Code Bun standalone binaries.
+`ccsilo` is a Python toolkit for isolated Claude Code silos with provider-specific patching, binary inspection, extraction, patching, repacking, and setup management.
 
 The current product surface has three major workflows:
 
@@ -18,40 +18,40 @@ Use `.venv/bin/python` from the repository root.
 .venv/bin/python -m pip install -e '.[dev]'
 
 # Open TUI
-.venv/bin/python -m cc_extractor
+.venv/bin/python -m ccsilo
 
 # Binary / bundle commands
-.venv/bin/python -m cc_extractor download [version]
-.venv/bin/python -m cc_extractor download --latest
-.venv/bin/python -m cc_extractor download --npm [version]
-.venv/bin/python -m cc_extractor inspect <binary> --json
-.venv/bin/python -m cc_extractor extract <binary> [outdir] [--source-version <version>] [--include-sourcemaps]
-.venv/bin/python -m cc_extractor unpack <binary> --out <dir>
-.venv/bin/python -m cc_extractor replace-entry <binary> <entry-js> --out <binary>
-.venv/bin/python -m cc_extractor apply-binary <binary> --config <config.json> [--overlays <overlays.json>]
-.venv/bin/python -m cc_extractor pack <dir> <base-binary> <out-binary>
+.venv/bin/python -m ccsilo download [version]
+.venv/bin/python -m ccsilo download --latest
+.venv/bin/python -m ccsilo download --npm [version]
+.venv/bin/python -m ccsilo inspect <binary> --json
+.venv/bin/python -m ccsilo extract <binary> [outdir] [--source-version <version>] [--include-sourcemaps]
+.venv/bin/python -m ccsilo unpack <binary> --out <dir>
+.venv/bin/python -m ccsilo replace-entry <binary> <entry-js> --out <binary>
+.venv/bin/python -m ccsilo apply-binary <binary> --config <config.json> [--overlays <overlays.json>]
+.venv/bin/python -m ccsilo pack <dir> <base-binary> <out-binary>
 
 # Legacy extracted-bundle patch manifests
-.venv/bin/python -m cc_extractor patch init <patch-dir>
-.venv/bin/python -m cc_extractor patch apply <patch-dir> <extract-dir> [--check] [--binary <binary>] [--source-version <version>]
+.venv/bin/python -m ccsilo patch init <patch-dir>
+.venv/bin/python -m ccsilo patch apply <patch-dir> <extract-dir> [--check] [--binary <binary>] [--source-version <version>]
 
 # Setup / variant commands
-.venv/bin/python -m cc_extractor variant providers [--json]
-.venv/bin/python -m cc_extractor variant create --name <name> --provider <key> [--claude-version <v>] [--patch-profile <id>] [--tweak <id> ...]
-.venv/bin/python -m cc_extractor variant create --name <name> --provider <key> --credential-env <ENV_NAME>
-.venv/bin/python -m cc_extractor variant create --name <name> --provider <key> --api-key <key> --store-secret
-.venv/bin/python -m cc_extractor variant list [--json]
-.venv/bin/python -m cc_extractor variant show <name-or-id> [--json]
-.venv/bin/python -m cc_extractor variant apply <name-or-id> [--json]
-.venv/bin/python -m cc_extractor variant update [<name-or-id> | --all] [--claude-version <v>] [--json]
-.venv/bin/python -m cc_extractor variant doctor [<name-or-id> | --all] [--json]
-.venv/bin/python -m cc_extractor variant remove <name-or-id> [--yes]
-.venv/bin/python -m cc_extractor variant run <name-or-id> -- [args...]
+.venv/bin/python -m ccsilo variant providers [--json]
+.venv/bin/python -m ccsilo variant create --name <name> --provider <key> [--claude-version <v>] [--patch-profile <id>] [--tweak <id> ...]
+.venv/bin/python -m ccsilo variant create --name <name> --provider <key> --credential-env <ENV_NAME>
+.venv/bin/python -m ccsilo variant create --name <name> --provider <key> --api-key <key> --store-secret
+.venv/bin/python -m ccsilo variant list [--json]
+.venv/bin/python -m ccsilo variant show <name-or-id> [--json]
+.venv/bin/python -m ccsilo variant apply <name-or-id> [--json]
+.venv/bin/python -m ccsilo variant update [<name-or-id> | --all] [--claude-version <v>] [--json]
+.venv/bin/python -m ccsilo variant doctor [<name-or-id> | --all] [--json]
+.venv/bin/python -m ccsilo variant remove <name-or-id> [--yes]
+.venv/bin/python -m ccsilo variant run <name-or-id> -- [args...]
 
 # Test / lint
 .venv/bin/python -m pytest -q
-ruff check cc_extractor/
-ruff check --fix cc_extractor/
+ruff check ccsilo/
+ruff check --fix ccsilo/
 
 # Docker runtime smoke, linux/amd64 by default
 tools/run_patch_smoke_docker.sh --latest --run-smoke --smoke-timeout 60
@@ -119,7 +119,7 @@ Rules:
 * Run `tools/check_patch_releases.py --since-existing-latest` with the daily prompt catalog update.
 * Use `--run-smoke` for release-prep reports when native binary execution is acceptable. It builds a temporary patched binary, runs `<binary> --version` in an isolated temp environment, and records the result in each version report. A `blocked` smoke status is infrastructure evidence, such as unpatched repack failure, not patch proof.
 * Prefer `tools/run_patch_smoke_docker.sh` for committed smoke reports. It defaults to `DOCKER_PLATFORM=linux/amd64` so runtime results are reproducible across developer machines. Override `DOCKER_PLATFORM` only when intentionally producing a platform-specific report.
-* Docker smoke uses `.cc-extractor/docker-linux` for downloaded Linux binaries and writes JSON reports to `reports/patch-compat`. Do not commit `.cc-extractor/`.
+* Docker smoke uses `.ccsilo/docker-linux` for downloaded Linux binaries and writes JSON reports to `reports/patch-compat`. Do not commit `.ccsilo/`.
 * The smoke flow intentionally packs and runs an unpatched baseline before applying patches. If baseline fails, fix extract/repack infrastructure before blaming a patch.
 * Passing smoke reports are proof for that report artifact, but do not automatically widen `versions_tested`. Keep metadata pinned until fixture tests or targeted real-version tests prove the specific patch.
 * Treat failed patch reports as release blockers. `unsupported` means the patch is intentionally outside `versions_supported` and does not fail the run.
@@ -130,12 +130,13 @@ Rules:
 
 GitHub Actions workflows:
 
-* `.github/workflows/ci.yml` runs on push and pull request. It installs `.[dev]`, installs `ruff`, runs `ruff check cc_extractor tests tools`, then runs the full `pytest -q` suite on Python 3.11.
+* `.github/workflows/ci.yml` runs on push and pull request. It installs `.[dev]`, installs `ruff`, runs `ruff check ccsilo tests tools`, then runs the full `pytest -q` suite on Python 3.11.
 * The `CI` workflow also has a manual Docker patch smoke job. Run it with `workflow_dispatch`, set `run_docker_smoke=true`, and optionally pass space-separated `smoke_versions`. If no versions are provided, it smokes the latest release and uploads `reports/patch-compat` as an artifact.
 * `.github/workflows/update-prompts.yml` is the daily release-tracking workflow. It updates prompt catalogs, runs Docker patch smoke for releases newer than the newest local report, validates prompt/report tooling, and commits prompt/report changes.
 
 CI rules:
 
+* Before committing and pushing, pull/rebase the current branch against its upstream first, then resolve conflicts and rerun the relevant verification. CI and daily release-tracking jobs may commit prompt catalogs or patch reports while local work is in progress, and pushing stale report/index data creates avoidable conflicts.
 * Keep Docker smoke out of normal PR CI unless explicitly requested. It downloads and executes upstream native binaries, so it is slower and network-dependent.
 * If Docker smoke fails with `status=blocked`, treat it as infrastructure failure. If it fails at `stage=run`, inspect `smoke.stderr`, the attempted patch list, and run single-patch bisection before changing version metadata.
 * The daily workflow should not use raw local smoke results. Commit reproducible Docker reports instead.
@@ -187,16 +188,16 @@ _utils.py                    -> stdlib-only helpers shared across modules
   * if none exist, start in `first-run-setup`.
 * `Manage Setup` owns setup lifecycle: create, run, upgrade, health check, delete, logs, tweak editing, and command/config copy actions.
 * `Dashboard` is a guided native-binary tweak workflow: choose source, choose curated dashboard tweaks, manage tweak profiles, review, then build.
-* `Patch` is for workspace patch packages under `.cc-extractor/patches/packages/`.
+* `Patch` is for workspace patch packages under `.ccsilo/patches/packages/`.
 * `Tweaks` editing is scoped to an existing setup and rebuilds through `variants.apply_variant`.
 * Keep action-layer functions that tests monkey-patch in `tui/__init__.py`. Pure rendering/options/navigation helpers belong in submodules.
 
 ## Workspace Layout
 
-Default workspace root is `.cc-extractor/`, unless `CC_EXTRACTOR_WORKSPACE` is set.
+Default workspace root is the platform user data directory (`~/Library/Application Support/ccsilo` on macOS, `${XDG_DATA_HOME:-~/.local/share}/ccsilo` on Linux, `%APPDATA%\ccsilo` on Windows), unless `CCSILO_WORKSPACE` is set.
 
 ```text
-.cc-extractor/
+.ccsilo/
   downloads/native/
   downloads/npm/
   extractions/native/
@@ -228,8 +229,8 @@ Important distinctions:
 * Manifest offsets such as `nameOffset`, `contentOffset`, `bytecodeOffset`, and `execArgvOffset` are not decorative. Use them to relocate the original payload when repacking.
 * `extractor.py` and `bundler.py` are compatibility wrappers, not independent implementations.
 * Keep `patcher.py` separate from `binary_patcher`; it handles legacy extracted-text patch manifests.
-* `cc_extractor.patches.apply_patches` applies curated regex tweaks.
-* `cc_extractor.binary_patcher.index.apply_patches` applies binary theme/prompt patches.
+* `ccsilo.patches.apply_patches` applies curated regex tweaks.
+* `ccsilo.binary_patcher.index.apply_patches` applies binary theme/prompt patches.
 * `patch_workflow.apply_patch_packages_to_native` extracts, applies workspace patch packages, repacks, and writes patched metadata.
 * `patch_workflow.apply_dashboard_tweaks_to_native` applies curated tweak IDs directly for Dashboard builds.
 * Theme anchor misses are fatal structured failures.
@@ -242,7 +243,7 @@ Important distinctions:
 * Text-level parse tests are not enough for entry patches that change byte lengths or wrapper shape. Pair anchor tests with Docker runtime smoke before using a report as release signal.
 * Mach-O signing is explicit and soft-failing through `binary_patcher/codesign.py`.
 * Unpacked fallback supports both Python `.bundle_manifest.json` and TS-style `manifest.json`.
-* Unpacked Node runtime entry JS must be passed through `binary_patcher.bun_compat.ensure_bun_node_compat` after stripping the Bun wrapper and after any later variant-only JS tweak writes. Preserve the `cc-extractor:bun-node-compat` marker.
+* Unpacked Node runtime entry JS must be passed through `binary_patcher.bun_compat.ensure_bun_node_compat` after stripping the Bun wrapper and after any later variant-only JS tweak writes. Preserve the `ccsilo:bun-node-compat` marker.
 * `variant doctor` includes a `node-bun-compat` check for stale Node-runtime entries that still reference `Bun.*` without the compat marker. Reapply or update the setup to regenerate the entry.
 * PE resize requires `.bun` to be the last raw-data section.
 * On non-Windows, written binaries/wrappers should be chmodded executable.
@@ -262,7 +263,7 @@ Important distinctions:
 * `validate_variant_manifest` is the manifest authority. Do not bypass it.
 * Runtime may be `native` or `node`.
 * Node runtime wrappers require a Node version with explicit resource management support and allow `NODE=/path/to/node` override.
-* If a Node-runtime setup fails `node-bun-compat`, run `.venv/bin/python -m cc_extractor variant apply <name-or-id> --json` instead of hand-editing generated unpacked files.
+* If a Node-runtime setup fails `node-bun-compat`, run `.venv/bin/python -m ccsilo variant apply <name-or-id> --json` instead of hand-editing generated unpacked files.
 * `DEFAULT_TWEAK_IDS` are selected on create.
 * `ENV_TWEAK_IDS` affect wrapper environment rather than patching JS.
 * In-place rebuild optimization applies only to supported theme/prompt/env tweak changes; otherwise rebuild from source.
@@ -277,14 +278,14 @@ Important distinctions:
 * `Down`/`Up` are the expected named keys; `ArrowDown`/`ArrowUp` silently no-op in the current test harness.
 * Keep monkey-patch-sensitive action functions in `tui/__init__.py` and `variants/__init__.py`.
 * Keep `_utils.py` stdlib-only to avoid circular imports.
-* Do not move `downloader.py` without updating tests that patch `cc_extractor.downloader.*`.
+* Do not move `downloader.py` without updating tests that patch `ccsilo.downloader.*`.
 * Do not stage or commit submodule/vendor changes unless explicitly requested.
 
 
 ## Adding Curated Regex Tweaks
 
-Curated tweaks live under `cc_extractor/patches/` and are registered explicitly in
-`cc_extractor/patches/_registry.py`.
+Curated tweaks live under `ccsilo/patches/` and are registered explicitly in
+`ccsilo/patches/_registry.py`.
 
 Use this flow when adding a new tweak:
 
@@ -340,8 +341,8 @@ Use this flow when adding a new tweak:
 
 7. Do not confuse curated tweaks with workspace patch packages.
 
-   `cc_extractor.patches.apply_patches` is the regex-tweak registry.
-   `cc_extractor.binary_patcher.index.apply_patches` is the binary theme/prompt patch API.
+   `ccsilo.patches.apply_patches` is the regex-tweak registry.
+   `ccsilo.binary_patcher.index.apply_patches` is the binary theme/prompt patch API.
    `patch_workflow.apply_patch_packages_to_native` applies workspace patch packages.
 
 ## Patch Testing
@@ -366,9 +367,9 @@ Patch test expectations:
 
 * L1 anchor tests should prove the regex finds the intended minified structure.
 * L2 parse tests may use `node --check`, but Bun-bundled `cli.js` can fail under Node because of `bun:` imports. Pre-check the unpatched JS and skip L2 if the baseline does not parse.
-* L3 real-binary boot smoke tests must be gated behind `CC_EXTRACTOR_REAL_BINARY=1`.
-* L4 TUI/MCP behavioral tests must be gated behind `CC_EXTRACTOR_TUI_MCP=1`.
-* Real download/patch/execute integration tests must be separately gated behind `CC_EXTRACTOR_RUN_REAL_BINARY_TEST=1`.
+* L3 real-binary boot smoke tests must be gated behind `CCSILO_REAL_BINARY=1`.
+* L4 TUI/MCP behavioral tests must be gated behind `CCSILO_TUI_MCP=1`.
+* Real download/patch/execute integration tests must be separately gated behind `CCSILO_RUN_REAL_BINARY_TEST=1`.
 * Docker patch smoke is the preferred release-prep runtime proof. It downloads Linux binaries, extracts them, confirms an unpatched repack boots, applies all supported patches, repacks again, and runs `<patched-binary> --version`.
 * Expected environment-gated skips are not failures. Use `pytest -q -rs` to verify skip reasons.
 
@@ -378,7 +379,7 @@ Before updating `versions_tested`, prove the patch against a concrete Claude Cod
 
 Avoid full-screen clears in steady-state TUI render loops.
 
-* Do not set `ratatui_py.App(clear_each_frame=True)` for `cc_extractor.tui.run_tui` or other idle-redrawing TUI flows without a measured reason.
+* Do not set `ratatui_py.App(clear_each_frame=True)` for `ccsilo.tui.run_tui` or other idle-redrawing TUI flows without a measured reason.
 * The `App` loop renders every tick. Clearing every frame causes visible flashing even when the user is idle.
 * Prefer a startup clear through `on_start`, then normal redraws without per-frame clear.
 * For flicker regressions, use PTY capture or TUI MCP smoke and count repeated full-clear escape sequences such as `ESC[2J` while idle.
@@ -400,15 +401,15 @@ Use MCP smoke tests for:
 Always run MCP TUI tests with an isolated workspace:
 
 ```bash
-CC_EXTRACTOR_WORKSPACE="$(mktemp -d)" \
-CC_EXTRACTOR_TUI_MCP=1 \
+CCSILO_WORKSPACE="$(mktemp -d)" \
+CCSILO_TUI_MCP=1 \
 .venv/bin/python -m pytest -q tests/patches_behavioral/
 ```
 
 Rules for writing TUI MCP tests:
 
-* Use a temporary `CC_EXTRACTOR_WORKSPACE`.
-* Do not depend on the developer’s real `.cc-extractor` workspace.
+* Use a temporary `CCSILO_WORKSPACE`.
+* Do not depend on the developer’s real `.ccsilo` workspace.
 * Prefer fixture-created variant manifests over real binaries for list/edit flows.
 * Variant manifest stubs only need:
 

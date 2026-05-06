@@ -1,4 +1,4 @@
-from cc_extractor.patches import (
+from ccsilo.patches import (
     AggregateResult,
     Patch,
     PatchAnchorMissError,
@@ -23,7 +23,7 @@ def test_patch_is_frozen_dataclass():
 
 def test_patch_context_defaults():
     ctx = PatchContext(claude_version=None)
-    assert ctx.provider_label == "cc-extractor"
+    assert ctx.provider_label == "ccsilo"
     assert ctx.config == {}
     assert ctx.overlays == {}
     assert ctx.force is False

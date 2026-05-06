@@ -1,10 +1,10 @@
 import json
 import struct
 import pytest
-from cc_extractor.bundler import pack_bundle
-from cc_extractor.bun_extract import parse_bun_binary
-from cc_extractor.bun_extract.constants import OFFSETS_SIZE, TRAILER
-from cc_extractor.extractor import extract_all
+from ccsilo.bundler import pack_bundle
+from ccsilo.bun_extract import parse_bun_binary
+from ccsilo.bun_extract.constants import OFFSETS_SIZE, TRAILER
+from ccsilo.extractor import extract_all
 from tests.helpers.bun_fixture import build_bun_fixture
 
 def write_manifest(indir, manifest):

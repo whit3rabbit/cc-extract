@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cc_extractor.downloader import (
+from ccsilo.downloader import (
     download_file,
     download_binary,
     download_npm,
@@ -51,41 +51,41 @@ class FakeHttpResponse:
 
 
 class TestGetPlatformKey:
-    @patch("cc_extractor.downloader.platform.system", return_value="Darwin")
-    @patch("cc_extractor.downloader.platform.machine", return_value="x86_64")
+    @patch("ccsilo.downloader.platform.system", return_value="Darwin")
+    @patch("ccsilo.downloader.platform.machine", return_value="x86_64")
     def test_darwin_x64(self, mock_machine, mock_system):
         assert get_platform_key() == "darwin-x64"
 
-    @patch("cc_extractor.downloader.platform.system", return_value="Darwin")
-    @patch("cc_extractor.downloader.platform.machine", return_value="arm64")
+    @patch("ccsilo.downloader.platform.system", return_value="Darwin")
+    @patch("ccsilo.downloader.platform.machine", return_value="arm64")
     def test_darwin_arm64(self, mock_machine, mock_system):
         assert get_platform_key() == "darwin-arm64"
 
-    @patch("cc_extractor.downloader.platform.system", return_value="Linux")
-    @patch("cc_extractor.downloader.platform.machine", return_value="x86_64")
-    @patch("cc_extractor.downloader._linux_uses_musl", return_value=False)
+    @patch("ccsilo.downloader.platform.system", return_value="Linux")
+    @patch("ccsilo.downloader.platform.machine", return_value="x86_64")
+    @patch("ccsilo.downloader._linux_uses_musl", return_value=False)
     def test_linux_x64_glibc(self, mock_musl, mock_machine, mock_system):
         assert get_platform_key() == "linux-x64"
 
-    @patch("cc_extractor.downloader.platform.system", return_value="Linux")
-    @patch("cc_extractor.downloader.platform.machine", return_value="x86_64")
-    @patch("cc_extractor.downloader._linux_uses_musl", return_value=True)
+    @patch("ccsilo.downloader.platform.system", return_value="Linux")
+    @patch("ccsilo.downloader.platform.machine", return_value="x86_64")
+    @patch("ccsilo.downloader._linux_uses_musl", return_value=True)
     def test_linux_x64_musl(self, mock_musl, mock_machine, mock_system):
         assert get_platform_key() == "linux-x64-musl"
 
-    @patch("cc_extractor.downloader.platform.system", return_value="Windows")
-    @patch("cc_extractor.downloader.platform.machine", return_value="x86_64")
+    @patch("ccsilo.downloader.platform.system", return_value="Windows")
+    @patch("ccsilo.downloader.platform.machine", return_value="x86_64")
     def test_windows(self, mock_machine, mock_system):
         assert get_platform_key() == "win32-x64"
 
-    @patch("cc_extractor.downloader.platform.system", return_value="FreeBSD")
-    @patch("cc_extractor.downloader.platform.machine", return_value="x86_64")
+    @patch("ccsilo.downloader.platform.system", return_value="FreeBSD")
+    @patch("ccsilo.downloader.platform.machine", return_value="x86_64")
     def test_unsupported_system(self, mock_machine, mock_system):
         with pytest.raises(ValueError, match="Unsupported system"):
             get_platform_key()
 
-    @patch("cc_extractor.downloader.platform.system", return_value="Darwin")
-    @patch("cc_extractor.downloader.platform.machine", return_value="i386")
+    @patch("ccsilo.downloader.platform.system", return_value="Darwin")
+    @patch("ccsilo.downloader.platform.machine", return_value="i386")
     def test_unsupported_arch(self, mock_machine, mock_system):
         with pytest.raises(ValueError, match="Unsupported architecture"):
             get_platform_key()
@@ -110,7 +110,7 @@ class TestFetchText:
     def test_fetch_text_success(self):
         response = FakeHttpResponse(b"v1.2.3\n")
 
-        with patch("cc_extractor.downloader._open_url", return_value=response) as mock_open:
+        with patch("ccsilo.downloader._open_url", return_value=response) as mock_open:
             assert fetch_text("http://example.com/version") == "v1.2.3"
 
         mock_open.assert_called_once_with("http://example.com/version")
@@ -129,9 +129,9 @@ class TestDownloadFile:
 
         monkeypatch.chdir(tmp_path)
 
-        with patch("cc_extractor.downloader._open_url", return_value=response), \
-             patch("cc_extractor.downloader._get_tqdm", return_value=make_progress), \
-             patch("cc_extractor.downloader.os.makedirs") as mock_makedirs:
+        with patch("ccsilo.downloader._open_url", return_value=response), \
+             patch("ccsilo.downloader._get_tqdm", return_value=make_progress), \
+             patch("ccsilo.downloader.os.makedirs") as mock_makedirs:
             download_file("http://example.com/artifact", "artifact.bin")
 
         assert not mock_makedirs.called
@@ -158,22 +158,23 @@ class TestDownloadBinary:
             }
         }
 
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.setattr("cc_extractor.downloader.fetch_latest_binary_version", lambda: "1.2.3")
-        monkeypatch.setattr("cc_extractor.downloader.fetch_json", lambda url: manifest)
-        monkeypatch.setattr("cc_extractor.downloader.get_platform_key", lambda: "darwin-arm64")
-        monkeypatch.setattr("cc_extractor.downloader.platform.system", lambda: "Darwin")
+        root = tmp_path / ".ccsilo"
+        monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
+        monkeypatch.setattr("ccsilo.downloader.fetch_latest_binary_version", lambda: "1.2.3")
+        monkeypatch.setattr("ccsilo.downloader.fetch_json", lambda url: manifest)
+        monkeypatch.setattr("ccsilo.downloader.get_platform_key", lambda: "darwin-arm64")
+        monkeypatch.setattr("ccsilo.downloader.platform.system", lambda: "Darwin")
 
         def fake_download_file(url, out_path):
             os.makedirs(os.path.dirname(out_path), exist_ok=True)
             with open(out_path, "wb") as handle:
                 handle.write(payload)
 
-        monkeypatch.setattr("cc_extractor.downloader.download_file", fake_download_file)
+        monkeypatch.setattr("ccsilo.downloader.download_file", fake_download_file)
 
         result = download_binary("latest")
 
-        expected = tmp_path / ".cc-extractor" / "downloads" / "native" / "1.2.3" / "darwin-arm64" / checksum / "claude"
+        expected = root / "downloads" / "native" / "1.2.3" / "darwin-arm64" / checksum / "claude"
         assert result == str(expected)
         assert expected.read_bytes() == payload
         assert os.access(expected, os.X_OK)
@@ -189,16 +190,16 @@ class TestDownloadBinary:
             }
         }
 
-        monkeypatch.setattr("cc_extractor.downloader.fetch_json", lambda url: manifest)
-        monkeypatch.setattr("cc_extractor.downloader.get_platform_key", lambda: "darwin-arm64")
-        monkeypatch.setattr("cc_extractor.downloader.platform.system", lambda: "Darwin")
+        monkeypatch.setattr("ccsilo.downloader.fetch_json", lambda url: manifest)
+        monkeypatch.setattr("ccsilo.downloader.get_platform_key", lambda: "darwin-arm64")
+        monkeypatch.setattr("ccsilo.downloader.platform.system", lambda: "Darwin")
 
         def fake_download_file(url, out_path):
             os.makedirs(os.path.dirname(out_path), exist_ok=True)
             with open(out_path, "wb") as handle:
                 handle.write(payload)
 
-        monkeypatch.setattr("cc_extractor.downloader.download_file", fake_download_file)
+        monkeypatch.setattr("ccsilo.downloader.download_file", fake_download_file)
 
         result = download_binary("1.2.3", out_dir=str(tmp_path / "downloads"))
 
@@ -225,7 +226,7 @@ class TestListAvailableBinaryVersions:
             },
         ]
 
-        with patch("cc_extractor.downloader.fetch_json", side_effect=pages) as mock_fetch:
+        with patch("ccsilo.downloader.fetch_json", side_effect=pages) as mock_fetch:
             assert list_available_binary_versions() == [
                 "2.1.10",
                 "2.1.2",
@@ -244,20 +245,20 @@ class TestResolveRequestedVersion:
 
     def test_resolve_requested_version_latest_alias(self):
         with patch(
-            "cc_extractor.downloader.fetch_latest_binary_version",
+            "ccsilo.downloader.fetch_latest_binary_version",
             return_value="2.1.116",
         ):
             assert resolve_requested_version("latest") == "2.1.116"
 
     def test_resolve_requested_version_uses_picker_for_binaries(self):
         with patch(
-            "cc_extractor.downloader.list_available_binary_versions",
+            "ccsilo.downloader.list_available_binary_versions",
             return_value=["2.1.116", "2.1.115"],
         ), patch(
-            "cc_extractor.downloader.fetch_latest_binary_version",
+            "ccsilo.downloader.fetch_latest_binary_version",
             return_value="2.1.116",
         ), patch(
-            "cc_extractor.downloader._select_version_interactively",
+            "ccsilo.downloader._select_version_interactively",
             return_value="2.1.115",
         ) as mock_select:
             assert resolve_requested_version() == "2.1.115"
@@ -266,13 +267,13 @@ class TestResolveRequestedVersion:
 
     def test_resolve_requested_version_uses_picker_for_npm(self):
         with patch(
-            "cc_extractor.downloader.list_available_npm_versions",
+            "ccsilo.downloader.list_available_npm_versions",
             return_value=["2.1.116", "2.1.115"],
         ), patch(
-            "cc_extractor.downloader.fetch_latest_npm_version",
+            "ccsilo.downloader.fetch_latest_npm_version",
             return_value="2.1.116",
         ), patch(
-            "cc_extractor.downloader._select_version_interactively",
+            "ccsilo.downloader._select_version_interactively",
             return_value="2.1.115",
         ) as mock_select:
             assert resolve_requested_version(npm=True) == "2.1.115"
@@ -281,27 +282,28 @@ class TestResolveRequestedVersion:
 
 
 class TestDownloadNpm:
-    @patch("cc_extractor.downloader.subprocess.run")
+    @patch("ccsilo.downloader.subprocess.run")
     def test_download_npm_default_uses_central_workspace(self, mock_run, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.setattr("cc_extractor.downloader.fetch_latest_npm_version", lambda: "1.2.3")
+        root = tmp_path / ".ccsilo"
+        monkeypatch.setenv("CCSILO_WORKSPACE", str(root))
+        monkeypatch.setattr("ccsilo.downloader.fetch_latest_npm_version", lambda: "1.2.3")
 
         def run(cmd, cwd, capture_output, text, check):
             tarball = "@anthropic-ai-claude-code-1.2.3.tgz"
-            (tmp_path / ".cc-extractor" / "tmp" / tarball).write_bytes(b"npm-tarball")
+            (root / "tmp" / tarball).write_bytes(b"npm-tarball")
             return MagicMock(returncode=0, stdout=f"\n{tarball}")
 
         mock_run.side_effect = run
 
         result = download_npm("latest")
         checksum = hashlib.sha256(b"npm-tarball").hexdigest()
-        expected = tmp_path / ".cc-extractor" / "downloads" / "npm" / "1.2.3" / checksum / "@anthropic-ai-claude-code-1.2.3.tgz"
+        expected = root / "downloads" / "npm" / "1.2.3" / checksum / "@anthropic-ai-claude-code-1.2.3.tgz"
 
         assert result == str(expected)
         assert expected.read_bytes() == b"npm-tarball"
 
-    @patch("cc_extractor.downloader.subprocess.run")
-    @patch("cc_extractor.downloader.os.makedirs")
+    @patch("ccsilo.downloader.subprocess.run")
+    @patch("ccsilo.downloader.os.makedirs")
     def test_download_npm_success(self, mock_makedirs, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -312,16 +314,16 @@ class TestDownloadNpm:
 
         assert result == "/tmp/npm/@anthropic-ai/claude-code-1.2.3.tgz"
 
-    @patch("cc_extractor.downloader.subprocess.run")
-    @patch("cc_extractor.downloader.os.makedirs")
+    @patch("ccsilo.downloader.subprocess.run")
+    @patch("ccsilo.downloader.os.makedirs")
     def test_download_npm_failure(self, mock_makedirs, mock_run):
         mock_run.return_value = MagicMock(returncode=1, stderr="npm error")
 
         with pytest.raises(RuntimeError, match="npm pack failed"):
             download_npm("latest", "/tmp/npm")
 
-    @patch("cc_extractor.downloader.subprocess.run")
-    @patch("cc_extractor.downloader.os.makedirs")
+    @patch("ccsilo.downloader.subprocess.run")
+    @patch("ccsilo.downloader.os.makedirs")
     def test_download_npm_missing_tarball_name(self, mock_makedirs, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="\n")
 

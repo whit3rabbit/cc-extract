@@ -1,7 +1,7 @@
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.input_border_box import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.input_border_box import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 

@@ -1,7 +1,7 @@
 """L3 smoke: build a default-tweak variant against each resolved version
 and verify the resulting binary boots cleanly.
 
-Gated: skipped unless CC_EXTRACTOR_REAL_BINARY=1.
+Gated: skipped unless CCSILO_REAL_BINARY=1.
 """
 
 import os
@@ -9,14 +9,14 @@ import subprocess
 
 import pytest
 
-from cc_extractor.download_index import load_download_index
-from cc_extractor.patches._versions import resolve_range_to_version
+from ccsilo.download_index import load_download_index
+from ccsilo.patches._versions import resolve_range_to_version
 from tests.patches._pinned import DEFAULT_VERSION_RANGES
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("CC_EXTRACTOR_REAL_BINARY") != "1",
-    reason="CC_EXTRACTOR_REAL_BINARY=1 not set",
+    os.environ.get("CCSILO_REAL_BINARY") != "1",
+    reason="CCSILO_REAL_BINARY=1 not set",
 )
 
 
@@ -34,7 +34,7 @@ def _resolved_versions():
 def test_variant_boots(version, tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    env = {**os.environ, "CC_EXTRACTOR_WORKSPACE": str(workspace)}
+    env = {**os.environ, "CCSILO_WORKSPACE": str(workspace)}
 
     cmd = [
         ".venv/bin/python",

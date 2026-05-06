@@ -1,9 +1,9 @@
 import json
 
-from cc_extractor.binary_patcher import apply_patches
-from cc_extractor.binary_patcher.index import PatchInputs
-from cc_extractor.binary_patcher.prompts import OVERLAY_MARKERS
-from cc_extractor.bun_extract import parse_bun_binary
+from ccsilo.binary_patcher import apply_patches
+from ccsilo.binary_patcher.index import PatchInputs
+from ccsilo.binary_patcher.prompts import OVERLAY_MARKERS
+from ccsilo.bun_extract import parse_bun_binary
 from tests.helpers.bun_fixture import build_bun_fixture
 
 
@@ -173,7 +173,7 @@ def test_apply_patches_pe_last_section_guard_returns_resize_bound_exceeded(tmp_p
 
 
 def test_cli_apply_binary_prints_structured_json(tmp_path, capsys):
-    from cc_extractor.__main__ import main
+    from ccsilo.__main__ import main
     import sys
 
     binary_path = write_fixture(tmp_path, "elf")
@@ -184,7 +184,7 @@ def test_cli_apply_binary_prints_structured_json(tmp_path, capsys):
 
     old_argv = sys.argv
     sys.argv = [
-        "cc-extractor",
+        "ccsilo",
         "apply-binary",
         str(binary_path),
         "--config",

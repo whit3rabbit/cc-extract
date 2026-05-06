@@ -1,7 +1,7 @@
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.auto_accept_plan_mode import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.auto_accept_plan_mode import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 

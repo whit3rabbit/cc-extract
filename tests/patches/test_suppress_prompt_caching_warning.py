@@ -1,7 +1,7 @@
 import pytest
 
-from cc_extractor.patches import PatchContext
-from cc_extractor.patches.suppress_prompt_caching_warning import PATCH
+from ccsilo.patches import PatchContext
+from ccsilo.patches.suppress_prompt_caching_warning import PATCH
 from tests.patches.conftest import resolve_tested_versions
 
 
@@ -11,7 +11,7 @@ def test_synthetic_applies(cli_js_synthetic):
 
     assert outcome.status == "applied"
     assert "Prompt caching disabled via" not in outcome.js
-    assert "cc-extractor:suppress-prompt-caching-warning" in outcome.js
+    assert "ccsilo:suppress-prompt-caching-warning" in outcome.js
 
 
 def test_idempotent(cli_js_synthetic):
@@ -40,7 +40,7 @@ def test_real_l1(cli_js_real, version):
     outcome = PATCH.apply(cli_js_real(version), PatchContext(claude_version=version))
 
     assert outcome.status == "applied"
-    assert "cc-extractor:suppress-prompt-caching-warning" in outcome.js
+    assert "ccsilo:suppress-prompt-caching-warning" in outcome.js
 
 
 @pytest.mark.parametrize("version", resolve_tested_versions(PATCH))

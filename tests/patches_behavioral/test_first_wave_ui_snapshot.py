@@ -8,8 +8,8 @@ from tests.patches_behavioral.conftest import assert_snapshot, capture_tui_outpu
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("CC_EXTRACTOR_TUI_MCP") != "1",
-    reason="CC_EXTRACTOR_TUI_MCP=1 not set",
+    os.environ.get("CCSILO_TUI_MCP") != "1",
+    reason="CCSILO_TUI_MCP=1 not set",
 )
 
 
