@@ -141,6 +141,35 @@ CI rules:
 * If Docker smoke fails with `status=blocked`, treat it as infrastructure failure. If it fails at `stage=run`, inspect `smoke.stderr`, the attempted patch list, and run single-patch bisection before changing version metadata.
 * The daily workflow should not use raw local smoke results. Commit reproducible Docker reports instead.
 
+## Release / PyPI
+
+PyPI publishing uses `.github/workflows/release.yml` with Trusted Publishing
+(OIDC). Do not store PyPI API tokens in GitHub.
+
+Trusted Publisher fields:
+
+* Project name: `ccsilo`
+* Owner: `whit3rabbit`
+* Repository: `ccsilo`
+* Workflow name: `release.yml`
+* PyPI environment: `pypi`
+* TestPyPI environment: `testpypi`
+
+Release rules:
+
+* Create matching GitHub environments named `testpypi` and `pypi`. Require
+  manual approval on `pypi`.
+* Use the manual `Release` workflow with `repository=testpypi` before the first
+  real PyPI upload for a version.
+* Publish to real PyPI by creating a GitHub Release, or by manually dispatching
+  `Release` with `repository=pypi` only as a recovery path.
+* PyPI versions are immutable. If a real PyPI publish succeeds or partially
+  creates `0.1.0`, bump `pyproject.toml` before trying again.
+* After publishing, verify `pipx install ccsilo`, `ccsilo --help`, and
+  `ccsilo variant providers --json`.
+* Keep release process details in `docs/RELEASE.md` synchronized with the
+  workflow file.
+
 ## Architecture
 
 ```text
