@@ -244,10 +244,25 @@ def test_model_mapping_providers_require_core_model_overrides():
 
 def test_provider_patch_assets_are_safe_and_prompt_pack_skips_mirror():
     config = provider_patch_config("zai")
+    zai_overlays = provider_prompt_overlays("zai")
+    minimax_overlays = provider_prompt_overlays("minimax")
+    minimax_cn_overlays = provider_prompt_overlays("minimax-cn")
+
     assert config["settings"]["themes"][0]["id"] == "zai-variant"
     assert provider_prompt_overlays("mirror") == {}
     assert provider_prompt_overlays("deepseek") == {}
-    assert "webfetch" in provider_prompt_overlays("zai")
+    assert set(zai_overlays) == {"webfetch", "explore", "planEnhanced"}
+    assert "ZAI MCP tools" in zai_overlays["webfetch"]
+    assert "GLM models" in zai_overlays["explore"]
+    assert "Do not assume first-party Claude model names" in zai_overlays["planEnhanced"]
+    assert set(minimax_overlays) == {"webfetch", "explore", "planEnhanced"}
+    assert "MiniMax MCP server" in minimax_overlays["webfetch"]
+    assert "MiniMax-M2.7" in minimax_overlays["explore"]
+    assert "Do not assume first-party Claude model names" in minimax_overlays["planEnhanced"]
+    assert set(minimax_cn_overlays) == {"webfetch", "explore", "planEnhanced"}
+    assert "MiniMax China docs" in minimax_cn_overlays["webfetch"]
+    assert "China MiniMax Anthropic-compatible endpoint" in minimax_cn_overlays["explore"]
+    assert "Do not assume first-party Claude model names" in minimax_cn_overlays["planEnhanced"]
 
 
 def test_provider_splash_metadata_matches_art_registry():

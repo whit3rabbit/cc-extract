@@ -275,6 +275,7 @@ def run_smoke_command(
     timeout: int,
     label: str,
     replacements: Sequence[Tuple[str, str]],
+    expected_version: Optional[str] = None,
 ) -> Dict[str, Any]:
     proc = subprocess.run(
         [str(binary_path), "--version"],
@@ -286,13 +287,16 @@ def run_smoke_command(
     )
     stdout = _sanitize_output(proc.stdout, replacements)
     stderr = _sanitize_output(proc.stderr, replacements)
-    ok = proc.returncode == 0 and bool((proc.stdout or "").strip())
+    version_matched = expected_version is None or expected_version in (proc.stdout or "")
+    ok = proc.returncode == 0 and bool((proc.stdout or "").strip()) and version_matched
     return {
         "ok": ok,
         "command": [label, "--version"],
         "exitCode": proc.returncode,
         "stdout": stdout,
         "stderr": stderr,
+        "expectedVersion": expected_version,
+        "versionMatched": version_matched,
     }
 
 
@@ -345,6 +349,26 @@ def run_binary_smoke(
             if os.name != "nt":
                 os.chmod(baseline_binary, 0o755)
 
+            stage = "baseline-codesign"
+            baseline_sign_result = try_adhoc_sign(str(baseline_binary))
+            baseline_sign_detail = _sanitize_output(baseline_sign_result.detail, replacements)
+            if baseline_sign_result.reason == "failed":
+                return {
+                    "ok": None,
+                    "status": "blocked",
+                    "stage": stage,
+                    "platformKey": platform_key,
+                    "detail": baseline_sign_detail,
+                    "durationMs": int((time.monotonic() - started) * 1000),
+                    "outputSha256": file_sha256(baseline_binary),
+                    "codesign": {
+                        "signed": baseline_sign_result.signed,
+                        "reason": baseline_sign_result.reason,
+                        "detail": baseline_sign_detail,
+                    },
+                    "patchIds": patch_ids,
+                }
+
             stage = "baseline-run"
             baseline = run_smoke_command(
                 baseline_binary,
@@ -352,6 +376,7 @@ def run_binary_smoke(
                 timeout=timeout,
                 label="<baseline-binary>",
                 replacements=replacements,
+                expected_version=version,
             )
             if not baseline["ok"]:
                 return {
@@ -363,6 +388,11 @@ def run_binary_smoke(
                     "baseline": baseline,
                     "durationMs": int((time.monotonic() - started) * 1000),
                     "outputSha256": file_sha256(baseline_binary),
+                    "codesign": {
+                        "signed": baseline_sign_result.signed,
+                        "reason": baseline_sign_result.reason,
+                        "detail": baseline_sign_detail,
+                    },
                     "patchIds": patch_ids,
                 }
 
@@ -420,6 +450,7 @@ def run_binary_smoke(
                 timeout=timeout,
                 label="<patched-binary>",
                 replacements=replacements,
+                expected_version=version,
             )
             ok = bool(run_result["ok"])
             return {
@@ -434,6 +465,11 @@ def run_binary_smoke(
                     "signed": sign_result.signed,
                     "reason": sign_result.reason,
                     "detail": sign_detail,
+                },
+                "baselineCodesign": {
+                    "signed": baseline_sign_result.signed,
+                    "reason": baseline_sign_result.reason,
+                    "detail": baseline_sign_detail,
                 },
                 "patches": {
                     "attempted": patch_ids,

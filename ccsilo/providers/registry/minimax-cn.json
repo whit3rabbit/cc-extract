@@ -34,7 +34,11 @@
         "claude": "rgb(250,204,21)"
       }
     },
-    "promptOverlays": {}
+    "promptOverlays": {
+      "webfetch": "When provider-specific docs or endpoint behavior are relevant, prefer configured MiniMax China resources such as the MiniMax China docs available for this isolated setup.",
+      "explore": "This Claude Code setup is configured for MiniMax China using MiniMax-M2.7 through the China MiniMax Anthropic-compatible endpoint. Keep model and provider assumptions consistent with that endpoint.",
+      "planEnhanced": "Plan with the active MiniMax China provider and MiniMax-M2.7 model mapping in mind. Do not assume first-party Claude model names or Anthropic-only behavior unless this setup explicitly configures them."
+    }
   },
   "claudeConfig": {
     "settingsPermissionsDeny": [],

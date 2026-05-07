@@ -19,6 +19,14 @@ NEW_FORMAT_FIXTURE = "\n".join(
     ]
 )
 
+MEMOIZED_OPTIONS_FIXTURE = "\n".join(
+    [
+        'function getNames(){Ct5={auto:"Auto (match terminal)",dark:"Dark mode",light:"Light mode","dark-daltonized":"Dark mode (colorblind-friendly)","light-daltonized":"Light mode (colorblind-friendly)","dark-ansi":"Dark mode (ANSI colors only)","light-ansi":"Light mode (ANSI colors only)"}}',
+        'function picker(){let r,e,JH,$H,s,o,HH;if(cache)r={label:"Auto (match terminal)",value:"auto"},e={label:"Dark mode",value:"dark"},JH={label:"Light mode",value:"light"},$H={label:"Dark mode (colorblind-friendly)",value:"dark-daltonized"},s={label:"Light mode (colorblind-friendly)",value:"light-daltonized"},o={label:"Dark mode (ANSI colors only)",value:"dark-ansi"},HH={label:"Light mode (ANSI colors only)",value:"light-ansi"};let NH=Y?[{label:"New custom theme\\u2026",value:jk8}]:[],_H=[r,e,JH,$H,s,o,HH,...p.map(es5),...NH]}',
+        'function pickTheme(A){switch(A){case"light":return LX9;case"light-ansi":return AX9;case"dark-ansi":return BX9;case"light-daltonized":return DX9;case"dark-daltonized":return EX9;default:return CX9}}',
+    ]
+)
+
 OLD_FORMAT_FIXTURE = "\n".join(
     [
         'function getNames(){return{"dark":"Dark mode","light":"Light mode"}}',
@@ -35,6 +43,15 @@ def test_apply_theme_rewrites_new_format_bundle():
     assert 'case"dark":return{"bashBorder":"#fff"' in result.js
     assert 'case"zai-gold":return{"bashBorder":"#daa"' in result.js
     assert '[{"label":"Dark mode","value":"dark"},{"label":"Z.ai gold","value":"zai-gold"}]' in result.js
+    assert 'return{"dark":"Dark mode","zai-gold":"Z.ai gold"}' in result.js
+
+
+def test_apply_theme_rewrites_memoized_object_options_bundle():
+    result = apply_theme(MEMOIZED_OPTIONS_FIXTURE, THEMES)
+
+    assert result.replaced == 3
+    assert 'case"zai-gold":return{"bashBorder":"#daa"' in result.js
+    assert '_H=[{"label":"Dark mode","value":"dark"},{"label":"Z.ai gold","value":"zai-gold"}]' in result.js
     assert 'return{"dark":"Dark mode","zai-gold":"Z.ai gold"}' in result.js
 
 

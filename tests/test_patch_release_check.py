@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 
 from ccsilo.patches import Patch, PatchOutcome
 from tools import check_patch_releases
@@ -136,6 +137,43 @@ def test_check_version_can_include_runtime_smoke(tmp_path, monkeypatch):
 
     assert report["ok"] is True
     assert report["smoke"]["status"] == "passed"
+
+
+def test_run_smoke_command_requires_expected_claude_version(tmp_path):
+    binary = tmp_path / "fake-claude"
+    binary.write_text("#!/bin/sh\nprintf '1.3.14\\n'\n", encoding="utf-8")
+    os.chmod(binary, 0o755)
+
+    result = check_patch_releases.run_smoke_command(
+        binary,
+        tmp_path,
+        timeout=5,
+        label="<fake>",
+        replacements=(),
+        expected_version="2.1.132",
+    )
+
+    assert result["ok"] is False
+    assert result["exitCode"] == 0
+    assert result["versionMatched"] is False
+
+
+def test_run_smoke_command_accepts_expected_claude_version(tmp_path):
+    binary = tmp_path / "fake-claude"
+    binary.write_text("#!/bin/sh\nprintf '2.1.132 (Claude Code)\\n'\n", encoding="utf-8")
+    os.chmod(binary, 0o755)
+
+    result = check_patch_releases.run_smoke_command(
+        binary,
+        tmp_path,
+        timeout=5,
+        label="<fake>",
+        replacements=(),
+        expected_version="2.1.132",
+    )
+
+    assert result["ok"] is True
+    assert result["versionMatched"] is True
 
 
 def test_check_version_smoke_failure_fails_report(tmp_path, monkeypatch):

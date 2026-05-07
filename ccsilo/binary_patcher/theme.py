@@ -60,10 +60,11 @@ def apply_theme(js, themes):
     switch_text = "\n".join(switch_parts)
 
     obj_arr_delta = len(obj_arr_text) - (locations["objArr"].end - locations["objArr"].start)
-    switch_start = locations["switch"].start
+    original_switch_start = locations["switch"].start
+    switch_start = original_switch_start
     if switch_start >= locations["obj"].end:
         switch_start += obj_delta
-    if switch_start >= locations["objArr"].end:
+    if original_switch_start >= locations["objArr"].end:
         switch_start += obj_arr_delta
     switch_end = switch_start + (locations["switch"].end - locations["switch"].start)
     new_js = new_js[:switch_start] + switch_text + new_js[switch_end:]
@@ -76,11 +77,8 @@ def _find_theme_locations(js):
     if switch_loc is None:
         raise ThemeAnchorNotFound("switch")
 
-    obj_arr_match = re.search(
-        r'\[(?:\.\.\.\[\],)?(?:\{"?label"?:"(?:Dark|Light|Auto|Monochrome)[^"]*","?value"?:"[^"]+"\},?)+\]',
-        js,
-    )
-    if obj_arr_match is None:
+    obj_arr_loc = _find_options_array(js)
+    if obj_arr_loc is None:
         raise ThemeAnchorNotFound("objArr")
 
     obj_match = re.search(
@@ -92,9 +90,40 @@ def _find_theme_locations(js):
 
     return {
         "switch": switch_loc,
-        "objArr": _Location(obj_arr_match.start(), obj_arr_match.end()),
+        "objArr": obj_arr_loc,
         "obj": _Location(obj_match.start(), obj_match.end()),
     }
+
+
+def _find_options_array(js):
+    obj_arr_match = re.search(
+        r'\[(?:\.\.\.\[\],)?(?:\{"?label"?:"(?:Dark|Light|Auto|Monochrome)[^"]*","?value"?:"[^"]+"\},?)+\]',
+        js,
+    )
+    if obj_arr_match is not None:
+        return _Location(obj_arr_match.start(), obj_arr_match.end())
+
+    label_match = re.search(
+        r'(?P<auto>[$\w]+)=\{label:"Auto \(match terminal\)",value:"auto"\},'
+        r'(?P<dark>[$\w]+)=\{label:"Dark mode",value:"dark"\},'
+        r'(?P<light>[$\w]+)=\{label:"Light mode",value:"light"\}',
+        js,
+    )
+    if label_match is None:
+        return None
+
+    auto = re.escape(label_match.group("auto"))
+    dark = re.escape(label_match.group("dark"))
+    light = re.escape(label_match.group("light"))
+    final_arr_match = re.search(
+        rf'\[{auto},{dark},{light},[^\]]*?\.\.\.[$\w]+\.map\([$\w]+\),\.\.\.[$\w]+\]',
+        js[label_match.end() :],
+    )
+    if final_arr_match is None:
+        return None
+
+    start = label_match.end() + final_arr_match.start()
+    return _Location(start, label_match.end() + final_arr_match.end())
 
 
 def _find_switch(js):

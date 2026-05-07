@@ -121,6 +121,8 @@ Rules:
 * Prefer `tools/run_patch_smoke_docker.sh` for committed smoke reports. It defaults to `DOCKER_PLATFORM=linux/amd64` so runtime results are reproducible across developer machines. Override `DOCKER_PLATFORM` only when intentionally producing a platform-specific report.
 * Docker smoke uses `.ccsilo/docker-linux` for downloaded Linux binaries and writes JSON reports to `reports/patch-compat`. Do not commit `.ccsilo/`.
 * The smoke flow intentionally packs and runs an unpatched baseline before applying patches. If baseline fails, fix extract/repack infrastructure before blaming a patch.
+* Runtime smoke must prove Claude Code booted, not just that a Bun executable returned success. Treat `<binary> --version` output such as `1.3.x` as a failed smoke even with exit code 0. The output must contain the expected Claude Code version.
+* On macOS smoke, ad-hoc sign the unpatched baseline before running it. An unsigned or malformed rebuilt Mach-O can be killed with exit code `-9` before user code runs.
 * Passing smoke reports are proof for that report artifact, but do not automatically widen `versions_tested`. Keep metadata pinned until fixture tests or targeted real-version tests prove the specific patch.
 * Treat failed patch reports as release blockers. `unsupported` means the patch is intentionally outside `versions_supported` and does not fail the run.
 * Treat untested warnings as validation work. Do not widen `versions_tested` until the report proves the patch against that concrete Claude Code version.
@@ -267,6 +269,9 @@ Important distinctions:
 * Real ELF payloads can contain unreferenced prefix bytes before the first module name. Do not rebuild full bundle payloads from concatenated manifest files when a base binary is available. Use the base payload as the template and replace relocated ranges.
 * For a no-op extract and pack from a real ELF binary, the rebuilt binary should be byte-identical or at minimum the unpatched baseline should execute `<binary> --version` before any patch smoke result is trusted.
 * On Mach-O, prompt overlays that grow the entry module must force the unpacked Node runtime fallback even if a later shrink tweak makes the final byte length fit. Do not let net shrinkage mask intermediate prompt-overlay growth.
+* Mach-O repacking must preserve and relocate non-signature `__LINKEDIT` data. Do not drop chained fixups, exports, symbol tables, function starts, or data-in-code payloads when stripping `LC_CODE_SIGNATURE`.
+* Mach-O `__BUN` starts with an 8-byte size header for the full section inner payload: raw Bun bytes plus the 32-byte offsets struct plus the Bun trailer. Writing only `byteCount` can parse locally but make Bun run as its own runtime instead of Claude Code.
+* After Mach-O repack changes, check `otool -l <binary>` for `past end of file`, run `codesign --verify --strict --verbose=4 -- <binary>` after ad-hoc signing, and verify `--version` prints the expected Claude Code version.
 * Bun CJS entry modules must keep a valid `// @bun ... @bun-cjs` function wrapper. Same-size shrink padding must not be appended after the closing wrapper.
 * Patches that add top-level runtime code to Bun CJS entries must inject inside the existing function wrapper, immediately after the opening `{`, not before the `// @bun` header. Bun may fall back from bytecode to source after repack, and pre-wrapper code can fail with `Expected CommonJS module to have a function wrapper`.
 * Text-level parse tests are not enough for entry patches that change byte lengths or wrapper shape. Pair anchor tests with Docker runtime smoke before using a report as release signal.

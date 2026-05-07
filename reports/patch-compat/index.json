@@ -1,6 +1,26 @@
 {
-  "generatedAt": "2026-05-06T11:30:26.356578Z",
+  "generatedAt": "2026-05-07T10:29:26.674294Z",
   "reports": [
+    {
+      "ok": true,
+      "path": "2.1.132.json",
+      "smoke": {
+        "ok": true,
+        "platformKey": "linux-x64",
+        "stage": "run",
+        "status": "passed"
+      },
+      "summary": {
+        "applied": 24,
+        "failed": 0,
+        "ok": 26,
+        "skipped": 1,
+        "total": 26,
+        "unsupported": 1,
+        "untested": 1
+      },
+      "version": "2.1.132"
+    },
     {
       "ok": true,
       "path": "2.1.131.json",

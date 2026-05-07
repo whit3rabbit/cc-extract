@@ -34,7 +34,11 @@
         "claude": "rgb(255,133,86)"
       }
     },
-    "promptOverlays": {}
+    "promptOverlays": {
+      "webfetch": "When provider-specific docs, search, web reading, or image tools are relevant, prefer configured MiniMax resources such as the MiniMax docs and MiniMax MCP server available in this isolated setup.",
+      "explore": "This Claude Code setup is configured for MiniMax Cloud using MiniMax-M2.7 through the MiniMax Anthropic-compatible endpoint. Keep model and provider assumptions consistent with that endpoint.",
+      "planEnhanced": "Plan with the active MiniMax Cloud provider and MiniMax-M2.7 model mapping in mind. Do not assume first-party Claude model names or Anthropic-only behavior unless this setup explicitly configures them."
+    }
   },
   "claudeConfig": {
     "settingsPermissionsDeny": [

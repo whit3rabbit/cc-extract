@@ -13,9 +13,17 @@ from ccsilo.bun_extract.constants import (
 )
 
 LC_CODE_SIGNATURE = 0x1D
+LC_DATA_IN_CODE = 0x29
+LC_DYLD_CHAINED_FIXUPS = 0x80000034
+LC_DYLD_EXPORTS_TRIE = 0x80000033
+LC_FUNCTION_STARTS = 0x26
 LC_SEGMENT_64 = 0x19
+LC_SYMTAB = 0x2
+LC_DYSYMTAB = 0xB
 MACH_HEADER_64_SIZE = 32
+BUN_SEGNAME = "__BUN"
 LINKEDIT_SEGNAME = "__LINKEDIT"
+PAGE_ALIGN = 0x4000
 
 
 @dataclass
@@ -45,24 +53,54 @@ def repack_macho(data, info, new_raw_bytes, new_offsets_struct):
     pre_section = bytearray(data[: info.section_offset])
     signature_stripped = False
     code_sig = _find_code_signature_lc(pre_section)
+    linkedit = _find_segment(pre_section, LINKEDIT_SEGNAME)
+    bun_segment = _find_segment(pre_section, BUN_SEGNAME)
+    linkedit_tail = b""
+    old_linkedit_fileoff = None
+    new_linkedit_fileoff = None
     if code_sig is not None:
-        linkedit = _find_linkedit_segment(pre_section)
         if linkedit is not None:
-            sig_size = code_sig["datasize"]
-            new_filesize = max(0, linkedit["filesize"] - sig_size)
-            new_vmsize = max(0, linkedit["vmsize"] - sig_size)
-            struct.pack_into("<Q", pre_section, linkedit["lc_offset"] + 48, new_filesize)
-            struct.pack_into("<Q", pre_section, linkedit["lc_offset"] + 32, new_vmsize)
+            old_linkedit_fileoff = linkedit["fileoff"]
+            linkedit_end = min(len(data), code_sig["dataoff"])
+            if old_linkedit_fileoff <= linkedit_end:
+                linkedit_tail = data[old_linkedit_fileoff:linkedit_end]
         _strip_code_signature(pre_section, code_sig)
         signature_stripped = True
+    elif linkedit is not None:
+        old_linkedit_fileoff = linkedit["fileoff"]
+        linkedit_end = min(len(data), old_linkedit_fileoff + linkedit["filesize"])
+        if old_linkedit_fileoff <= linkedit_end:
+            linkedit_tail = data[old_linkedit_fileoff:linkedit_end]
 
     new_section_inner_size = len(new_raw_bytes) + OFFSETS_SIZE + len(TRAILER)
     new_section_payload_size = MACHO_SECTION_HEADER_SIZE + new_section_inner_size
+
+    if linkedit is not None and old_linkedit_fileoff is not None:
+        section_end = info.section_offset + new_section_payload_size
+        new_linkedit_fileoff = _align_up(section_end, PAGE_ALIGN)
+        linkedit_delta = new_linkedit_fileoff - old_linkedit_fileoff
+        _update_linkedit_references(pre_section, old_linkedit_fileoff, linkedit_delta)
+        _update_segment_fileoff(pre_section, linkedit, new_linkedit_fileoff)
+        _update_segment_filesize(pre_section, linkedit, len(linkedit_tail))
+        _update_segment_vmsize(pre_section, linkedit, _align_up(len(linkedit_tail), PAGE_ALIGN))
+
+    if bun_segment is not None and new_linkedit_fileoff is not None:
+        bun_filesize = new_linkedit_fileoff - bun_segment["fileoff"]
+        _update_segment_filesize(pre_section, bun_segment, bun_filesize)
+        _update_segment_vmsize(pre_section, bun_segment, _align_up(bun_filesize, PAGE_ALIGN))
+
     struct.pack_into("<Q", pre_section, section_header_offset + 40, new_section_payload_size)
 
-    size_header = struct.pack("<Q", len(new_raw_bytes))
+    size_header = struct.pack("<Q", new_section_inner_size)
+    parts = [bytes(pre_section), size_header, new_raw_bytes, new_offsets_struct, TRAILER]
+    if new_linkedit_fileoff is not None and linkedit_tail:
+        current_len = sum(len(part) for part in parts)
+        if new_linkedit_fileoff < current_len:
+            raise ValueError("Mach-O repack: relocated __LINKEDIT overlaps rebuilt __BUN section")
+        parts.append(b"\x00" * (new_linkedit_fileoff - current_len))
+        parts.append(linkedit_tail)
     return MachoRepackResult(
-        buf=b"".join([bytes(pre_section), size_header, new_raw_bytes, new_offsets_struct, TRAILER]),
+        buf=b"".join(parts),
         signature_stripped=signature_stripped,
     )
 
@@ -115,7 +153,7 @@ def _find_code_signature_lc(data):
     return None
 
 
-def _find_linkedit_segment(data):
+def _find_segment(data, segname):
     if len(data) < MACH_HEADER_64_SIZE:
         return None
     ncmds = struct.unpack_from("<I", data, 16)[0]
@@ -133,15 +171,69 @@ def _find_linkedit_segment(data):
         if cmdsize < 8 or cursor + cmdsize > end:
             return None
         if cmd == LC_SEGMENT_64 and cmdsize >= 72:
-            segname = data[cursor + 8 : cursor + 24].split(b"\x00", 1)[0].decode("utf-8", "ignore")
-            if segname == LINKEDIT_SEGNAME:
+            found = data[cursor + 8 : cursor + 24].split(b"\x00", 1)[0].decode("utf-8", "ignore")
+            if found == segname:
                 return {
                     "lc_offset": cursor,
+                    "vmaddr": struct.unpack_from("<Q", data, cursor + 24)[0],
                     "vmsize": struct.unpack_from("<Q", data, cursor + 32)[0],
+                    "fileoff": struct.unpack_from("<Q", data, cursor + 40)[0],
                     "filesize": struct.unpack_from("<Q", data, cursor + 48)[0],
                 }
         cursor += cmdsize
     return None
+
+
+def _update_segment_fileoff(data, segment, value):
+    struct.pack_into("<Q", data, segment["lc_offset"] + 40, value)
+
+
+def _update_segment_filesize(data, segment, value):
+    struct.pack_into("<Q", data, segment["lc_offset"] + 48, value)
+
+
+def _update_segment_vmsize(data, segment, value):
+    struct.pack_into("<Q", data, segment["lc_offset"] + 32, value)
+
+
+def _align_up(value, alignment):
+    return ((value + alignment - 1) // alignment) * alignment
+
+
+def _update_linkedit_references(data, old_linkedit_fileoff, delta):
+    if delta == 0:
+        return
+    ncmds = struct.unpack_from("<I", data, 16)[0]
+    sizeofcmds = struct.unpack_from("<I", data, 20)[0]
+    cursor = MACH_HEADER_64_SIZE
+    end = MACH_HEADER_64_SIZE + sizeofcmds
+    if end > len(data):
+        return
+
+    for _ in range(ncmds):
+        if cursor + 8 > end:
+            return
+        cmd = struct.unpack_from("<I", data, cursor)[0]
+        cmdsize = struct.unpack_from("<I", data, cursor + 4)[0]
+        if cmdsize < 8 or cursor + cmdsize > end:
+            return
+
+        if cmd in {LC_DYLD_CHAINED_FIXUPS, LC_DYLD_EXPORTS_TRIE, LC_FUNCTION_STARTS, LC_DATA_IN_CODE}:
+            _shift_u32_fileoff(data, cursor + 8, old_linkedit_fileoff, delta)
+        elif cmd == LC_SYMTAB:
+            _shift_u32_fileoff(data, cursor + 8, old_linkedit_fileoff, delta)
+            _shift_u32_fileoff(data, cursor + 16, old_linkedit_fileoff, delta)
+        elif cmd == LC_DYSYMTAB:
+            for offset in (32, 40, 48, 56, 64):
+                _shift_u32_fileoff(data, cursor + offset, old_linkedit_fileoff, delta)
+
+        cursor += cmdsize
+
+
+def _shift_u32_fileoff(data, offset, old_linkedit_fileoff, delta):
+    value = struct.unpack_from("<I", data, offset)[0]
+    if value >= old_linkedit_fileoff:
+        struct.pack_into("<I", data, offset, value + delta)
 
 
 def _strip_code_signature(header, code_sig):

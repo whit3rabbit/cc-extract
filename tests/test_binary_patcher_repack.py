@@ -116,8 +116,9 @@ def _build_signed_macho_with_linkedit():
     struct.pack_into("<I", header, section_header_off + 48, section_offset)
 
     linkedit_off = bun_segment_off + bun_segment_size
+    linkedit_prefix_size = 0x40
     linkedit_vmsize = 0x400
-    linkedit_filesize = 0x300
+    linkedit_filesize = linkedit_prefix_size + sig_size
     struct.pack_into("<I", header, linkedit_off, lc_segment_64)
     struct.pack_into("<I", header, linkedit_off + 4, linkedit_segment_size)
     header[linkedit_off + 8 : linkedit_off + 24] = b"__LINKEDIT".ljust(16, b"\x00")
@@ -128,15 +129,16 @@ def _build_signed_macho_with_linkedit():
     code_sig_off = linkedit_off + linkedit_segment_size
     struct.pack_into("<I", header, code_sig_off, lc_code_signature)
     struct.pack_into("<I", header, code_sig_off + 4, code_sig_cmd_size)
-    struct.pack_into("<I", header, code_sig_off + 8, section_offset + section_size)
+    struct.pack_into("<I", header, code_sig_off + 8, section_offset + section_size + linkedit_prefix_size)
     struct.pack_into("<I", header, code_sig_off + 12, sig_size)
 
-    size_header = struct.pack("<Q", len(raw_bytes))
-    buf = bytes(header) + size_header + raw_bytes + offsets + TRAILER + (b"S" * sig_size)
+    size_header = struct.pack("<Q", len(raw_bytes) + OFFSETS_SIZE + len(TRAILER))
+    buf = bytes(header) + size_header + raw_bytes + offsets + TRAILER + (b"L" * linkedit_prefix_size) + (b"S" * sig_size)
     return buf, {
         "code_sig_cmd_size": code_sig_cmd_size,
         "lc_code_signature": lc_code_signature,
         "linkedit_off": linkedit_off,
+        "linkedit_prefix_size": linkedit_prefix_size,
         "sig_size": sig_size,
     }
 
@@ -271,13 +273,11 @@ def test_replace_entry_js_shifts_late_elf_program_header_offset():
     assert struct.unpack_from("<Q", result.buf, 32)[0] == old_e_phoff + result.delta
 
 
-def test_replace_entry_js_strips_macho_code_signature_and_shrinks_linkedit():
+def test_replace_entry_js_strips_macho_code_signature_and_preserves_linkedit():
     data, meta = _build_signed_macho_with_linkedit()
     info = parse_bun_binary(data)
     old_ncmds = struct.unpack_from("<I", data, 16)[0]
     old_sizeofcmds = struct.unpack_from("<I", data, 20)[0]
-    old_linkedit_vmsize = struct.unpack_from("<Q", data, meta["linkedit_off"] + 32)[0]
-    old_linkedit_filesize = struct.unpack_from("<Q", data, meta["linkedit_off"] + 48)[0]
 
     result = replace_entry_js(data, info, b"Y" * 32)
 
@@ -286,8 +286,11 @@ def test_replace_entry_js_strips_macho_code_signature_and_shrinks_linkedit():
     assert result.signature_stripped is True
     assert struct.unpack_from("<I", out, 16)[0] == old_ncmds - 1
     assert struct.unpack_from("<I", out, 20)[0] == old_sizeofcmds - meta["code_sig_cmd_size"]
-    assert struct.unpack_from("<Q", out, meta["linkedit_off"] + 32)[0] == old_linkedit_vmsize - meta["sig_size"]
-    assert struct.unpack_from("<Q", out, meta["linkedit_off"] + 48)[0] == old_linkedit_filesize - meta["sig_size"]
+    linkedit_fileoff = struct.unpack_from("<Q", out, meta["linkedit_off"] + 40)[0]
+    linkedit_filesize = struct.unpack_from("<Q", out, meta["linkedit_off"] + 48)[0]
+    assert linkedit_filesize == meta["linkedit_prefix_size"]
+    assert linkedit_fileoff + linkedit_filesize <= len(out)
+    assert out[linkedit_fileoff : linkedit_fileoff + linkedit_filesize] == b"L" * meta["linkedit_prefix_size"]
     assert _has_load_command(out, meta["lc_code_signature"]) is False
     reparsed = parse_bun_binary(out)
     assert reparsed.has_code_signature is False

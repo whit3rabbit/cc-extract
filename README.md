@@ -11,12 +11,11 @@ Based in part on work by https://github.com/vicnaum/bun-demincer. Theme and prom
 
 ## Quick Start
 
-Install with `pipx` for normal CLI usage:
+Install with `pipx`, then open the TUI:
 
 ```bash
 pipx install ccsilo
-ccsilo --provider mirror install --yes
-mirror --version
+ccsilo
 ```
 
 If `ccsilo` is not found after a pipx install:
@@ -27,20 +26,48 @@ pipx ensurepath
 
 Then restart your shell.
 
-Install with `pip` inside a virtual environment:
+The TUI is the easiest path for most users. Running `ccsilo` with no arguments in a TTY opens it. If no setups exist, it starts the first-run setup wizard. If setups already exist, it opens `Manage Setup`.
+
+In the first-run wizard:
+
+1. Choose a provider preset, for example `mirror`, `kimi`, `openrouter`, `ccrouter`, or `lmstudio`.
+2. Choose a setup name. This becomes the local wrapper command name.
+3. Choose a Claude Code native binary version, usually `latest`.
+4. Configure credentials. Use an environment variable, or store an API key in the setup-local `secrets.env`.
+5. Pick optional MCP servers. Provider-owned MCP servers are enabled automatically.
+6. Set model aliases if the provider needs them.
+7. Choose recommended tweaks, review, then create the setup.
+8. Run it from `Manage Setup`, from the installed provider command, from the workspace wrapper, or with `ccsilo variant run <setup-id> -- ...`.
+
+If you just want the latest version from a shell, use a provider shortcut. Pick one:
+
+```bash
+# Clean isolated first-party Claude Code setup, no alternate provider.
+ccsilo --provider mirror install --yes
+mirror --version
+
+# Kimi Code, reads credentials from KIMI_API_KEY.
+ccsilo --provider kimi install --credential-env KIMI_API_KEY --yes
+kimi --version
+
+# OpenRouter, reads credentials from OPENROUTER_API_KEY.
+ccsilo --provider openrouter install --credential-env OPENROUTER_API_KEY --yes
+openrouter --version
+
+# Local LM Studio endpoint, stores this setup under the lmstudio command.
+ccsilo --provider lmstudio install --credential-env LM_API_TOKEN --yes
+lmstudio --version
+```
+
+Provider shortcuts default to the latest Claude Code native binary. Add `--claude-version <version>` only when you need a pinned version.
+
+Install with `pip` inside a virtual environment if you do not use `pipx`:
 
 ```bash
 python -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install ccsilo
-.venv/bin/ccsilo --help
-```
-
-Provider setup in one command:
-
-```bash
-ccsilo --provider kimi install --credential-env KIMI_API_KEY --yes
-kimi --version
+.venv/bin/ccsilo
 ```
 
 To run once from GitHub without keeping an installed command:
@@ -61,19 +88,6 @@ From a developer checkout:
 .venv/bin/python -m pip install -e .
 .venv/bin/python -m ccsilo
 ```
-
-Running `ccsilo` with no arguments in a TTY opens the TUI. If no setups exist, it starts the first-run setup wizard. If setups already exist, it opens `Manage Setup`.
-
-The fastest path:
-
-1. Choose a provider preset, for example `mirror`, `kimi`, `openrouter`, `ccrouter`, or `lmstudio`.
-2. Choose a setup name. This becomes the local wrapper command name.
-3. Choose a Claude Code native binary version, usually `latest`.
-4. Configure credentials. Use an environment variable, or store an API key in the setup-local `secrets.env`.
-5. Pick optional MCP servers. Provider-owned MCP servers are enabled automatically.
-6. Set model aliases if the provider needs them.
-7. Choose recommended tweaks, review, then create the setup.
-8. Run it from `Manage Setup`, from the installed provider command, from the workspace wrapper, or with `ccsilo variant run <setup-id> -- ...`.
 
 Inspect the resolved command and workspace paths:
 
