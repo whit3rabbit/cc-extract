@@ -102,8 +102,15 @@ By default, installed usage stores managed setups in the platform user data dire
 | Platform | Default workspace |
 |----------|-------------------|
 | macOS | `~/Library/Application Support/ccsilo` |
-| Linux | `${XDG_DATA_HOME:-~/.local/share}/ccsilo` |
+| Linux | `$XDG_DATA_HOME/ccsilo` |
+| Linux, when `XDG_DATA_HOME` is unset | `~/.local/share/ccsilo` |
 | Windows | `%APPDATA%\ccsilo` |
+
+Equivalent Linux shell expansion:
+
+```bash
+${XDG_DATA_HOME:-~/.local/share}/ccsilo  # ~/.local/share if XDG_DATA_HOME is unset
+```
 
 Set `CCSILO_WORKSPACE=/path/to/workspace` to use a project-local or disposable workspace. For repository development, this keeps the old local layout:
 
@@ -117,13 +124,19 @@ The workspace contains:
 <workspace>/
   variants/<setup-id>/variant.json
   variants/<setup-id>/native/
+  variants/<setup-id>/unpacked/          # Node fallback runtime only
   variants/<setup-id>/config/
   variants/<setup-id>/tweakcc/config.json
-  variants/<setup-id>/secrets.env
+  variants/<setup-id>/tmp/
+  variants/<setup-id>/secrets.env        # stored credentials only
   downloads/native/
   downloads/npm/
+  extractions/native/
+  patches/packages/
+  patches/profiles/
   patches/tweak-profiles/
   patched/native/
+  tmp/
   bin/<setup-id>
 ```
 
@@ -133,11 +146,20 @@ Important paths:
 |------|---------|
 | `<workspace>/bin/<setup-id>` | Wrapper command for the finished setup. |
 | `<workspace>/variants/<setup-id>/variant.json` | Setup manifest: provider, source version, selected tweaks, model overrides, MCP choices, and wrapper paths. |
+| `<workspace>/variants/<setup-id>/native/` | Setup-local native binary output. |
+| `<workspace>/variants/<setup-id>/unpacked/` | Setup-local unpacked Node runtime files, only used for setups that need the Node fallback runtime. |
 | `<workspace>/variants/<setup-id>/config/` | Isolated Claude Code config for the setup. |
+| `<workspace>/variants/<setup-id>/tweakcc/config.json` | Setup-local tweakcc config pointing at the setup binary. |
+| `<workspace>/variants/<setup-id>/tmp/` | Setup-local temporary files and logs. |
 | `<workspace>/variants/<setup-id>/secrets.env` | Optional setup-local credential file, only written when you choose stored credentials. |
 | `<workspace>/downloads/native/` | Checksum-verified downloaded or imported native Claude Code binaries. |
+| `<workspace>/downloads/npm/` | Cached NPM package downloads. |
+| `<workspace>/extractions/native/` | Central extracted native bundles and extraction metadata. |
+| `<workspace>/patches/packages/` | Workspace patch package manifests and operations. |
+| `<workspace>/patches/profiles/` | Saved patch-package profile selections. |
 | `<workspace>/patches/tweak-profiles/` | Saved Dashboard tweak selections. |
 | `<workspace>/patched/native/` | Dashboard-built patched native binaries. |
+| `<workspace>/tmp/` | Shared workspace temporary files. |
 
 Deleting a setup removes its setup directory and wrapper command. Shared downloads and caches are not removed.
 
@@ -186,17 +208,24 @@ Remove one provider setup:
 ccsilo --provider kimi uninstall --yes
 ```
 
+This removes only that provider setup and its wrapper command. Shared downloads, patch outputs, and other setups remain in the active workspace.
+
 Remove managed symlinks and the current workspace:
 
 ```bash
+ccsilo paths
 ccsilo uninstall --yes
 ```
+
+`ccsilo uninstall --yes` removes the workspace shown by `ccsilo paths`: `CCSILO_WORKSPACE` when set, otherwise the platform user data directory listed above. It also removes managed symlinks created by `ccsilo variant install` or provider installs. It does not uninstall the `ccsilo` Python package.
 
 Remove the `ccsilo` command installed by pipx:
 
 ```bash
 pipx uninstall ccsilo
 ```
+
+`pipx uninstall ccsilo` removes the installed command and pipx environment. It does not remove the ccsilo workspace; run `ccsilo uninstall --yes` first if you want managed setups, downloads, cached artifacts, and setup-local secrets removed too.
 
 ## Troubleshooting PATH
 

@@ -200,6 +200,14 @@ artifacts/
 
 # Superpowers
 .docs/superpowers/
+docs/superpowers/
+
+# Agent local config
+.agent-config-mcp.json
+.mcp.json
+.codex/.agent-config-mcp.json
+.agents/skills/.agent-config-skills.json
+.claude/settings.local.json
 
 # Repomix
 repomix-output.xml
