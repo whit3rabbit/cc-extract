@@ -11,19 +11,12 @@ Based in part on work by https://github.com/vicnaum/bun-demincer. Theme and prom
 
 ## Quick Start
 
-Stable install, once the package is published to PyPI:
+Install with `pipx` for normal CLI usage:
 
 ```bash
 pipx install ccsilo
 ccsilo --provider mirror install --yes
 mirror --version
-```
-
-Provider setup in one command:
-
-```bash
-ccsilo --provider kimi install --credential-env KIMI_API_KEY --yes
-kimi --version
 ```
 
 If `ccsilo` is not found after a pipx install:
@@ -34,7 +27,23 @@ pipx ensurepath
 
 Then restart your shell.
 
-To run once from GitHub before the first PyPI release, or without keeping an installed command:
+Install with `pip` inside a virtual environment:
+
+```bash
+python -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install ccsilo
+.venv/bin/ccsilo --help
+```
+
+Provider setup in one command:
+
+```bash
+ccsilo --provider kimi install --credential-env KIMI_API_KEY --yes
+kimi --version
+```
+
+To run once from GitHub without keeping an installed command:
 
 ```bash
 pipx run --spec git+https://github.com/whit3rabbit/ccsilo.git ccsilo
