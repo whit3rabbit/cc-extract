@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from .._utils import atomic_write_text_no_symlink
+from .._utils import atomic_write_text_no_symlink, read_json_strict
 
 WORKSPACE_DIR_NAME = ".ccsilo"
 APP_DIR_NAME = "ccsilo"
@@ -99,7 +99,7 @@ def write_json(path: os.PathLike, payload: Dict) -> None:
 
 
 def read_json(path: os.PathLike) -> Dict:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    return read_json_strict(Path(path))
 
 
 def native_binary_filename(platform_key: str) -> str:

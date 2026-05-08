@@ -4,7 +4,7 @@ import pytest
 
 from ccsilo.binary_patcher import replace_entry_js
 from ccsilo.binary_patcher.pe_resize import PeNotLastSectionError, repack_pe
-from ccsilo.bun_extract import parse_bun_binary
+from ccsilo.bun_extract import BunFormatError, parse_bun_binary
 from ccsilo.bun_extract.constants import OFFSETS_SIZE, TRAILER
 from tests.helpers.bun_fixture import build_bun_fixture
 
@@ -219,6 +219,36 @@ def test_replace_entry_js_handles_entry_position(entry_point_id, new_content):
     assert _content(result.buf, reparsed, entry_point_id) == new_content.decode("utf-8")
 
 
+def test_replace_entry_js_rejects_truncated_offsets_cleanly():
+    fixture = build_bun_fixture(
+        platform="elf",
+        module_struct_size=52,
+        modules=THREE_MODULES,
+        entry_point_id=1,
+    )
+    info = parse_bun_binary(fixture["buf"])
+    truncated = fixture["buf"][: info.trailer_offset - 8]
+
+    with pytest.raises(BunFormatError, match="replace-entry"):
+        replace_entry_js(truncated, info, b"X" * 32)
+
+
+def test_replace_entry_js_rejects_bad_module_table_offset_cleanly():
+    fixture = build_bun_fixture(
+        platform="elf",
+        module_struct_size=52,
+        modules=THREE_MODULES,
+        entry_point_id=1,
+    )
+    info = parse_bun_binary(fixture["buf"])
+    data = bytearray(fixture["buf"])
+    offsets_start = info.trailer_offset - OFFSETS_SIZE
+    struct.pack_into("<I", data, offsets_start + 8, info.byte_count + 4096)
+
+    with pytest.raises(BunFormatError, match="module 0 table"):
+        replace_entry_js(bytes(data), info, b"X" * 32)
+
+
 def test_replace_entry_js_strips_macho_code_signature():
     fixture = build_bun_fixture(
         platform="macho",
@@ -309,3 +339,16 @@ def test_pe_last_section_guard_rejects_not_last_bun_section():
 
     with pytest.raises(PeNotLastSectionError):
         repack_pe(fixture["buf"], info, b"hi", b"\x00" * OFFSETS_SIZE)
+
+
+def test_pe_repack_rejects_truncated_pe_layout_cleanly():
+    fixture = build_bun_fixture(
+        platform="pe",
+        module_struct_size=52,
+        modules=THREE_MODULES,
+        entry_point_id=1,
+    )
+    info = parse_bun_binary(fixture["buf"])
+
+    with pytest.raises(ValueError, match="could not locate"):
+        repack_pe(fixture["buf"][:64], info, b"hi", b"\x00" * OFFSETS_SIZE)

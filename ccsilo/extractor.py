@@ -1,9 +1,9 @@
 """Compatibility wrapper extracting Bun modules via bun_extract."""
 
-import struct
 from pathlib import Path
 
 from .bun_extract import parse_bun_binary
+from .bun_extract.checked import checked_unpack_from as _checked_unpack_from
 from .bun_extract.extract import extract_all as extract_all_from_info
 from .bun_extract.macho import find_bun_section as find_macho_bun_section
 from .bun_extract.macho import is_macho
@@ -23,11 +23,11 @@ SECTION_HEADER_SIZE = 8
 
 
 def read_u32(data, offset, endian="<"):
-    return struct.unpack_from(endian + "I", data, offset)[0]
+    return _checked_unpack_from(endian + "I", data, offset, "extractor u32 field")[0]
 
 
 def read_u64(data, offset, endian="<"):
-    return struct.unpack_from(endian + "Q", data, offset)[0]
+    return _checked_unpack_from(endian + "Q", data, offset, "extractor u64 field")[0]
 
 
 def find_bun_section_offset(binary_path):

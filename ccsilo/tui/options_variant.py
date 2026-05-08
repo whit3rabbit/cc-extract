@@ -2,15 +2,45 @@
 
 from ..providers import PLUGIN_RECOMMENDATIONS, list_optional_mcp_entries
 from ..variants import CCR_OAUTH_PROVIDER_KEY, CCR_PROVIDER_KEYS
-from ..variant_tweaks import CURATED_TWEAK_IDS, default_tweak_ids_for_provider
-from ._const import MenuOption, SOURCE_LATEST, VARIANT_MODEL_FIELDS, VARIANT_STEPS
-from .options_tweaks import _tweak_display_name
+from ..patches._registry import GROUP_ORDER
+from ..variant_tweaks import (
+    CURATED_TWEAK_IDS,
+    DEFAULT_TWEAK_IDS,
+    ENV_TWEAK_IDS,
+    default_tweak_ids_for_provider,
+)
+from ._const import ARCHITECT_MODE_TWEAK_ID, MenuOption, SOURCE_LATEST, VARIANT_MODEL_FIELDS, VARIANT_STEPS
+from .options_tweaks import _tweak_display_name, tweak_meta
+
+PROVIDER_FILTER_LABELS = {
+    "all": "All",
+    "recommended": "Recommended",
+    "cloud": "Cloud",
+    "local": "Local",
+    "model-map": "Needs model map",
+    "mcp": "MCP",
+}
+PROVIDER_GROUPS = [
+    ("pinned", "Recommended defaults"),
+    ("cloud-direct", "Direct cloud APIs"),
+    ("cloud-gateway", "Gateways and routers"),
+    ("local", "Local endpoints"),
+]
+GATEWAY_PROVIDER_KEYS = {
+    "9router",
+    "cerebras",
+    "custom",
+    "gatewayz",
+    "nanogpt",
+    "openrouter",
+    "vercel",
+}
+
 
 def variant_options(state):
     if state.variant_step == 0:
         options = []
         if state.variants and state.mode not in {"variants", "first-run-setup"}:
-            options.append(MenuOption("section", "Existing setups"))
             for variant in state.variants:
                 paths = variant.manifest.get("paths", {})
                 options.append(MenuOption(
@@ -18,8 +48,6 @@ def variant_options(state):
                     f"{variant.variant_id}: {paths.get('wrapper', '(no command)')}",
                     variant.variant_id,
                 ))
-        if state.variant_providers and state.mode not in {"variants", "first-run-setup"}:
-            options.append(MenuOption("section", "Create setup provider"))
         options.extend(_variant_provider_options(state))
         return options
     if state.variant_step == 1:
@@ -109,14 +137,22 @@ def variant_options(state):
     if state.variant_step == 5:
         options = []
         provider = selected_variant_provider(state)
+        if ARCHITECT_MODE_TWEAK_ID in CURATED_TWEAK_IDS:
+            marker = "[x]" if ARCHITECT_MODE_TWEAK_ID in state.selected_variant_tweaks else "[ ]"
+            options.append(
+                MenuOption(
+                    "variant-architect-mode",
+                    f"{marker} Architect Mode  (model picker alias, no Claude OAuth)",
+                    ARCHITECT_MODE_TWEAK_ID,
+                )
+            )
         if variant_model_proxy_supported(provider):
             marker = "[x]" if state.variant_model_proxy == "architect" else "[ ]"
             options.extend(
                 [
-                    MenuOption("section", "Architect model proxy"),
                     MenuOption(
                         "variant-model-proxy",
-                        f"{marker} Architect model proxy  (Claude OAuth planner, backend workers)",
+                        f"{marker} OAuth architect proxy  (requires Claude Code account)",
                         "architect",
                     ),
                 ]
@@ -128,8 +164,7 @@ def variant_options(state):
                         f"Model proxy port: {state.variant_model_proxy_port or 'auto'}",
                     )
                 )
-            options.append(MenuOption("section", "Tweaks"))
-        tweak_ids = variant_tweak_ids(state)
+        tweak_ids = variant_setup_tweak_ids(state)
         for tweak_id in tweak_ids:
             marker = "[x]" if tweak_id in state.selected_variant_tweaks else "[ ]"
             options.append(MenuOption("variant-tweak", f"{marker} {_tweak_display_name(tweak_id)}  ({tweak_id})", tweak_id))
@@ -147,16 +182,8 @@ def variant_options(state):
 
 def _variant_provider_options(state):
     options = []
-    for provider in _providers_for_section(state, "pinned"):
-        options.append(_variant_provider_option(state, provider))
-    cloud = _providers_for_section(state, "cloud")
-    if cloud:
-        options.append(MenuOption("section", "Cloud Providers"))
-        options.extend(_variant_provider_option(state, provider) for provider in cloud)
-    local = _providers_for_section(state, "local")
-    if local:
-        options.append(MenuOption("section", "Local LLMs"))
-        options.extend(_variant_provider_option(state, provider) for provider in local)
+    for _group_key, _group_label, providers in _variant_provider_groups(state):
+        options.extend(_variant_provider_option(state, provider) for provider in providers)
     return options
 
 def _variant_version_options(state):
@@ -192,12 +219,102 @@ def _providers_for_section(state, section):
     providers = [
         (index, provider)
         for index, provider in enumerate(state.variant_providers)
-        if str(provider.get("section") or _default_provider_section(provider.get("key"))) == section
+        if _provider_section(provider) == section
     ]
     if section == "pinned":
         order = {"mirror": 0, "ccrouter": 1, "ccr-oauth": 2}
         providers.sort(key=lambda item: (order.get(item[1].get("key"), 99), item[1].get("label", "")))
     return providers
+
+
+def _variant_provider_groups(state):
+    candidates = [
+        (index, provider)
+        for index, provider in enumerate(state.variant_providers)
+        if _provider_matches_controls(state, provider)
+    ]
+    groups = []
+    for group_key, label in PROVIDER_GROUPS:
+        providers = [
+            (index, provider)
+            for index, provider in candidates
+            if _provider_group_key(provider) == group_key
+        ]
+        if group_key == "pinned":
+            order = {"mirror": 0, "ccrouter": 1, "ccr-oauth": 2}
+            providers.sort(key=lambda item: (order.get(item[1].get("key"), 99), item[1].get("label", "")))
+        if providers:
+            groups.append((group_key, label, providers))
+    return groups
+
+
+def _provider_group_key(provider):
+    section = _provider_section(provider)
+    if section == "pinned":
+        return "pinned"
+    if section == "local":
+        return "local"
+    key = str(provider.get("key") or "")
+    if provider.get("requiresModelMapping") or key in GATEWAY_PROVIDER_KEYS:
+        return "cloud-gateway"
+    return "cloud-direct"
+
+
+def _provider_matches_controls(state, provider):
+    return _provider_matches_filter(state, provider) and _provider_matches_search(state, provider)
+
+
+def _provider_matches_filter(state, provider):
+    filter_key = getattr(state, "variant_provider_filter", "all") or "all"
+    if filter_key == "all":
+        return True
+    section = _provider_section(provider)
+    if filter_key == "recommended":
+        return section == "pinned" or (section == "cloud" and not provider.get("requiresModelMapping"))
+    if filter_key == "cloud":
+        return section == "cloud"
+    if filter_key == "local":
+        return section == "local"
+    if filter_key == "model-map":
+        return bool(provider.get("requiresModelMapping"))
+    if filter_key == "mcp":
+        return bool(provider.get("mcpServers"))
+    return True
+
+
+def _provider_matches_search(state, provider):
+    query = (getattr(state, "variant_provider_search_text", "") or "").strip().lower()
+    if not query:
+        return True
+    return query in _provider_search_text(provider)
+
+
+def _provider_search_text(provider):
+    parts = [
+        provider.get("key"),
+        provider.get("label"),
+        provider.get("description"),
+        provider.get("authMode"),
+        provider.get("credentialEnv"),
+        provider.get("baseUrl"),
+        _provider_section(provider),
+    ]
+    parts.extend(_string_list(provider.get("mcpServers")))
+    parts.extend(_string_list(provider.get("settingsPermissionsDeny")))
+    parts.extend(_string_list(provider.get("envUnset")))
+    tui = provider.get("tui") or {}
+    if isinstance(tui, dict):
+        parts.extend([tui.get("headline"), tui.get("setupNote")])
+        parts.extend(_string_list(tui.get("features")))
+        links = tui.get("setupLinks") or {}
+        if isinstance(links, dict):
+            parts.extend(str(key) for key in links)
+            parts.extend(str(value) for value in links.values())
+    return " ".join(str(part).lower() for part in parts if str(part or "").strip())
+
+
+def _provider_section(provider):
+    return str(provider.get("section") or _default_provider_section(provider.get("key")))
 
 def _default_provider_section(provider_key):
     if provider_key in {"mirror", *CCR_PROVIDER_KEYS}:
@@ -210,18 +327,62 @@ def _variant_provider_option(state, item):
     index, provider = item
     return MenuOption(
         "variant-provider",
-        f"{provider['key']}  {provider['label']} - {provider.get('description', '')} {_provider_markers(provider)}",
+        _variant_provider_row_label(provider),
         index,
     )
 
 def variant_provider_selector_labels(state):
-    labels = []
-    for option in variant_options(state):
-        if option.kind == "variant-provider":
-            labels.append(_variant_provider_row_label(_provider_by_index(state, option.value)))
-        else:
-            labels.append(option.label)
-    return labels
+    return [label for label, _option_index in _variant_provider_selector_rows(state)]
+
+
+def variant_provider_selected_label_index(state):
+    rows = _variant_provider_selector_rows(state)
+    if not rows:
+        return 0
+    for row_index, (_label, option_index) in enumerate(rows):
+        if option_index == state.selected_index:
+            return row_index
+    return 0
+
+
+def variant_provider_control_summary(state):
+    search = (getattr(state, "variant_provider_search_text", "") or "").strip()
+    search_label = search if search else "none"
+    if getattr(state, "variant_provider_search_active", False):
+        search_label = f"{search_label} (typing)"
+    filter_key = getattr(state, "variant_provider_filter", "all") or "all"
+    filter_label = PROVIDER_FILTER_LABELS.get(filter_key, filter_key)
+    shown = sum(len(providers) for _group_key, _label, providers in _variant_provider_groups(state))
+    total = len(state.variant_providers)
+    return f"Search: {search_label} | Filter: {filter_label} | Showing: {shown}/{total}"
+
+
+def _variant_provider_selector_rows(state):
+    options = variant_options(state)
+    rows = [(variant_provider_control_summary(state), None)]
+    option_index = 0
+
+    if state.variants and state.mode not in {"variants", "first-run-setup"}:
+        rows.append((f"Existing setups ({len(state.variants)})", None))
+        for _variant in state.variants:
+            if option_index < len(options):
+                rows.append((options[option_index].label, option_index))
+                option_index += 1
+
+    provider_option_count = len(options) - option_index
+    if provider_option_count:
+        if state.variants and state.mode not in {"variants", "first-run-setup"}:
+            rows.append((f"Create setup providers ({provider_option_count})", None))
+        for _group_key, label, providers in _variant_provider_groups(state):
+            rows.append((f"{label} ({len(providers)})", None))
+            for _item in providers:
+                if option_index < len(options):
+                    rows.append((options[option_index].label, option_index))
+                    option_index += 1
+    elif state.variant_providers:
+        rows.append(("No providers match current search/filter", None))
+
+    return rows
 
 def variant_provider_detail_lines(state):
     provider = _highlighted_variant_provider(state)
@@ -262,7 +423,7 @@ def variant_provider_detail_lines(state):
 
     model_proxy_lines = _provider_model_proxy_lines(provider)
     if model_proxy_lines:
-        lines.extend(["", "Architect model proxy", *model_proxy_lines])
+        lines.extend(["", "OAuth architect proxy", *model_proxy_lines])
 
     setup_note = str(tui.get("setupNote") or "").strip()
     if setup_note:
@@ -280,8 +441,8 @@ def _provider_model_proxy_lines(provider):
     if not variant_model_proxy_supported(provider):
         return []
     lines = [
-        "- Wizard: enable Architect model proxy on the Tweaks step",
-        "- Requires a Claude Code login; claude-* calls use OAuth/session",
+        "- Wizard: enable OAuth architect proxy on the Tweaks step",
+        "- Requires Claude Code account/login; claude-* calls use OAuth/session",
         "- Non-Claude worker aliases route to this provider backend",
     ]
     if provider.get("key") == CCR_OAUTH_PROVIDER_KEY:
@@ -303,6 +464,124 @@ def variant_tweak_ids(state):
     recommended_ids = default_tweak_ids_for_provider(provider.get("key") if provider else None)
     return recommended_ids if state.tweak_filter == "recommended" else list(CURATED_TWEAK_IDS)
 
+def variant_setup_tweak_ids(state):
+    return [
+        tweak_id for tweak_id in variant_tweak_ids(state)
+        if tweak_id != ARCHITECT_MODE_TWEAK_ID
+    ]
+
+def variant_tweak_groups(state):
+    provider = selected_variant_provider(state)
+    recommended_ids = default_tweak_ids_for_provider(provider.get("key") if provider else None)
+    return group_setup_tweak_ids(variant_setup_tweak_ids(state), recommended_ids)
+
+def group_setup_tweak_ids(tweak_ids, recommended_ids):
+    visible_ids = _unique_ordered(str(tweak_id) for tweak_id in tweak_ids)
+    recommended = _unique_ordered(str(tweak_id) for tweak_id in recommended_ids)
+    used = set()
+    groups = []
+
+    default_ids = [tweak_id for tweak_id in DEFAULT_TWEAK_IDS if tweak_id in visible_ids]
+    if default_ids:
+        groups.append(("Recommended defaults", default_ids))
+        used.update(default_ids)
+
+    provider_ids = [
+        tweak_id
+        for tweak_id in recommended
+        if tweak_id in visible_ids and tweak_id not in used
+    ]
+    if provider_ids:
+        groups.append(("Provider defaults", provider_ids))
+        used.update(provider_ids)
+
+    env_ids = [
+        tweak_id
+        for tweak_id in ENV_TWEAK_IDS
+        if tweak_id in visible_ids and tweak_id not in used
+    ]
+    if env_ids:
+        groups.append(("Environment variables", env_ids))
+        used.update(env_ids)
+
+    for group in GROUP_ORDER:
+        group_ids = [
+            tweak_id
+            for tweak_id in visible_ids
+            if tweak_id not in used and getattr(tweak_meta(tweak_id), "group", None) == group
+        ]
+        if group_ids:
+            groups.append((group, group_ids))
+            used.update(group_ids)
+
+    remaining = [tweak_id for tweak_id in visible_ids if tweak_id not in used]
+    if remaining:
+        groups.append(("other", remaining))
+    return groups
+
+def variant_tweak_selector_rows(state):
+    options = variant_options(state)
+    rows = []
+    architect_indexes = [
+        index for index, option in enumerate(options)
+        if option.kind == "variant-architect-mode"
+    ]
+    if architect_indexes:
+        rows.append(("Architect Mode", None))
+        for index in architect_indexes:
+            rows.append((options[index].label, index))
+
+    model_proxy_indexes = [
+        index for index, option in enumerate(options)
+        if option.kind in {"variant-model-proxy", "variant-model-proxy-port"}
+    ]
+    if model_proxy_indexes:
+        rows.append(("OAuth architect proxy", None))
+        for index in model_proxy_indexes:
+            rows.append((options[index].label, index))
+
+    tweak_options = {
+        str(option.value): (index, option)
+        for index, option in enumerate(options)
+        if option.kind == "variant-tweak"
+    }
+    for group, tweak_ids in variant_tweak_groups(state):
+        group_rows = [
+            (tweak_id, tweak_options[tweak_id])
+            for tweak_id in tweak_ids
+            if tweak_id in tweak_options
+        ]
+        if not group_rows:
+            continue
+        rows.append((f"-- {group} --", None))
+        for _tweak_id, (index, option) in group_rows:
+            rows.append((option.label, index))
+
+    handled = set(architect_indexes) | set(model_proxy_indexes) | {index for index, _option in tweak_options.values()}
+    for index, option in enumerate(options):
+        if index not in handled:
+            rows.append((option.label, index))
+    return rows
+
+def variant_tweak_selector_labels(state):
+    return [label for label, _option_index in variant_tweak_selector_rows(state)]
+
+def variant_tweak_selected_label_index(state):
+    rows = variant_tweak_selector_rows(state)
+    if not rows:
+        return 0
+    for row_index, (_label, option_index) in enumerate(rows):
+        if option_index == state.selected_index:
+            return row_index
+    return 0
+
+def _unique_ordered(tweak_ids):
+    result = []
+    for tweak_id in tweak_ids:
+        if tweak_id not in result:
+            result.append(tweak_id)
+    return result
+
 def _variant_provider_row_label(provider):
     if not provider:
         return "unknown provider"
@@ -312,14 +591,20 @@ def _variant_provider_row_label(provider):
     auth_mode = provider.get("authMode") or "apiKey"
     if auth_mode == "none":
         markers.append("no-auth")
+    elif auth_mode == "apiKey":
+        markers.append("key")
+    elif auth_mode == "authToken":
+        markers.append("token")
     else:
         markers.append(str(auth_mode))
     if provider.get("requiresModelMapping"):
         markers.append("model-map")
     if provider.get("mcpServers"):
         markers.append("mcp")
-    if provider.get("section") == "local" or provider.get("baseUrl", "").startswith(("http://127.0.0.1", "http://localhost")):
+    if _provider_section(provider) == "local" or provider.get("baseUrl", "").startswith(("http://127.0.0.1", "http://localhost")):
         markers.append("local")
+    if _provider_model_discovery_enabled(provider):
+        markers.append("refresh")
     return f"{key}  {label} [{', '.join(markers)}]"
 
 
@@ -344,6 +629,8 @@ def _highlighted_variant_provider(state):
     option = selected_variant_option(state)
     if option is not None and option.kind == "variant-provider":
         return _provider_by_index(state, option.value)
+    if state.mode in {"variants", "first-run-setup"} and state.variant_step == 0:
+        return None
     return selected_variant_provider(state)
 
 def _provider_by_index(state, value):

@@ -15,7 +15,15 @@ def _proxy(name):
     return call
 
 
-__all__ = ['_event_requests_quit', '_handle_backspace_key', '_handle_char_key', '_variant_accepts_name_text', '_toggle_selected', '_activate', '_activate_tweaks_source', '_activate_tweaks_edit', '_activate_models_edit', '_activate_setup_manager', '_activate_setup_detail', '_current_setup_id_for_action', '_start_setup_create', '_open_upgrade_preview', '_open_delete_confirm', '_open_inspect_delete_confirm', '_cancel_inspect_delete', '_open_tweak_editor', '_open_model_editor', '_open_variant_create_preview', '_cycle_tweak_filter', '_cycle_setup_provider_filter', '_cycle_setup_sort', '_clamp_setup_manager_selection', '_activate_dashboard', '_activate_variants', '_activate_patch_packages']
+__all__ = ['_event_requests_quit', '_handle_backspace_key', '_handle_char_key', '_variant_accepts_name_text', '_toggle_selected', '_activate', '_activate_tweaks_source', '_activate_tweaks_edit', '_activate_models_edit', '_activate_setup_manager', '_activate_setup_detail', '_current_setup_id_for_action', '_start_setup_create', '_open_upgrade_preview', '_open_delete_confirm', '_open_inspect_delete_confirm', '_cancel_inspect_delete', '_open_tweak_editor', '_open_model_editor', '_open_variant_create_preview', '_cycle_tweak_filter', '_cycle_variant_provider_filter', '_cycle_setup_provider_filter', '_cycle_setup_sort', '_clamp_setup_manager_selection', '_activate_dashboard', '_activate_variants', '_activate_patch_packages']
+
+
+def _variant_provider_selector_mode(state):
+    return state.mode in {"variants", "first-run-setup"} and state.variant_step == 0
+
+
+def _variant_provider_search_active(state):
+    return _variant_provider_selector_mode(state) and getattr(state, "variant_provider_search_active", False)
 
 def _event_requests_quit(event, char_key_code):
     if event.get("kind") != "key":
@@ -57,6 +65,11 @@ def _handle_backspace_key(state):
         state.message = f"Search: {state.setup_search_text or 'none'}"
         _tui()._save_setup_list_preferences(state)
         return True
+    if _variant_provider_search_active(state):
+        state.variant_provider_search_text = state.variant_provider_search_text[:-1]
+        state.selected_index = state._clamp(state.selected_index, state.item_count())
+        state.message = f"Provider search: {state.variant_provider_search_text or 'none'}"
+        return True
     if state.mode in {"tweaks-edit", "tweak-editor"} and state.tweak_search_active:
         state.tweak_search = state.tweak_search[:-1]
         state.selected_index = state._clamp(state.selected_index, state.item_count())
@@ -97,6 +110,13 @@ def _handle_char_key(state, char):
         if char.isprintable() and char not in "\r\n\t":
             state.dashboard_profile_name += char
             state.dashboard_delete_confirm_id = ""
+        return True
+
+    if _variant_provider_search_active(state):
+        if char.isprintable() and char not in "\r\n\t":
+            state.variant_provider_search_text += char
+            state.selected_index = state._clamp(state.selected_index, state.item_count())
+            state.message = f"Provider search: {state.variant_provider_search_text}"
         return True
 
     if state.mode in {"variants", "first-run-setup"} and _tui()._variant_accepts_text(state):
@@ -170,6 +190,13 @@ def _handle_char_key(state, char):
             state.message = "Tweak rebuild cancelled."
         return True
     handled_setup_key = False
+    if char == "/" and _variant_provider_selector_mode(state):
+        state.variant_provider_search_active = True
+        state.message = "Search providers."
+        return True
+    if lowered == "f" and _variant_provider_selector_mode(state):
+        _cycle_variant_provider_filter(state)
+        return True
     if char == "/" and state.mode == "setup-manager":
         state.setup_search_active = True
         state.message = "Search setups."
@@ -268,6 +295,8 @@ def _toggle_selected(state):
         option = _tui()._selected_variant_option(state)
         if option and option.kind == "variant-tweak":
             _tui()._toggle_variant_tweak(state, str(option.value))
+        elif option and option.kind == "variant-architect-mode":
+            _tui()._toggle_variant_tweak(state, str(option.value))
         elif option and option.kind == "variant-mcp":
             _tui()._toggle_variant_mcp(state, str(option.value))
         elif option and option.kind == "variant-store-secret":
@@ -284,6 +313,10 @@ def _activate(state):
     if state.mode == "setup-manager" and state.setup_search_active:
         state.setup_search_active = False
         state.message = f"Search filter kept: {state.setup_search_text or 'none'}"
+        return True
+    if _variant_provider_search_active(state):
+        state.variant_provider_search_active = False
+        state.message = f"Provider search kept: {state.variant_provider_search_text or 'none'}"
         return True
     if state.mode in {"tweaks-edit", "tweak-editor"} and state.tweak_search_active:
         state.tweak_search_active = False
@@ -496,6 +529,13 @@ def _cycle_tweak_filter(state):
     state.selected_index = 0
     state.message = f"Tweak view: {state.tweak_filter}"
 
+def _cycle_variant_provider_filter(state):
+    order = ["all", "recommended", "cloud", "local", "model-map", "mcp"]
+    current = state.variant_provider_filter if state.variant_provider_filter in order else "all"
+    state.variant_provider_filter = order[(order.index(current) + 1) % len(order)]
+    state.selected_index = 0
+    state.message = f"Provider filter: {state.variant_provider_filter}"
+
 def _cycle_setup_provider_filter(state):
     options = ["all", *_tui()._setup_provider_keys(state)]
     current = state.setup_provider_filter if state.setup_provider_filter in options else "all"
@@ -653,6 +693,8 @@ def _activate_variants(state):
     elif option.kind == "variant-models-continue":
         if _tui()._require_variant_model_mapping(state):
             _tui()._advance_variant(state)
+    elif option.kind == "variant-architect-mode":
+        _tui()._toggle_variant_tweak(state, str(option.value))
     elif option.kind == "variant-tweak":
         _tui()._toggle_variant_tweak(state, str(option.value))
     elif option.kind == "variant-tweak-view":

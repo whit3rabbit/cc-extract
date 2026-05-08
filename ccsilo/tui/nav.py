@@ -50,6 +50,10 @@ def go_back(state) -> None:
     elif state.mode == "health-result":
         set_mode(state, "setup-detail" if state.selected_setup_id else "setup-manager")
     elif state.mode == "first-run-setup":
+        if state.variant_step == 0 and getattr(state, "variant_provider_search_active", False):
+            state.variant_provider_search_active = False
+            state.message = "Provider search kept."
+            return
         if state.variant_step > 0:
             state.variant_step -= 1
             state.selected_index = 0
@@ -64,6 +68,10 @@ def go_back(state) -> None:
     elif state.mode == "patch-package":
         set_mode(state, "patch-source")
     elif state.mode == "variants":
+        if state.variant_step == 0 and getattr(state, "variant_provider_search_active", False):
+            state.variant_provider_search_active = False
+            state.message = "Provider search kept."
+            return
         if state.variant_step > 0:
             state.variant_step -= 1
             state.selected_index = 0

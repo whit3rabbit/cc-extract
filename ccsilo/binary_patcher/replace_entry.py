@@ -3,6 +3,8 @@
 import struct
 from dataclasses import dataclass
 
+from ccsilo.bun_extract.checked import checked_slice as _checked_slice
+from ccsilo.bun_extract.checked import checked_unpack_from as _checked_unpack_from
 from ccsilo.bun_extract.constants import OFFSETS_SIZE
 from ccsilo.bun_extract.types import BunFormatError
 
@@ -35,10 +37,9 @@ def replace_entry_js(data, info, new_content):
     cut = entry.cont_off + old_entry_len
 
     offsets_start = info.trailer_offset - OFFSETS_SIZE
-    old_modules_off = struct.unpack_from("<I", data, offsets_start + 8)[0]
-    old_modules_len = struct.unpack_from("<I", data, offsets_start + 12)[0]
-
-    old_raw_bytes = data[info.data_start : info.data_start + info.byte_count]
+    old_modules_off = _checked_unpack_from("<I", data, offsets_start + 8, "replace-entry modulesOffset")[0]
+    old_modules_len = _checked_unpack_from("<I", data, offsets_start + 12, "replace-entry modulesLength")[0]
+    old_raw_bytes = _checked_slice(data, info.data_start, info.byte_count, "replace-entry raw Bun payload")
     new_raw_bytes = bytearray(
         old_raw_bytes[: entry.cont_off]
         + new_content
@@ -48,9 +49,10 @@ def replace_entry_js(data, info, new_content):
     new_modules_off = old_modules_off + delta if old_modules_off >= cut else old_modules_off
     for index in range(len(info.modules)):
         base = new_modules_off + index * info.module_size
+        _checked_slice(new_raw_bytes, base, info.module_size, f"replace-entry module {index} table")
         for slot in (0, 8, 16, 24):
-            ptr_off = struct.unpack_from("<I", new_raw_bytes, base + slot)[0]
-            ptr_len = struct.unpack_from("<I", new_raw_bytes, base + slot + 4)[0]
+            ptr_off = _checked_unpack_from("<I", new_raw_bytes, base + slot, f"replace-entry module {index} pointer")[0]
+            ptr_len = _checked_unpack_from("<I", new_raw_bytes, base + slot + 4, f"replace-entry module {index} length")[0]
             if ptr_len != 0 and ptr_off >= cut:
                 struct.pack_into("<I", new_raw_bytes, base + slot, ptr_off + delta)
         if index == info.entry_point_id:
@@ -61,7 +63,7 @@ def replace_entry_js(data, info, new_content):
     struct.pack_into("<I", new_offsets, 8, new_modules_off)
     struct.pack_into("<I", new_offsets, 12, old_modules_len)
     struct.pack_into("<I", new_offsets, 16, info.entry_point_id)
-    new_offsets[20:28] = data[offsets_start + 20 : offsets_start + 28]
+    new_offsets[20:28] = _checked_slice(data, offsets_start + 20, 8, "replace-entry exec argv offsets")
     struct.pack_into("<I", new_offsets, 28, info.flags)
 
     repacked = repack_binary(data, info, bytes(new_raw_bytes), bytes(new_offsets))

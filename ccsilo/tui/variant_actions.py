@@ -20,6 +20,9 @@ def advance_variant(state):
 def reset_variant(state):
     state.variant_step = 0
     state.selected_index = 0
+    state.variant_provider_search_text = ""
+    state.variant_provider_search_active = False
+    state.variant_provider_filter = "all"
     state.variant_name = ""
     state.variant_claude_version = "latest"
     state.variant_base_url = ""
@@ -165,9 +168,9 @@ def toggle_variant_model_proxy(state):
             state.selected_variant_tweaks.append("opusplan1m")
             state.selected_variant_tweaks.sort(key=lambda item: CURATED_TWEAK_IDS.index(item))
     state.message = (
-        "Architect model proxy: enabled"
+        "OAuth architect proxy: enabled"
         if state.variant_model_proxy == "architect"
-        else "Architect model proxy: disabled"
+        else "OAuth architect proxy: disabled"
     )
 
 

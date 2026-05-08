@@ -288,6 +288,7 @@ from .dispatch import (
     _cycle_setup_provider_filter,
     _cycle_setup_sort,
     _cycle_tweak_filter,
+    _cycle_variant_provider_filter,
     _event_requests_quit,
     _handle_backspace_key,
     _handle_char_key,

@@ -6,7 +6,9 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from ccsilo.model_proxy import ModelProxyConfig, SseUsageNormalizer, load_config, start_model_proxy
+from ccsilo.model_proxy import ModelProxyConfig, SseUsageNormalizer, load_config, main, start_model_proxy
+
+NONCE = "n" * 24
 
 
 class _RecordingServer:
@@ -104,8 +106,44 @@ def test_model_proxy_rejects_non_architect_mode():
                 anthropic_models=("claude-opus-4-6",),
             ),
             api_key="backend-key",
-            auth_nonce="nonce",
+            auth_nonce=NONCE,
         )
+
+
+def test_model_proxy_rejects_short_nonce():
+    with pytest.raises(ValueError, match="missing or too short"):
+        start_model_proxy(
+            ModelProxyConfig(
+                mode="architect",
+                backend_url="https://backend.example/anthropic",
+                backend_auth="x-api-key",
+                backend_models=("worker-model",),
+                anthropic_models=("claude-opus-4-6",),
+            ),
+            api_key="backend-key",
+            auth_nonce="short",
+        )
+
+
+def test_model_proxy_main_rejects_missing_nonce(tmp_path, monkeypatch):
+    config_path = tmp_path / "model-proxy.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "mode": "architect",
+                "backendUrl": "https://backend.example/anthropic",
+                "backendAuth": "x-api-key",
+                "backendModels": ["worker-model"],
+                "anthropicModels": ["claude-opus-4-6"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CCSILO_MODEL_PROXY_API_KEY", "backend-key")
+    monkeypatch.delenv("CCSILO_MODEL_PROXY_AUTH_NONCE", raising=False)
+
+    with pytest.raises(SystemExit, match="missing or too short"):
+        main(["--config", str(config_path), "--port-file", str(tmp_path / "port")])
 
 
 def test_model_proxy_routes_backend_and_anthropic_with_expected_auth_and_body_filters():
@@ -132,12 +170,12 @@ def test_model_proxy_routes_backend_and_anthropic_with_expected_auth_and_body_fi
             anthropic_url=anthropic.url,
         ),
         api_key="backend-key",
-        auth_nonce="nonce",
+        auth_nonce=NONCE,
         port=0,
     )
     thread = threading.Thread(target=proxy.serve_forever, daemon=True)
     thread.start()
-    proxy_url = f"http://127.0.0.1:{proxy.server_address[1]}/nonce"
+    proxy_url = f"http://127.0.0.1:{proxy.server_address[1]}/{NONCE}"
 
     try:
         backend_raw, backend_headers = _post_json_response(
@@ -213,12 +251,12 @@ def test_model_proxy_normalizes_backend_json_usage():
             anthropic_url=anthropic.url,
         ),
         api_key="backend-key",
-        auth_nonce="nonce",
+        auth_nonce=NONCE,
         port=0,
     )
     thread = threading.Thread(target=proxy.serve_forever, daemon=True)
     thread.start()
-    proxy_url = f"http://127.0.0.1:{proxy.server_address[1]}/nonce"
+    proxy_url = f"http://127.0.0.1:{proxy.server_address[1]}/{NONCE}"
 
     try:
         raw = _post_json(
@@ -236,7 +274,7 @@ def test_model_proxy_normalizes_backend_json_usage():
         anthropic.close()
 
 
-def test_model_proxy_rejects_wrong_path_method_and_unknown_model():
+def test_model_proxy_allows_only_nonce_post_messages_path_and_known_models():
     def backend_response(_record):
         return 200, {"content-type": "application/json"}, b"{}"
 
@@ -251,7 +289,7 @@ def test_model_proxy_rejects_wrong_path_method_and_unknown_model():
             anthropic_url=upstream.url,
         ),
         api_key="backend-key",
-        auth_nonce="nonce",
+        auth_nonce=NONCE,
         port=0,
     )
     thread = threading.Thread(target=proxy.serve_forever, daemon=True)
@@ -259,19 +297,33 @@ def test_model_proxy_rejects_wrong_path_method_and_unknown_model():
     base_url = f"http://127.0.0.1:{proxy.server_address[1]}"
 
     try:
+        body = _post_json(
+            f"{base_url}/{NONCE}/v1/messages",
+            {"model": "worker-model", "messages": []},
+        )
+        assert json.loads(body.decode("utf-8")) == {}
+
         with pytest.raises(HTTPError) as wrong_path:
             _post_json(f"{base_url}/v1/messages", {"model": "worker-model", "messages": []})
         assert wrong_path.value.code == 404
 
-        with pytest.raises(HTTPError) as wrong_method:
-            request = Request(f"{base_url}/nonce/v1/messages", method="GET")
-            urlopen(request, timeout=5)
-        assert wrong_method.value.code == 405
+        with pytest.raises(HTTPError) as bad_nonce:
+            _post_json(f"{base_url}/bad/v1/messages", {"model": "worker-model", "messages": []})
+        assert bad_nonce.value.code == 404
+
+        for method in ("GET", "HEAD", "PUT", "DELETE", "OPTIONS"):
+            with pytest.raises(HTTPError) as wrong_method:
+                request = Request(f"{base_url}/{NONCE}/v1/messages", data=b"{}" if method != "GET" else None, method=method)
+                urlopen(request, timeout=5)
+            assert wrong_method.value.code == 405
 
         with pytest.raises(HTTPError) as unknown_model:
-            _post_json(f"{base_url}/nonce/v1/messages", {"model": "not-allowed", "messages": []})
+            _post_json(f"{base_url}/{NONCE}/v1/messages", {"model": "not-allowed", "messages": []})
         assert unknown_model.value.code == 400
-        assert upstream.records == []
+        with pytest.raises(HTTPError) as alias_model:
+            _post_json(f"{base_url}/{NONCE}/v1/messages", {"model": "anthropic/worker-model", "messages": []})
+        assert alias_model.value.code == 400
+        assert [record["path"] for record in upstream.records] == ["/v1/messages"]
     finally:
         proxy.shutdown()
         proxy.server_close()
@@ -295,7 +347,7 @@ def test_model_proxy_rejects_oversized_request(monkeypatch):
             anthropic_url=upstream.url,
         ),
         api_key="backend-key",
-        auth_nonce="nonce",
+        auth_nonce=NONCE,
         port=0,
     )
     thread = threading.Thread(target=proxy.serve_forever, daemon=True)
@@ -303,7 +355,7 @@ def test_model_proxy_rejects_oversized_request(monkeypatch):
 
     try:
         request = Request(
-            f"http://127.0.0.1:{proxy.server_address[1]}/nonce/v1/messages",
+            f"http://127.0.0.1:{proxy.server_address[1]}/{NONCE}/v1/messages",
             data=b"{}",
             method="POST",
         )
@@ -335,7 +387,7 @@ def test_model_proxy_rejects_oversized_non_sse_response(monkeypatch):
             anthropic_url=upstream.url,
         ),
         api_key="backend-key",
-        auth_nonce="nonce",
+        auth_nonce=NONCE,
         port=0,
     )
     thread = threading.Thread(target=proxy.serve_forever, daemon=True)
@@ -344,10 +396,46 @@ def test_model_proxy_rejects_oversized_non_sse_response(monkeypatch):
     try:
         with pytest.raises(HTTPError) as exc:
             _post_json(
-                f"http://127.0.0.1:{proxy.server_address[1]}/nonce/v1/messages",
+                f"http://127.0.0.1:{proxy.server_address[1]}/{NONCE}/v1/messages",
                 {"model": "worker-model", "messages": []},
             )
         assert exc.value.code == 502
+    finally:
+        proxy.shutdown()
+        proxy.server_close()
+        thread.join(timeout=2)
+        upstream.close()
+
+
+def test_model_proxy_caps_total_sse_stream_bytes(monkeypatch):
+    monkeypatch.setattr("ccsilo.model_proxy.MAX_STREAM_BYTES", 1)
+
+    def backend_response(_record):
+        return 200, {"content-type": "text/event-stream"}, b'data: {"type":"message_delta"}\n\n'
+
+    upstream = _RecordingServer(backend_response)
+    proxy = start_model_proxy(
+        ModelProxyConfig(
+            mode="architect",
+            backend_url=upstream.url,
+            backend_auth="x-api-key",
+            backend_models=("worker-model",),
+            anthropic_models=("claude-opus-4-6",),
+            anthropic_url=upstream.url,
+        ),
+        api_key="backend-key",
+        auth_nonce=NONCE,
+        port=0,
+    )
+    thread = threading.Thread(target=proxy.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        raw = _post_json(
+            f"http://127.0.0.1:{proxy.server_address[1]}/{NONCE}/v1/messages",
+            {"model": "worker-model", "messages": []},
+        )
+        assert raw == b""
     finally:
         proxy.shutdown()
         proxy.server_close()

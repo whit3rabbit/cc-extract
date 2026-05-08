@@ -397,7 +397,7 @@ def _npm_pack_tarball_name(stdout: str) -> str:
     except json.JSONDecodeError as exc:
         raise RuntimeError("npm pack did not report JSON output") from exc
     if not isinstance(payload, list) or len(payload) != 1 or not isinstance(payload[0], dict):
-        raise RuntimeError("npm pack did not report an output tarball")
+        raise RuntimeError("unexpected npm pack JSON output")
     filename = str(payload[0].get("filename") or "").strip()
     if not filename:
         raise RuntimeError("npm pack did not report an output tarball")

@@ -33,6 +33,16 @@ def safe_read_json(path: Path) -> Dict:
         return {}
 
 
+def read_json_strict(path: Path) -> Dict:
+    """Read a required JSON object, raising on missing, invalid, or non-object data."""
+    path = Path(path)
+    with path.open("r", encoding="utf-8") as handle:
+        value = json.load(handle)
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return value
+
+
 def atomic_write_text_no_symlink(
     path: Path,
     text: str,

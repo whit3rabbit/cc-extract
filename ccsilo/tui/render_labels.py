@@ -7,7 +7,7 @@ from ..variant_tweaks import default_tweak_ids_for_provider
 from ..variants.model import default_bin_dir, variant_id_from_name
 from ..variants.install import default_install_dir
 from ..workspace import short_sha, workspace_root
-from ._const import DASHBOARD_STEPS, TABS, TAB_MODES, VARIANT_MODEL_FIELDS, VARIANT_STEPS
+from ._const import ARCHITECT_MODE_TWEAK_ID, DASHBOARD_STEPS, TABS, TAB_MODES, VARIANT_MODEL_FIELDS, VARIANT_STEPS
 from .options import (
     dashboard_options,
     dashboard_source_label,
@@ -41,8 +41,11 @@ from .options import (
     tweaks_source_options,
     unsupported_pending_tweaks,
     variant_provider_detail_lines,
+    variant_provider_selected_label_index,
     variant_provider_selector_labels,
-    variant_tweak_ids,
+    variant_setup_tweak_ids,
+    variant_tweak_selected_label_index,
+    variant_tweak_selector_labels,
     variant_options,
     variant_title,
 )
@@ -121,7 +124,8 @@ def current_labels(state):
         return f"Manage setup: {state.selected_setup_id or 'none'}", labels
     if state.mode == "first-run-setup":
         title = "No Claude Code setups found"
-        return f"{title}: {VARIANT_STEPS[state.variant_step]}", [option.label for option in variant_options(state)]
+        labels = _variant_labels(state)
+        return f"{title}: {VARIANT_STEPS[state.variant_step]}", labels
     if state.mode == "create-preview":
         return "Setup create preview", create_preview_labels(state)
     if state.mode == "upgrade-preview":
@@ -153,7 +157,8 @@ def current_labels(state):
             labels.append(f"{marker} {package.patch_id}@{package.version}  {package.name}")
         return "Patch bundles", labels
     if state.mode == "variants":
-        return variant_title(state), [option.label for option in variant_options(state)]
+        labels = _variant_labels(state)
+        return variant_title(state), labels
     if state.mode == "tweaks-source":
         return "Tweaks: pick setup", [option.label for option in tweaks_source_options(state)]
     if state.mode in {"tweaks-edit", "tweak-editor"}:
@@ -242,9 +247,11 @@ def _create_preview_model_proxy_lines(state):
     if state.variant_model_proxy != "architect":
         return ["Model proxy: off"]
     return [
-        "Model proxy: architect",
+        "Model proxy: OAuth architect proxy",
         f"Model proxy port: {state.variant_model_proxy_port or 'auto'}",
-        "Model proxy auth: Claude Code OAuth/session for claude-* calls",
+        "Model proxy requirement: Requires Claude Code account/login",
+        "Model proxy auth: claude-* calls use Claude Code OAuth/session",
+        "Model proxy routing: non-Claude aliases use the provider backend",
     ]
 
 def _create_preview_endpoint_lines(state, provider):
@@ -465,6 +472,13 @@ def _tweaks_edit_labels(state):
                 labels.append(label)
     return labels
 
+def _variant_labels(state):
+    if state.variant_step == 0:
+        return variant_provider_selector_labels(state)
+    if state.variant_step == 5:
+        return variant_tweak_selector_labels(state)
+    return [option.label for option in variant_options(state)]
+
 def tweaks_detail_text(state) -> str:
     """Right-pane content describing the currently selected patch."""
     patch = selected_tweaks_edit_patch(state)
@@ -489,9 +503,12 @@ def variant_tweak_detail_text(state) -> str:
         return "No tweak selected."
     if option.kind in {"variant-model-proxy", "variant-model-proxy-port"}:
         return _variant_model_proxy_detail_text(state)
-    if option.kind != "variant-tweak":
+    if option.kind == "variant-architect-mode":
+        tweak_id = ARCHITECT_MODE_TWEAK_ID
+    elif option.kind == "variant-tweak":
+        tweak_id = str(option.value)
+    else:
         return _variant_tweak_summary_text(state)
-    tweak_id = str(option.value)
     patch = tweak_meta(tweak_id)
     if patch is None:
         return "No tweak metadata available."
@@ -555,13 +572,14 @@ def _format_tweak_detail_text(patch, status, trailing_lines):
 
 def _variant_model_proxy_detail_text(state) -> str:
     enabled = "yes" if state.variant_model_proxy == "architect" else "no"
+    architect_mode = "yes" if ARCHITECT_MODE_TWEAK_ID in (state.selected_variant_tweaks or []) else "no"
     return "\n".join([
-        "Architect model proxy",
+        "OAuth architect proxy",
         "Group: setup",
         f"Status: {'ready' if enabled == 'yes' else 'disabled'}",
-        "Reason: Routes planner and worker model calls through different auth paths.",
+        "Reason: Requires Claude Code account/login and routes planner and worker model calls through different auth paths.",
         "",
-        "Starts a setup-local proxy. claude-* requests keep the normal Claude Code OAuth/session login. Non-Claude model aliases are sent to the selected provider backend.",
+        "Requires Claude Code account/login. Starts a setup-local proxy. claude-* calls use Claude Code OAuth/session auth. Non-Claude model aliases are sent to the selected provider backend.",
         "",
         "Versions supported: setup-wrapper",
         "Tested ranges: setup-wrapper",
@@ -570,13 +588,13 @@ def _variant_model_proxy_detail_text(state) -> str:
         "",
         f"Selected for new setup: {enabled}",
         f"Port: {state.variant_model_proxy_port or 'auto'}",
-        "Companion tweak: opusplan1m",
+        f"Architect Mode tweak selected: {architect_mode}",
     ])
 
 
 def _variant_tweak_summary_text(state) -> str:
     selected = len(state.selected_variant_tweaks or [])
-    available = len(variant_tweak_ids(state))
+    available = len(variant_setup_tweak_ids(state))
     return "\n".join([
         "Tweak selection",
         "Group: setup",
@@ -630,6 +648,10 @@ def selected_label_index(state):
         return state.selected_index + 2
     if state.mode == "setup-detail":
         return state.selected_index + len(setup_detail_lines(state)) + 2
+    if _variant_provider_selector_active(state):
+        return variant_provider_selected_label_index(state)
+    if _variant_tweak_selector_active(state):
+        return variant_tweak_selected_label_index(state)
     return state.selected_index
 
 def visible_items(labels, selected_index, max_items):
@@ -781,6 +803,10 @@ def context_hint(state):
     if state.mode == "dashboard" and state.dashboard_step == 2:
         return "Profile names: select Name, then type or Backspace."
     if state.mode in {"variants", "first-run-setup"}:
+        if state.variant_step == 0:
+            if getattr(state, "variant_provider_search_active", False):
+                return "Type to search providers. Enter or Esc keeps the current filter."
+            return "Providers: / searches, F cycles filters, Enter selects."
         if state.variant_step == 1:
             return "Setup names: select Name, then type or Backspace. Choose a Claude Code version if needed."
         if state.variant_step == 2:
@@ -830,6 +856,8 @@ def _variant_key_line(state):
         action = "Enter"
     elif state.variant_step in {1, 2, 4}:
         action = "Type text | Enter choose | Space toggle"
+    elif state.variant_step == 0:
+        action = "Enter select | / search | F filter"
     else:
         action = "Enter"
     return f"Keys: Q quit | Up/Down | {action} | B/Esc | ? more"

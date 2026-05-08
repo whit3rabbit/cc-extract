@@ -2,7 +2,9 @@
 
 import struct
 
+from ccsilo.bun_extract.checked import checked_unpack_from as _checked_unpack_from
 from ccsilo.bun_extract.constants import OFFSETS_SIZE, PE_DOS_MAGIC, PE_NT_SIGNATURE, TRAILER
+from ccsilo.bun_extract.types import BunFormatError
 
 SECTION_HEADER_SIZE = 40
 NAME_BYTES = b".bun\x00"
@@ -32,16 +34,19 @@ def repack_pe(data, info, new_raw_bytes, new_offsets_struct):
 
 
 def _find_pe_layout(data):
-    if len(data) < 0x40 or struct.unpack_from("<H", data, 0)[0] != PE_DOS_MAGIC:
-        return None
-    pe_off = struct.unpack_from("<I", data, 0x3C)[0]
-    if pe_off <= 0 or pe_off + 24 > len(data):
-        return None
-    if struct.unpack_from("<I", data, pe_off)[0] != PE_NT_SIGNATURE:
-        return None
+    try:
+        if len(data) < 0x40 or _checked_unpack_from("<H", data, 0, "PE DOS magic")[0] != PE_DOS_MAGIC:
+            return None
+        pe_off = _checked_unpack_from("<I", data, 0x3C, "PE header offset")[0]
+        if pe_off <= 0 or pe_off + 24 > len(data):
+            return None
+        if _checked_unpack_from("<I", data, pe_off, "PE signature")[0] != PE_NT_SIGNATURE:
+            return None
 
-    num_sections = struct.unpack_from("<H", data, pe_off + 6)[0]
-    optional_size = struct.unpack_from("<H", data, pe_off + 20)[0]
+        num_sections = _checked_unpack_from("<H", data, pe_off + 6, "PE section count")[0]
+        optional_size = _checked_unpack_from("<H", data, pe_off + 20, "PE optional header size")[0]
+    except BunFormatError:
+        return None
     sections_start = pe_off + 24 + optional_size
 
     bun = None
@@ -51,8 +56,8 @@ def _find_pe_layout(data):
         base = sections_start + index * SECTION_HEADER_SIZE
         if base + SECTION_HEADER_SIZE > len(data):
             return None
-        ptr = struct.unpack_from("<I", data, base + 20)[0]
-        size = struct.unpack_from("<I", data, base + 16)[0]
+        ptr = _checked_unpack_from("<I", data, base + 20, f"PE section {index} raw offset")[0]
+        size = _checked_unpack_from("<I", data, base + 16, f"PE section {index} raw size")[0]
         name = data[base : base + 8].split(b"\x00", 1)[0].decode("utf-8", "ignore")
         if data[base : base + len(NAME_BYTES)] == NAME_BYTES:
             bun = {

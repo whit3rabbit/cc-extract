@@ -849,17 +849,68 @@ def test_variants_provider_selection_groups_pinned_cloud_and_local():
         ],
     )
 
-    labels = [option.label for option in tui._variant_options(state)]
-    provider_labels = [label.lstrip("* ") for label in labels]
+    options = tui._variant_options(state)
+    labels = tui.options.variant_provider_selector_labels(state)
 
-    assert provider_labels[0].startswith("mirror  Mirror Claude Code")
-    assert provider_labels[1].startswith("ccrouter  CC Router")
-    assert provider_labels[2].startswith("ccr-oauth  CCR OAuth Proxy")
-    assert labels[3] == "Cloud Providers"
-    assert provider_labels[4].startswith("zai  Zai Cloud")
-    assert labels[5] == "Local LLMs"
-    assert provider_labels[6].startswith("ollama  Ollama")
-    assert provider_labels[7].startswith("lmstudio  LM Studio")
+    assert [option.kind for option in options] == ["variant-provider"] * 6
+    assert options[0].label.startswith("mirror  Mirror Claude Code")
+    assert options[1].label.startswith("ccrouter  CC Router")
+    assert options[2].label.startswith("ccr-oauth  CCR OAuth Proxy")
+    assert options[3].label.startswith("zai  Zai Cloud")
+    assert labels[0] == "Search: none | Filter: All | Showing: 6/6"
+    assert labels[1] == "Recommended defaults (3)"
+    assert labels[5] == "Direct cloud APIs (1)"
+    assert labels[7] == "Local endpoints (2)"
+    assert labels[8].startswith("ollama  Ollama")
+    assert labels[9].startswith("lmstudio  LM Studio")
+
+
+def test_provider_selector_sections_are_not_selectable():
+    state = tui.TuiState(
+        mode="variants",
+        variant_providers=[
+            {"key": "mirror", "label": "Mirror Claude Code", "description": "Pure", "section": "pinned"},
+            {"key": "zai", "label": "Zai Cloud", "description": "Cloud", "section": "cloud"},
+        ],
+    )
+
+    assert state.item_count() == 2
+    assert tui.options.variant_provider_selected_label_index(state) == 2
+
+    state.move(1)
+
+    assert tui._selected_variant_option(state).value == 1
+    assert tui.options.variant_provider_selected_label_index(state) == 4
+    assert tui.options.variant_provider_detail_lines(state)[0] == "Zai Cloud"
+
+
+def test_provider_selector_search_and_filter_keys():
+    state = tui.TuiState(
+        mode="variants",
+        variant_providers=[
+            {"key": "mirror", "label": "Mirror Claude Code", "description": "Pure", "section": "pinned", "authMode": "none"},
+            {"key": "zai", "label": "Zai Cloud", "description": "Cloud", "section": "cloud", "mcpServers": ["web-reader"]},
+            {"key": "openrouter", "label": "OpenRouter", "description": "Gateway", "section": "cloud", "requiresModelMapping": True},
+            {"key": "lmstudio", "label": "LM Studio", "description": "Local", "section": "local", "requiresModelMapping": True},
+        ],
+    )
+
+    assert tui._handle_char_key(state, "/") is True
+    assert state.variant_provider_search_active is True
+    assert tui._handle_char_key(state, "z") is True
+    assert [option.value for option in tui._variant_options(state)] == [1]
+    assert "Search: z (typing) | Filter: All | Showing: 1/4" in tui._screen_text(state)
+
+    assert tui._activate(state) is True
+    assert state.variant_provider_search_active is False
+
+    state.variant_provider_search_text = ""
+    assert tui._handle_char_key(state, "f") is True
+    assert state.variant_provider_filter == "recommended"
+    assert [option.value for option in tui._variant_options(state)] == [0, 1]
+    assert tui._handle_char_key(state, "f") is True
+    assert state.variant_provider_filter == "cloud"
+    assert [option.value for option in tui._variant_options(state)] == [1, 2]
 
 
 def _provider_selector_fixture():
@@ -909,7 +960,7 @@ def _provider_selector_fixture():
 def test_provider_selector_screen_text_includes_highlighted_details():
     state = tui.TuiState(
         mode="first-run-setup",
-        selected_index=2,
+        selected_index=1,
         variant_providers=_provider_selector_fixture(),
     )
 
@@ -921,9 +972,9 @@ def test_provider_selector_screen_text_includes_highlighted_details():
     assert "Credential env: Z_AI_API_KEY" in screen
     assert "MCP servers: web-reader" in screen
     assert "Settings deny: mcp__zai__web_search" in screen
-    assert "Architect model proxy" in screen
-    assert "enable Architect model proxy on the Tweaks step" in screen
-    assert "Requires a Claude Code login" in screen
+    assert "OAuth architect proxy" in screen
+    assert "enable OAuth architect proxy on the Tweaks step" in screen
+    assert "Requires Claude Code account/login" in screen
     assert "docs: https://z.ai/docs" in screen
 
 
@@ -947,7 +998,7 @@ def test_provider_selector_two_pane_renders_at_typical_widths():
 
     assert "No provider credential required" in _render_screen(state, 100, 30)
 
-    state.selected_index = 2
+    state.selected_index = 1
     screen = _render_screen(state, 100, 30)
 
     assert "Z.ai Coding Plan" in screen
@@ -1022,12 +1073,13 @@ def test_variants_wizard_selects_provider_toggles_tweak_and_creates(monkeypatch,
     tui._activate_variants(state)
     assert state.variant_step == 5
 
-    state.selected_index = 0
     first_tweak = state.selected_variant_tweaks[0]
+    options = tui._variant_options(state)
+    state.selected_index = next(index for index, option in enumerate(options) if option.value == first_tweak)
     tui._toggle_selected(state)
     assert first_tweak not in state.selected_variant_tweaks
 
-    state.selected_index = len(tui.DEFAULT_TWEAK_IDS) + 1
+    state.selected_index = len(tui._variant_options(state)) - 1
     tui._activate_variants(state)
     assert state.variant_step == 6
 
@@ -1397,7 +1449,8 @@ def test_variants_wizard_all_tweaks_lists_latest_curated_ports():
 
     assert "agents-md" in text
     assert "session-memory" in text
-    assert "opusplan1m" in text
+    assert "Architect Mode  (model picker alias, no Claude OAuth)" in text
+    assert "opusplan1m" not in text
     assert "mcp-non-blocking" in text
     assert "mcp-batch-size" in text
     assert "rtk-shell-prefix" in text
@@ -1406,6 +1459,25 @@ def test_variants_wizard_all_tweaks_lists_latest_curated_ports():
     assert "disable-prompt-caching" in text
     assert "token-count-rounding" in text
     assert "statusline-update-throttle" in text
+
+
+def test_variants_wizard_tweak_step_groups_labels_without_selectable_headers():
+    state = tui.TuiState(mode="variants", variant_step=5, tweak_filter="all")
+
+    options = tui._variant_options(state)
+    labels = tui.options.variant_tweak_selector_labels(state)
+    screen = tui._screen_text(state, height=80)
+
+    assert "section" not in {option.kind for option in options}
+    assert "-- Recommended defaults --" in labels
+    assert "-- Environment variables --" in labels
+    assert "-- ui --" in labels
+    assert "-- Recommended defaults --" in screen
+    assert "-- Environment variables --" in screen
+    assert len(labels) > len(options)
+    assert state.item_count() == len(options)
+    assert tui.options.variant_tweak_selected_label_index(state) == labels.index(options[0].label)
+    assert tui._selected_variant_option(state).value == "opusplan1m"
 
 
 def test_variants_wizard_recommended_tweaks_include_mcp_and_rtk():
@@ -1446,6 +1518,11 @@ def test_variants_wizard_non_mirror_defaults_include_env_switches():
     assert "disable-prompt-caching" in state.selected_variant_tweaks
     assert "disable-telemetry" in text
     assert "disable-prompt-caching" in text
+    grouped_labels = tui.options.variant_tweak_selector_labels(state)
+    assert "-- Recommended defaults --" in grouped_labels
+    assert "-- Provider defaults --" in grouped_labels
+    assert "-- Environment variables --" not in grouped_labels
+    assert grouped_labels.index("-- Provider defaults --") < grouped_labels.index("[x] Disable telemetry  (disable-telemetry)")
 
 
 def test_variants_wizard_can_uncheck_new_default_tweaks():
@@ -1489,16 +1566,68 @@ def test_ccr_oauth_provider_defaults_to_architect_proxy_and_tweak():
 
     assert state.variant_model_proxy == "architect"
     assert "opusplan1m" in state.selected_variant_tweaks
-    assert "[x] Architect model proxy  (Claude OAuth planner, backend workers)" in labels
+    assert labels.count("[x] Architect Mode  (model picker alias, no Claude OAuth)") == 1
+    assert sum(1 for option in options if option.value == "opusplan1m") == 1
+    assert "[x] OAuth architect proxy  (requires Claude Code account)" in labels
     assert "Model proxy port: auto" in labels
 
     state.selected_index = next(index for index, option in enumerate(options) if option.kind == "variant-model-proxy")
     screen = tui._screen_text(state, height=40)
-    assert "Tweak details" in screen
-    assert "Architect model proxy" in screen
-    assert "claude-* requests keep the normal Claude Code OAuth/session login" in screen
+    assert "OAuth architect proxy" in screen
+    assert "Requires Claude Code account/login" in screen
+    assert "claude-* calls use Claude Code OAuth/session" in screen
+    preview = "\n".join(tui.rendering.create_preview_labels(state))
+    assert "Model proxy: OAuth architect proxy" in preview
+    assert "Model proxy requirement: Requires Claude Code account/login" in preview
 
     tui._toggle_selected(state)
+    assert state.variant_model_proxy == ""
+    assert "opusplan1m" in state.selected_variant_tweaks
+
+    state.selected_variant_tweaks.remove("opusplan1m")
+    tui._toggle_selected(state)
+    assert state.variant_model_proxy == "architect"
+    assert "opusplan1m" in state.selected_variant_tweaks
+
+
+def test_variants_wizard_architect_mode_toggle_uses_tweak_without_proxy():
+    provider = {
+        "key": "minimax",
+        "label": "MiniMax Cloud",
+        "description": "MiniMax",
+        "section": "cloud",
+        "authMode": "apiKey",
+        "credentialEnv": "MINIMAX_API_KEY",
+        "baseUrl": "https://api.minimax.io/anthropic",
+        "requiresModelMapping": False,
+        "models": {
+            "default": "MiniMax-M2.7",
+            "opus": "MiniMax-M2.7",
+            "sonnet": "MiniMax-M2.7",
+            "haiku": "MiniMax-M2.7",
+        },
+        "defaultVariantName": "minimax",
+    }
+    state = tui.TuiState(
+        mode="variants",
+        variant_step=5,
+        variant_provider_index=0,
+        variant_providers=[provider],
+    )
+    tui._set_variant_provider_defaults(state, provider)
+
+    options = tui._variant_options(state)
+    labels = [option.label for option in options]
+
+    assert state.variant_model_proxy == ""
+    assert "opusplan1m" not in state.selected_variant_tweaks
+    assert "[ ] Architect Mode  (model picker alias, no Claude OAuth)" in labels
+    assert "[ ] OAuth architect proxy  (requires Claude Code account)" in labels
+
+    state.selected_index = next(index for index, option in enumerate(options) if option.kind == "variant-architect-mode")
+    tui._toggle_selected(state)
+
+    assert "opusplan1m" in state.selected_variant_tweaks
     assert state.variant_model_proxy == ""
 
 
@@ -2032,8 +2161,8 @@ def test_setup_detail_explains_model_proxy_account_requirement():
 
     screen = tui._screen_text(state)
 
-    assert "Model proxy: architect" in screen
-    assert "Architect Mode setup plus Claude Code login" in screen
+    assert "Model proxy: OAuth architect proxy" in screen
+    assert "Requires Claude Code account/login" in screen
     assert "claude-* requests use Claude Code OAuth/session" in screen
     assert "non-Claude model aliases use the provider backend" in screen
     assert "Model proxy backend: https://example.test/anthropic" in screen

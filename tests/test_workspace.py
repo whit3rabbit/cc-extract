@@ -18,6 +18,7 @@ from ccsilo.workspace import (
     load_tui_settings,
     load_patch_package,
     load_patch_profile,
+    read_json,
     rename_dashboard_tweak_profile,
     rename_patch_profile,
     scan_native_downloads,
@@ -131,6 +132,14 @@ def test_write_json_refuses_symlink_target(tmp_path):
         write_json(link, {"keep": False})
 
     assert json.loads(target.read_text(encoding="utf-8")) == {"keep": True}
+
+
+def test_read_json_required_files_must_be_objects(tmp_path):
+    path = tmp_path / "manifest.json"
+    path.write_text("[]\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must contain a JSON object"):
+        read_json(path)
 
 
 def test_tui_settings_roundtrip_includes_setup_list(tmp_path):

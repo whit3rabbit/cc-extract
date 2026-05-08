@@ -1,11 +1,10 @@
 """Provider registry loading and env builder."""
 
 import copy
-import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .._utils import require_env_name
+from .._utils import read_json_strict, require_env_name
 from .schema import (
     MODEL_ENV_KEYS,
     ProviderEnv,
@@ -204,7 +203,7 @@ def _require_env_names(names: List[str], *, label: str) -> List[str]:
 def _providers() -> Dict[str, ProviderTemplate]:
     providers = {}
     for path in sorted(REGISTRY_DIR.glob("*.json")):
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_json_strict(path)
         provider = provider_from_json(payload)
         if path.stem != provider.key:
             raise ProviderSchemaError(f"{path.name} does not match provider key {provider.key}")

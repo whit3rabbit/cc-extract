@@ -22,12 +22,16 @@ from urllib.parse import urlsplit
 
 ANTHROPIC_FALLBACK = "https://api.anthropic.com"
 MODEL_PROXY_MODE = "architect"
-MODEL_PATHS = {"/v1/messages"}
+MESSAGES_PATH = "/v1/messages"
+MIN_AUTH_NONCE_CHARS = 24
 DEFAULT_REQUEST_TIMEOUT_MS = 600_000
 MAX_REQUEST_TIMEOUT_MS = 24 * 60 * 60 * 1000
 MAX_REQUEST_BYTES = 64 * 1024 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 MAX_SSE_EVENT_BYTES = 1024 * 1024
+MAX_STREAM_BYTES = 256 * 1024 * 1024
+MAX_STREAM_SECONDS = 60 * 60
+MAX_IDLE_SECONDS = 5 * 60
 HOP_BY_HOP_HEADERS = {
     "connection",
     "content-length",
@@ -143,9 +147,15 @@ def start_model_proxy(
     validate_config(config)
     if not api_key:
         raise ValueError("model proxy api key is required")
-    if not auth_nonce or "/" in auth_nonce or auth_nonce in {".", ".."}:
-        raise ValueError("model proxy auth nonce is required and must be a single path segment")
+    _validate_auth_nonce(auth_nonce)
     return ModelProxyServer((host, port), _ModelProxyHandler, config=config, api_key=api_key, auth_nonce=auth_nonce)
+
+
+def _validate_auth_nonce(auth_nonce: str) -> None:
+    if not auth_nonce or len(auth_nonce) < MIN_AUTH_NONCE_CHARS:
+        raise ValueError("model proxy auth nonce is missing or too short")
+    if "/" in auth_nonce or "\\" in auth_nonce or auth_nonce in {".", ".."}:
+        raise ValueError("model proxy auth nonce must be a single path segment")
 
 
 def strip_all_thinking_blocks(body: Dict) -> None:
@@ -336,11 +346,11 @@ class _ModelProxyHandler(BaseHTTPRequestHandler):
 
     def _authorized_client_path(self) -> str:
         parsed = urlsplit(self.path)
-        expected = f"/{self.server.auth_nonce}/v1/messages"
+        expected = f"/{self.server.auth_nonce}{MESSAGES_PATH}"
         if parsed.path != expected:
             self.close_connection = True
             raise _ProxyHttpError(404, "model proxy endpoint not found")
-        client_path = "/v1/messages"
+        client_path = MESSAGES_PATH
         if parsed.query:
             client_path += "?" + parsed.query
         return client_path
@@ -408,6 +418,8 @@ class _ModelProxyHandler(BaseHTTPRequestHandler):
         try:
             conn.request(self.command, upstream_path, body=body, headers=headers)
             response = conn.getresponse()
+            if "text/event-stream" in response.getheader("content-type", "") and conn.sock is not None:
+                conn.sock.settimeout(min(self.server.config.timeout_ms / 1000, MAX_IDLE_SECONDS))
             self._relay_response(response, use_backend)
         finally:
             conn.close()
@@ -421,10 +433,29 @@ class _ModelProxyHandler(BaseHTTPRequestHandler):
             _set_header(headers, "Connection", "keep-alive")
             self._send_headers(response.status, response.reason, headers)
             normalizer = SseUsageNormalizer()
+            stream_start = time.monotonic()
+            last_chunk = stream_start
+            total_streamed = 0
             while True:
-                chunk = response.read(8192)
+                now = time.monotonic()
+                if now - stream_start > MAX_STREAM_SECONDS:
+                    self.close_connection = True
+                    return
+                if now - last_chunk > MAX_IDLE_SECONDS:
+                    self.close_connection = True
+                    return
+                try:
+                    chunk = response.read(8192)
+                except (OSError, TimeoutError):
+                    self.close_connection = True
+                    return
                 if not chunk:
                     break
+                last_chunk = time.monotonic()
+                total_streamed += len(chunk)
+                if total_streamed > MAX_STREAM_BYTES:
+                    self.close_connection = True
+                    return
                 try:
                     fixed_chunks = tuple(normalizer.feed(chunk))
                 except ValueError:
@@ -561,6 +592,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     config = load_config(args.config)
     api_key = os.environ.get(args.api_key_env, "")
     auth_nonce = os.environ.get(args.auth_nonce_env, "")
+    try:
+        _validate_auth_nonce(auth_nonce)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
     server = start_model_proxy(config, api_key=api_key, auth_nonce=auth_nonce, port=_parse_port(args.port))
     port = int(server.server_address[1])
     port_file = Path(args.port_file)

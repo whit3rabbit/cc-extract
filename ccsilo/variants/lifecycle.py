@@ -557,16 +557,30 @@ def _model_proxy_doctor_checks(manifest: Dict) -> List[Dict[str, object]]:
     config = manifest.get("modelProxy")
     if not isinstance(config, dict):
         return []
+    wrapper_path = Path(str((manifest.get("paths") or {}).get("wrapper") or ""))
     config_path = Path(str(config.get("runtimeConfigPath") or ""))
     log_path = Path(str(config.get("logPath") or ""))
     python_path = Path(str(config.get("pythonExecutable") or ""))
     port = config.get("port", "auto")
     port_ok = port == "auto" or isinstance(port, int)
+    nonce_wrapper_ok = False
+    nonce_detail = ""
+    try:
+        wrapper_text = wrapper_path.read_text(encoding="utf-8")
+        nonce_wrapper_ok = (
+            "MODEL_PROXY_AUTH_NONCE" in wrapper_text
+            and "CCSILO_MODEL_PROXY_AUTH_NONCE" in wrapper_text
+            and "$MODEL_PROXY_AUTH_NONCE" in wrapper_text
+            and "/$MODEL_PROXY_AUTH_NONCE" in wrapper_text
+        )
+    except OSError as exc:
+        nonce_detail = str(exc)
     return [
         {"name": "model-proxy-config", "ok": config_path.is_file(), "path": str(config_path)},
         {"name": "model-proxy-log-dir", "ok": bool(log_path.parent) and log_path.parent.is_dir(), "path": str(log_path.parent)},
         {"name": "model-proxy-python", "ok": python_path.is_file() and os.access(python_path, os.X_OK), "path": str(python_path)},
         {"name": "model-proxy-port", "ok": port_ok, "path": str(config_path), "detail": str(port)},
+        {"name": "model-proxy-nonce-wrapper", "ok": nonce_wrapper_ok, "path": str(wrapper_path), "detail": nonce_detail},
     ]
 
 def run_variant(name: str, args: Optional[List[str]] = None, root=None) -> int:

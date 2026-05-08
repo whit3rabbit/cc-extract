@@ -1,7 +1,6 @@
 """Mach-O section discovery and data-start computation."""
 
 from dataclasses import dataclass
-import struct
 
 from .checked import checked_unpack_from as _checked_unpack_from
 from .constants import (
@@ -28,7 +27,7 @@ class MachoSection:
 def is_macho(data):
     if len(data) < 4:
         return False
-    magic = struct.unpack_from("<I", data, 0)[0]
+    magic = _checked_unpack_from("<I", data, 0, "Mach-O magic")[0]
     return magic in {
         MACHO_MAGIC_64,
         MACHO_MAGIC_64_BE,
@@ -52,7 +51,7 @@ def macho_data_start(section_offset):
 def _macho_endian(data):
     if len(data) < 4:
         return None
-    magic = struct.unpack_from("<I", data, 0)[0]
+    magic = _checked_unpack_from("<I", data, 0, "Mach-O magic")[0]
     if magic == MACHO_MAGIC_64:
         return "<"
     if magic == MACHO_MAGIC_64_BE:

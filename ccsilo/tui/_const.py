@@ -11,6 +11,7 @@ TABS = ["Manage Setup", "Dashboard", "Inspect", "Extract", "Patch"]
 TAB_MODES = ["setup-manager", "dashboard", "inspect", "extract", "patch-source"]
 DASHBOARD_STEPS = ["Source", "Patches", "Profiles", "Review"]
 VARIANT_STEPS = ["Provider", "Name", "Credentials", "MCP", "Models", "Tweaks", "Review"]
+ARCHITECT_MODE_TWEAK_ID = "opusplan1m"
 VARIANT_MODEL_FIELDS = [
     ("opus", "Opus"),
     ("sonnet", "Sonnet"),

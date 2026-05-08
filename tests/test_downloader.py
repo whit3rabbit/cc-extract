@@ -13,6 +13,7 @@ from ccsilo.downloader import (
     fetch_text,
     get_platform_key,
     list_available_binary_versions,
+    _npm_pack_tarball_name,
     resolve_requested_version,
     verify_checksum,
 )
@@ -332,7 +333,7 @@ class TestDownloadNpm:
     def test_download_npm_missing_tarball_name(self, mock_run, tmp_path):
         mock_run.return_value = MagicMock(returncode=0, stdout="[]")
 
-        with pytest.raises(RuntimeError, match="did not report an output tarball"):
+        with pytest.raises(RuntimeError, match="unexpected npm pack JSON output"):
             download_npm("latest", str(tmp_path / "npm"))
 
     @patch("ccsilo.downloader.subprocess.run")
@@ -341,3 +342,21 @@ class TestDownloadNpm:
 
         with pytest.raises(RuntimeError, match="unsafe tarball name"):
             download_npm("1.2.3", str(tmp_path / "npm"))
+
+
+@pytest.mark.parametrize(
+    ("stdout", "message"),
+    [
+        ("warning\n[]", "did not report JSON output"),
+        ("{}", "unexpected npm pack JSON output"),
+        ("[]", "unexpected npm pack JSON output"),
+        (json.dumps([{"filename": "a.tgz"}, {"filename": "b.tgz"}]), "unexpected npm pack JSON output"),
+        (json.dumps([{"filename": ""}]), "did not report an output tarball"),
+        (json.dumps([{"filename": "/tmp/x.tgz"}]), "unsafe tarball name"),
+        (json.dumps([{"filename": "nested/x.tgz"}]), "unsafe tarball name"),
+        (json.dumps([{"filename": "../x.tgz"}]), "unsafe tarball name"),
+    ],
+)
+def test_npm_pack_tarball_name_rejects_malformed_or_unsafe_output(stdout, message):
+    with pytest.raises(RuntimeError, match=message):
+        _npm_pack_tarball_name(stdout)

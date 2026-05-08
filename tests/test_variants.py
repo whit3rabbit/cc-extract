@@ -1005,6 +1005,29 @@ def test_create_model_proxy_architect_variant_uses_oauth_safe_env(tmp_path):
     assert "exec " not in wrapper.split('ccsilo.model_proxy', 1)[1]
     assert doctor_checks["model-proxy-config"]["ok"] is True
     assert doctor_checks["model-proxy-python"]["ok"] is True
+    assert doctor_checks["model-proxy-nonce-wrapper"]["ok"] is True
+
+
+def test_model_proxy_doctor_fails_when_wrapper_lacks_nonce(tmp_path):
+    root = tmp_path / ".ccsilo"
+    artifact = write_source_artifact(tmp_path)
+
+    result = create_variant(
+        name="Broken Proxy",
+        provider_key="deepseek",
+        credential_env="DEEPSEEK_API_KEY",
+        model_proxy="architect",
+        model_overrides={"opus": "claude-opus-4-6"},
+        tweaks=["themes"],
+        root=root,
+        source_artifact=artifact,
+        force=True,
+    )
+    result.wrapper_path.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    checks = {check["name"]: check for check in doctor_variant("broken-proxy", root=root)[0]["checks"]}
+
+    assert checks["model-proxy-nonce-wrapper"]["ok"] is False
 
 
 def test_create_model_proxy_stores_only_backend_secret(tmp_path):

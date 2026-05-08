@@ -1,7 +1,6 @@
 """PE section discovery and data-start computation."""
 
 from dataclasses import dataclass
-import struct
 
 from .checked import checked_unpack_from as _checked_unpack_from
 from .constants import PE_DOS_MAGIC, PE_NT_SIGNATURE
@@ -15,7 +14,10 @@ class PeSection:
 
 
 def is_pe(data):
-    return len(data) >= 2 and struct.unpack_from("<H", data, 0)[0] == PE_DOS_MAGIC
+    try:
+        return len(data) >= 2 and _checked_unpack_from("<H", data, 0, "PE DOS magic")[0] == PE_DOS_MAGIC
+    except BunFormatError:
+        return False
 
 
 def find_bun_pe_section(data):

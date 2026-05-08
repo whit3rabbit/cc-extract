@@ -55,6 +55,9 @@ class TuiState:
     dashboard_delete_confirm_id: str = ""
     variant_step: int = 0
     variant_provider_index: int = 0
+    variant_provider_search_text: str = ""
+    variant_provider_search_active: bool = False
+    variant_provider_filter: str = "all"
     variant_name: str = ""
     variant_claude_version: str = "latest"
     variant_base_url: str = ""
@@ -146,6 +149,8 @@ class TuiState:
             self.setup_provider_filter = "all"
         if self.setup_sort_key not in {"name", "provider", "health", "updated", "version"}:
             self.setup_sort_key = "name"
+        if self.variant_provider_filter not in {"all", "recommended", "cloud", "local", "model-map", "mcp"}:
+            self.variant_provider_filter = "all"
         if self.selected_setup_id not in setup_ids:
             self.selected_setup_id = self.variants[0].variant_id if self.variants else None
         if self.tweaks_variant_id not in setup_ids and self.mode not in {"tweaks-edit", "tweak-editor"}:

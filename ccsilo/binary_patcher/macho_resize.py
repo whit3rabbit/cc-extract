@@ -3,6 +3,7 @@
 import struct
 from dataclasses import dataclass
 
+from ccsilo.bun_extract.checked import checked_unpack_from as _checked_unpack_from
 from ccsilo.bun_extract.constants import (
     MACHO_HEADER_SCAN_BYTES,
     MACHO_MAGIC_64,
@@ -11,6 +12,7 @@ from ccsilo.bun_extract.constants import (
     OFFSETS_SIZE,
     TRAILER,
 )
+from ccsilo.bun_extract.types import BunFormatError
 
 LC_CODE_SIGNATURE = 0x1D
 LC_DATA_IN_CODE = 0x29
@@ -108,7 +110,7 @@ def repack_macho(data, info, new_raw_bytes, new_offsets_struct):
 def _is_macho_64(data):
     if len(data) < 4:
         return False
-    magic = struct.unpack_from("<I", data, 0)[0]
+    magic = _checked_unpack_from("<I", data, 0, "Mach-O magic")[0]
     return magic in {MACHO_MAGIC_64, MACHO_MAGIC_64_BE}
 
 
@@ -126,8 +128,11 @@ def _find_bun_section_header_offset(data):
 def _find_code_signature_lc(data):
     if not _is_macho_64(data) or len(data) < MACH_HEADER_64_SIZE:
         return None
-    ncmds = struct.unpack_from("<I", data, 16)[0]
-    sizeofcmds = struct.unpack_from("<I", data, 20)[0]
+    try:
+        ncmds = _checked_unpack_from("<I", data, 16, "Mach-O ncmds")[0]
+        sizeofcmds = _checked_unpack_from("<I", data, 20, "Mach-O sizeofcmds")[0]
+    except BunFormatError:
+        return None
     if ncmds == 0 or sizeofcmds == 0:
         return None
 
@@ -138,16 +143,16 @@ def _find_code_signature_lc(data):
     for _ in range(ncmds):
         if cursor + 8 > end:
             return None
-        cmd = struct.unpack_from("<I", data, cursor)[0]
-        cmdsize = struct.unpack_from("<I", data, cursor + 4)[0]
+        cmd = _checked_unpack_from("<I", data, cursor, "Mach-O load command")[0]
+        cmdsize = _checked_unpack_from("<I", data, cursor + 4, "Mach-O load command size")[0]
         if cmdsize < 8 or cursor + cmdsize > end:
             return None
         if cmd == LC_CODE_SIGNATURE and cmdsize == 16:
             return {
                 "lc_offset": cursor,
                 "cmdsize": cmdsize,
-                "dataoff": struct.unpack_from("<I", data, cursor + 8)[0],
-                "datasize": struct.unpack_from("<I", data, cursor + 12)[0],
+                "dataoff": _checked_unpack_from("<I", data, cursor + 8, "Mach-O code signature data offset")[0],
+                "datasize": _checked_unpack_from("<I", data, cursor + 12, "Mach-O code signature data size")[0],
             }
         cursor += cmdsize
     return None
@@ -156,8 +161,11 @@ def _find_code_signature_lc(data):
 def _find_segment(data, segname):
     if len(data) < MACH_HEADER_64_SIZE:
         return None
-    ncmds = struct.unpack_from("<I", data, 16)[0]
-    sizeofcmds = struct.unpack_from("<I", data, 20)[0]
+    try:
+        ncmds = _checked_unpack_from("<I", data, 16, "Mach-O ncmds")[0]
+        sizeofcmds = _checked_unpack_from("<I", data, 20, "Mach-O sizeofcmds")[0]
+    except BunFormatError:
+        return None
     cursor = MACH_HEADER_64_SIZE
     end = MACH_HEADER_64_SIZE + sizeofcmds
     if end > len(data):
@@ -166,8 +174,8 @@ def _find_segment(data, segname):
     for _ in range(ncmds):
         if cursor + 8 > end:
             return None
-        cmd = struct.unpack_from("<I", data, cursor)[0]
-        cmdsize = struct.unpack_from("<I", data, cursor + 4)[0]
+        cmd = _checked_unpack_from("<I", data, cursor, "Mach-O load command")[0]
+        cmdsize = _checked_unpack_from("<I", data, cursor + 4, "Mach-O load command size")[0]
         if cmdsize < 8 or cursor + cmdsize > end:
             return None
         if cmd == LC_SEGMENT_64 and cmdsize >= 72:
@@ -175,10 +183,10 @@ def _find_segment(data, segname):
             if found == segname:
                 return {
                     "lc_offset": cursor,
-                    "vmaddr": struct.unpack_from("<Q", data, cursor + 24)[0],
-                    "vmsize": struct.unpack_from("<Q", data, cursor + 32)[0],
-                    "fileoff": struct.unpack_from("<Q", data, cursor + 40)[0],
-                    "filesize": struct.unpack_from("<Q", data, cursor + 48)[0],
+                    "vmaddr": _checked_unpack_from("<Q", data, cursor + 24, "Mach-O segment vmaddr")[0],
+                    "vmsize": _checked_unpack_from("<Q", data, cursor + 32, "Mach-O segment vmsize")[0],
+                    "fileoff": _checked_unpack_from("<Q", data, cursor + 40, "Mach-O segment fileoff")[0],
+                    "filesize": _checked_unpack_from("<Q", data, cursor + 48, "Mach-O segment filesize")[0],
                 }
         cursor += cmdsize
     return None
@@ -203,8 +211,11 @@ def _align_up(value, alignment):
 def _update_linkedit_references(data, old_linkedit_fileoff, delta):
     if delta == 0:
         return
-    ncmds = struct.unpack_from("<I", data, 16)[0]
-    sizeofcmds = struct.unpack_from("<I", data, 20)[0]
+    try:
+        ncmds = _checked_unpack_from("<I", data, 16, "Mach-O ncmds")[0]
+        sizeofcmds = _checked_unpack_from("<I", data, 20, "Mach-O sizeofcmds")[0]
+    except BunFormatError:
+        return
     cursor = MACH_HEADER_64_SIZE
     end = MACH_HEADER_64_SIZE + sizeofcmds
     if end > len(data):
@@ -213,8 +224,8 @@ def _update_linkedit_references(data, old_linkedit_fileoff, delta):
     for _ in range(ncmds):
         if cursor + 8 > end:
             return
-        cmd = struct.unpack_from("<I", data, cursor)[0]
-        cmdsize = struct.unpack_from("<I", data, cursor + 4)[0]
+        cmd = _checked_unpack_from("<I", data, cursor, "Mach-O load command")[0]
+        cmdsize = _checked_unpack_from("<I", data, cursor + 4, "Mach-O load command size")[0]
         if cmdsize < 8 or cursor + cmdsize > end:
             return
 
@@ -231,14 +242,14 @@ def _update_linkedit_references(data, old_linkedit_fileoff, delta):
 
 
 def _shift_u32_fileoff(data, offset, old_linkedit_fileoff, delta):
-    value = struct.unpack_from("<I", data, offset)[0]
+    value = _checked_unpack_from("<I", data, offset, "Mach-O file offset field")[0]
     if value >= old_linkedit_fileoff:
         struct.pack_into("<I", data, offset, value + delta)
 
 
 def _strip_code_signature(header, code_sig):
-    ncmds = struct.unpack_from("<I", header, 16)[0]
-    sizeofcmds = struct.unpack_from("<I", header, 20)[0]
+    ncmds = _checked_unpack_from("<I", header, 16, "Mach-O ncmds")[0]
+    sizeofcmds = _checked_unpack_from("<I", header, 20, "Mach-O sizeofcmds")[0]
     lc_end = MACH_HEADER_64_SIZE + sizeofcmds
     tail_start = code_sig["lc_offset"] + code_sig["cmdsize"]
     tail_len = lc_end - tail_start
