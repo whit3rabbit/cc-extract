@@ -110,6 +110,7 @@ def setup_detail_options(state):
         MenuOption("setup-action-upgrade", "Upgrade Claude Code", setup_id),
         MenuOption("setup-action-models", "Edit models", setup_id),
         MenuOption("setup-action-tweaks", "Edit tweaks", setup_id),
+        MenuOption("setup-action-add-tweaks", "Add tweaks", setup_id),
     ]
     variant = selected_setup_variant(state)
     if _managed_ccrouter(variant):

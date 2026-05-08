@@ -72,6 +72,7 @@ __all__ = [
     "_start_busy_action", "_poll_busy_action",
     "_load_saved_setup_list_preferences", "_save_setup_list_preferences",
     "_copy_logs", "_copy_setup_config", "_copy_text_to_clipboard", "_open_help", "_open_logs", "_open_variant_create_preview",
+    "_open_tweak_adder",
     "_event_requests_quit", "_screen_text", "_style", "_render_frame",
     "run_tui",
 ]
@@ -295,6 +296,7 @@ from .dispatch import (
     _open_delete_confirm,
     _open_inspect_delete_confirm,
     _open_model_editor,
+    _open_tweak_adder,
     _open_tweak_editor,
     _open_upgrade_preview,
     _open_variant_create_preview,

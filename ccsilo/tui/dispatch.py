@@ -15,7 +15,7 @@ def _proxy(name):
     return call
 
 
-__all__ = ['_event_requests_quit', '_handle_backspace_key', '_handle_char_key', '_variant_accepts_name_text', '_toggle_selected', '_activate', '_activate_tweaks_source', '_activate_tweaks_edit', '_activate_models_edit', '_activate_setup_manager', '_activate_setup_detail', '_current_setup_id_for_action', '_start_setup_create', '_open_upgrade_preview', '_open_delete_confirm', '_open_inspect_delete_confirm', '_cancel_inspect_delete', '_open_tweak_editor', '_open_model_editor', '_open_variant_create_preview', '_cycle_tweak_filter', '_cycle_variant_provider_filter', '_cycle_setup_provider_filter', '_cycle_setup_sort', '_clamp_setup_manager_selection', '_activate_dashboard', '_activate_variants', '_activate_patch_packages']
+__all__ = ['_event_requests_quit', '_handle_backspace_key', '_handle_char_key', '_variant_accepts_name_text', '_toggle_selected', '_activate', '_activate_tweaks_source', '_activate_tweaks_edit', '_activate_models_edit', '_activate_setup_manager', '_activate_setup_detail', '_current_setup_id_for_action', '_start_setup_create', '_open_upgrade_preview', '_open_delete_confirm', '_open_inspect_delete_confirm', '_cancel_inspect_delete', '_open_tweak_editor', '_open_tweak_adder', '_open_model_editor', '_open_variant_create_preview', '_cycle_tweak_filter', '_cycle_variant_provider_filter', '_cycle_setup_provider_filter', '_cycle_setup_sort', '_clamp_setup_manager_selection', '_activate_dashboard', '_activate_variants', '_activate_patch_packages']
 
 
 def _variant_provider_selector_mode(state):
@@ -424,6 +424,8 @@ def _activate_setup_detail(state):
         _tui()._open_model_editor(state)
     elif option.kind == "setup-action-tweaks":
         _tui()._open_tweak_editor(state)
+    elif option.kind == "setup-action-add-tweaks":
+        _tui()._open_tweak_adder(state)
     elif option.kind == "setup-action-delete":
         _tui()._open_delete_confirm(state)
     elif option.kind.startswith("setup-action-ccrouter-") and setup_id:
@@ -483,6 +485,15 @@ def _open_tweak_editor(state):
     if setup_id is None:
         return
     _tui()._enter_tweaks_for_variant(state, setup_id)
+
+def _open_tweak_adder(state):
+    setup_id = _tui()._current_setup_id_for_action(state)
+    if setup_id is None:
+        return
+    _tui()._enter_tweaks_for_variant(state, setup_id)
+    state.tweak_filter = "all"
+    state.selected_index = 0
+    state.message = "Showing all available tweaks for this setup."
 
 def _open_model_editor(state):
     setup_id = _tui()._current_setup_id_for_action(state)

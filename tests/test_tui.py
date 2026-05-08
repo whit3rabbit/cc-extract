@@ -2105,6 +2105,63 @@ def test_setup_detail_run_action_queues_command(tmp_path, monkeypatch):
     assert state.message == "Running setup deepseek-main after setup manager exits."
 
 
+def test_setup_detail_exposes_edit_and_add_tweaks_actions():
+    state = tui.TuiState(
+        mode="setup-detail",
+        variants=[_variant("deepseek-main")],
+        selected_setup_id="deepseek-main",
+    )
+
+    labels = [option.label for option in tui.options.setup_detail_options(state)]
+
+    assert "Edit tweaks" in labels
+    assert "Add tweaks" in labels
+
+
+def test_setup_detail_edit_tweaks_keeps_current_view():
+    variant = _variant("deepseek-main", tweaks=["themes"])
+    state = tui.TuiState(
+        mode="setup-detail",
+        variants=[variant],
+        selected_setup_id="deepseek-main",
+        tweak_filter="recommended",
+    )
+    options = tui.options.setup_detail_options(state)
+    state.selected_index = [option.kind for option in options].index("setup-action-tweaks")
+
+    tui._activate_setup_detail(state)
+
+    assert state.mode == "tweak-editor"
+    assert state.tweaks_variant_id == "deepseek-main"
+    assert state.tweaks_baseline == ("themes",)
+    assert state.tweaks_pending == ["themes"]
+    assert state.tweak_filter == "recommended"
+
+
+def test_setup_detail_add_tweaks_opens_all_view():
+    variant = _variant("deepseek-main", tweaks=["themes"])
+    state = tui.TuiState(
+        mode="setup-detail",
+        variants=[variant],
+        selected_setup_id="deepseek-main",
+        selected_index=3,
+        tweak_filter="recommended",
+    )
+    options = tui.options.setup_detail_options(state)
+    state.selected_index = [option.kind for option in options].index("setup-action-add-tweaks")
+
+    tui._activate_setup_detail(state)
+
+    assert state.mode == "tweak-editor"
+    assert state.selected_setup_id == "deepseek-main"
+    assert state.tweaks_variant_id == "deepseek-main"
+    assert state.tweaks_baseline == ("themes",)
+    assert state.tweaks_pending == ["themes"]
+    assert state.tweak_filter == "all"
+    assert state.selected_index == 0
+    assert state.message == "Showing all available tweaks for this setup."
+
+
 def test_setup_detail_exposes_managed_ccrouter_actions(monkeypatch):
     calls = []
 
@@ -2743,6 +2800,13 @@ def test_tweaks_tab_initial_state():
     title, labels = tui.rendering.current_labels(state)
     assert title.startswith("Tweaks: pick setup")
     assert any("my-variant" in label for label in labels)
+
+
+def test_tweaks_editor_footer_advertises_view_switching():
+    state = tui.TuiState(mode="tweak-editor")
+    footer = tui._footer_text(state)
+
+    assert "V view" in footer
 
 
 def test_tweaks_select_variant_enters_edit_mode():

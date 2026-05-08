@@ -37,6 +37,22 @@ def test_indexof_helper_with_setup_call_applies_without_invalid_let_return():
     assert "function next(){}" in outcome.js
 
 
+def test_indexof_helper_with_tab_aware_separator_applies():
+    js = """function Oh_({content:H,startLine:_,tabAwareSeparator:q=!1}){if(!H)return"";let K=q&&(H.startsWith("\t")||H.includes(`
+	`))?":":"\t",O=[],T=_,A=0,z=H.indexOf(`
+`);while(z!==-1)O.push(Z5q(H.slice(A,z),T++,K)),A=z+1,z=H.indexOf(`
+`,A);return O.push(Z5q(H.slice(A),T,K)),O.join(`
+`)}function Z5q(H,_,q){let K=H.endsWith("\\r")?H.slice(0,-1):H;return`${_}${q}${K}`}function next(){}"""
+    outcome = PATCH.apply(js, PatchContext(claude_version="2.1.136"))
+
+    assert outcome.status == "applied"
+    assert (
+        'function Oh_({content:H,startLine:_,tabAwareSeparator:q=!1}){if(!H)return"";return H}'
+        in outcome.js
+    )
+    assert "function next(){}" in outcome.js
+
+
 def test_metadata():
     assert PATCH.id == "suppress-line-numbers"
     assert PATCH.group == "ui"

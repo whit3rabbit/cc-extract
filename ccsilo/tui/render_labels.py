@@ -898,7 +898,7 @@ def key_line(state):
     if state.mode in {"tweaks-edit", "tweak-editor"}:
         if state.tweak_apply_preview:
             return "Keys: Y proceed | N/Esc cancel"
-        return "Keys: Q quit | Space toggle | A apply | D discard | / search | ? more"
+        return "Keys: Q quit | Space toggle | A apply | D discard | V view | / search | ? more"
     if state.mode == "inspect":
         return "Keys: Q quit | Up/Down | Enter inspect | D delete | Tab tabs | ? more"
     return "Keys: Q quit | Up/Down | Enter run | Tab tabs | ? more"

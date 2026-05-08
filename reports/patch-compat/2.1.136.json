@@ -1,9 +1,9 @@
 {
   "binary": {
-    "entryBytes": 14199649,
+    "entryBytes": 14281200,
     "entryModule": "src/entrypoints/cli.js"
   },
-  "generatedAt": "2026-05-08T23:14:42.079240Z",
+  "generatedAt": "2026-05-08T23:14:23.560784Z",
   "ok": true,
   "patches": [
     {
@@ -177,7 +177,7 @@
       "warnings": []
     },
     {
-      "detail": "remember-skill: version 2.1.133 not in supported range '>=2.1.0,<2.1.42'",
+      "detail": "remember-skill: version 2.1.136 not in supported range '>=2.1.0,<2.1.42'",
       "group": "prompts",
       "id": "remember-skill",
       "name": "Remember skill",
@@ -340,11 +340,11 @@
       "<patched-binary>",
       "--version"
     ],
-    "durationMs": 9700,
+    "durationMs": 9282,
     "exitCode": 0,
-    "expectedVersion": "2.1.133",
+    "expectedVersion": "2.1.136",
     "ok": true,
-    "outputSha256": "c61d9b0979f861b9b4962b51434e75252c1df8bb06e82214b125293b42e93def",
+    "outputSha256": "d23e12dd4aebeadcf71004ed577268c0f8bf01dba610f0f22ad494833be04b1d",
     "patches": {
       "applied": [
         "agents-md",
@@ -409,7 +409,7 @@
     "stage": "run",
     "status": "passed",
     "stderr": "",
-    "stdout": "2.1.133 (Claude Code)\n",
+    "stdout": "2.1.136 (Claude Code)\n",
     "versionMatched": true
   },
   "summary": {
@@ -421,5 +421,5 @@
     "unsupported": 1,
     "untested": 1
   },
-  "version": "2.1.133"
+  "version": "2.1.136"
 }
