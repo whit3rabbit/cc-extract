@@ -80,26 +80,47 @@ python -m venv /tmp/ccsilo-testpypi
 
 ## PyPI
 
-Publish to PyPI by creating a GitHub Release. The `Release` workflow also has a
-manual `repository=pypi` dispatch path for recovery releases; use the protected
-`pypi` environment approval gate for that path.
+Publish to PyPI by manually dispatching the `Release` workflow with
+`repository=pypi` from the version tag. The workflow validates that the tag
+matches `pyproject.toml`, builds and checks the distributions, publishes to
+PyPI through the protected `pypi` environment, then creates or updates the
+matching GitHub Release. Creating or publishing a GitHub Release by itself does
+not upload to PyPI.
 
 Before publishing to PyPI:
 
 1. Confirm the TestPyPI package installed and ran.
 2. Confirm `pyproject.toml` has the intended version.
-3. Confirm the tag and GitHub Release point at the intended commit.
+3. Confirm the tag is derived from the same version and points at the intended
+   commit.
 
-For a normal release:
+For a normal release, derive the tag from `pyproject.toml` instead of typing it
+by hand:
 
 ```bash
-git tag v0.1.0
-git push upstream v0.1.0
+VERSION="$(.venv/bin/python -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+TAG="v${VERSION}"
+git tag -a "$TAG" -m "ccsilo ${VERSION}"
+git push upstream "$TAG"
+gh workflow run release.yml --ref "$TAG" -f repository=pypi
+gh run list --workflow release.yml --limit 1
+gh run watch
 ```
 
-Then create and publish a GitHub Release for that tag. Publishing the GitHub
-Release triggers `.github/workflows/release.yml` and uploads to PyPI after the
-`pypi` environment approval gate passes.
+If a PyPI upload has already happened and only the GitHub tag/release is
+missing, do not dispatch the PyPI workflow again. Create the matching tag and
+GitHub Release manually:
+
+```bash
+VERSION="$(.venv/bin/python -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+TAG="v${VERSION}"
+git tag -a "$TAG" -m "ccsilo ${VERSION}" <published-commit>
+git push upstream "$TAG"
+gh release create "$TAG" --title "$TAG" --generate-notes --latest --verify-tag
+```
+
+Published GitHub Releases still run the release workflow's version/tag
+validation and build checks, but they do not publish to PyPI.
 
 After publishing:
 
@@ -118,6 +139,11 @@ PyPI versions are immutable. If a real PyPI upload succeeds, fails after
 creating the project, or partially uploads files for a version, do not retry the
 same version blindly. Bump `pyproject.toml`, commit the bump, tag the new
 version, and publish again.
+
+The release tag must be `v<project.version>` from `pyproject.toml`. For PyPI
+dispatches, the workflow fails unless `--ref` is that exact tag. If the tag or
+GitHub Release is wrong after a successful upload, fix the tag/release metadata
+only. Do not re-run the PyPI publish for the same version.
 
 TestPyPI is also effectively immutable for a given filename. For repeated
 TestPyPI dry runs, bump the version or use a local build and `twine check`

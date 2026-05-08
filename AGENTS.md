@@ -163,10 +163,18 @@ Release rules:
   manual approval on `pypi`.
 * Use the manual `Release` workflow with `repository=testpypi` before the first
   real PyPI upload for a version.
-* Publish to real PyPI by creating a GitHub Release, or by manually dispatching
-  `Release` with `repository=pypi` only as a recovery path.
+* Publish to real PyPI by manually dispatching `Release` with
+  `repository=pypi` from a version tag, not from `main`. The workflow requires
+  the dispatch ref to be the exact `v<pyproject.toml version>` tag.
+* Derive release tags from `pyproject.toml`, do not hand-type them:
+  `VERSION="$(.venv/bin/python -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"; TAG="v${VERSION}"`.
+* After a successful PyPI publish, the workflow creates or updates the matching
+  GitHub Release. Creating a GitHub Release by itself must not publish to PyPI.
 * PyPI versions are immutable. If a real PyPI publish succeeds or partially
-  creates `0.1.0`, bump `pyproject.toml` before trying again.
+  creates a version, bump `pyproject.toml` before trying again.
+* If PyPI already contains a version but the GitHub tag/release is missing,
+  create the `v<version>` tag and GitHub Release manually. Do not rerun the
+  PyPI publish for the same version.
 * After publishing, verify `pipx install ccsilo`, `ccsilo --help`, and
   `ccsilo variant providers --json`.
 * Keep release process details in `docs/RELEASE.md` synchronized with the

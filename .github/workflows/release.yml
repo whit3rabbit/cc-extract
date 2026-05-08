@@ -23,9 +23,60 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-version:
+    name: Validate version and tag
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.project-version.outputs.version }}
+      tag: ${{ steps.project-version.outputs.tag }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Read project version
+        id: project-version
+        shell: bash
+        run: |
+          version="$(python -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          tag="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Project version: ${version}"
+          echo "Expected tag: ${tag}"
+
+      - name: Validate published GitHub Release tag
+        if: ${{ github.event_name == 'release' }}
+        env:
+          ACTUAL_TAG: ${{ github.event.release.tag_name }}
+          EXPECTED_TAG: ${{ steps.project-version.outputs.tag }}
+        shell: bash
+        run: |
+          if [ "$ACTUAL_TAG" != "$EXPECTED_TAG" ]; then
+            echo "Release tag ${ACTUAL_TAG} does not match pyproject.toml version tag ${EXPECTED_TAG}" >&2
+            exit 1
+          fi
+
+      - name: Validate PyPI dispatch tag
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.repository == 'pypi' }}
+        env:
+          EXPECTED_TAG: ${{ steps.project-version.outputs.tag }}
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "PyPI publish must be dispatched from tag ${EXPECTED_TAG}, not ${GITHUB_REF_TYPE} ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_REF_NAME" != "$EXPECTED_TAG" ]; then
+            echo "Dispatch tag ${GITHUB_REF_NAME} does not match pyproject.toml version tag ${EXPECTED_TAG}" >&2
+            exit 1
+          fi
+
   build:
     name: Build distributions
     runs-on: ubuntu-latest
+    needs: validate-version
 
     steps:
       - name: Check out repository
@@ -89,7 +140,7 @@ jobs:
     name: Publish to PyPI
     runs-on: ubuntu-latest
     needs: build
-    if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.repository == 'pypi') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.repository == 'pypi' }}
     environment: pypi
     permissions:
       contents: read
@@ -104,3 +155,34 @@ jobs:
 
       - name: Publish distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - validate-version
+      - publish-pypi
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.repository == 'pypi' }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate-version.outputs.tag }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" \
+              --latest
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" \
+              --generate-notes \
+              --latest \
+              --verify-tag
+          fi
