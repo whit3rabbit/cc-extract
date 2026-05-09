@@ -2,16 +2,29 @@
 
 from ..providers import PLUGIN_RECOMMENDATIONS, list_optional_mcp_entries
 from ..variants import CCR_OAUTH_PROVIDER_KEY, CCR_PROVIDER_KEYS
-from ..patches._registry import GROUP_ORDER
 from ..variant_tweaks import (
     CURATED_TWEAK_IDS,
-    DEFAULT_TWEAK_IDS,
-    ENV_TWEAK_IDS,
-    GATEWAY_MODEL_DISCOVERY_TWEAK_ID,
-    default_tweak_ids_for_provider,
 )
 from ._const import ARCHITECT_MODE_TWEAK_ID, MenuOption, SOURCE_LATEST, VARIANT_MODEL_FIELDS, VARIANT_STEPS
-from .options_tweaks import _tweak_display_name, tweak_meta
+from .options_variant_models import (  # noqa: F401
+    models_display_value,
+    models_edit_options,
+    models_edit_variant,
+    models_pending_diff,
+    provider_for_setup,
+    selected_models_edit_option,
+)
+from .options_variant_state import _provider_model_discovery_enabled, selected_variant_provider, variant_model_display_value
+from .options_variant_tweaks import (  # noqa: F401
+    group_setup_tweak_ids,
+    variant_setup_tweak_ids,
+    variant_tweak_groups,
+    variant_tweak_ids,
+    variant_tweak_selected_label_index,
+    variant_tweak_selector_labels,
+    variant_tweak_selector_rows,
+)
+from .options_tweaks import _tweak_display_name
 
 PROVIDER_FILTER_LABELS = {
     "all": "All",
@@ -462,133 +475,13 @@ def variant_model_proxy_supported(provider):
     return section == "cloud" or provider.get("key") == CCR_OAUTH_PROVIDER_KEY
 
 
-def variant_tweak_ids(state):
-    provider = selected_variant_provider(state)
-    recommended_ids = default_tweak_ids_for_provider(provider.get("key") if provider else None)
-    if state.tweak_filter != "recommended":
-        return list(CURATED_TWEAK_IDS)
-    ids = list(recommended_ids)
-    if state.variant_model_proxy == "architect" and GATEWAY_MODEL_DISCOVERY_TWEAK_ID in state.selected_variant_tweaks:
-        ids.append(GATEWAY_MODEL_DISCOVERY_TWEAK_ID)
-    return _unique_ordered(ids)
 
-def variant_setup_tweak_ids(state):
-    return [
-        tweak_id for tweak_id in variant_tweak_ids(state)
-        if tweak_id != ARCHITECT_MODE_TWEAK_ID
-    ]
 
-def variant_tweak_groups(state):
-    provider = selected_variant_provider(state)
-    recommended_ids = default_tweak_ids_for_provider(provider.get("key") if provider else None)
-    return group_setup_tweak_ids(variant_setup_tweak_ids(state), recommended_ids)
 
-def group_setup_tweak_ids(tweak_ids, recommended_ids):
-    visible_ids = _unique_ordered(str(tweak_id) for tweak_id in tweak_ids)
-    recommended = _unique_ordered(str(tweak_id) for tweak_id in recommended_ids)
-    used = set()
-    groups = []
 
-    default_ids = [tweak_id for tweak_id in DEFAULT_TWEAK_IDS if tweak_id in visible_ids]
-    if default_ids:
-        groups.append(("Recommended defaults", default_ids))
-        used.update(default_ids)
 
-    provider_ids = [
-        tweak_id
-        for tweak_id in recommended
-        if tweak_id in visible_ids and tweak_id not in used
-    ]
-    if provider_ids:
-        groups.append(("Provider defaults", provider_ids))
-        used.update(provider_ids)
 
-    env_ids = [
-        tweak_id
-        for tweak_id in ENV_TWEAK_IDS
-        if tweak_id in visible_ids and tweak_id not in used
-    ]
-    if env_ids:
-        groups.append(("Environment variables", env_ids))
-        used.update(env_ids)
 
-    for group in GROUP_ORDER:
-        group_ids = [
-            tweak_id
-            for tweak_id in visible_ids
-            if tweak_id not in used and getattr(tweak_meta(tweak_id), "group", None) == group
-        ]
-        if group_ids:
-            groups.append((group, group_ids))
-            used.update(group_ids)
-
-    remaining = [tweak_id for tweak_id in visible_ids if tweak_id not in used]
-    if remaining:
-        groups.append(("other", remaining))
-    return groups
-
-def variant_tweak_selector_rows(state):
-    options = variant_options(state)
-    rows = []
-    architect_indexes = [
-        index for index, option in enumerate(options)
-        if option.kind == "variant-architect-mode"
-    ]
-    if architect_indexes:
-        rows.append(("Architect Mode", None))
-        for index in architect_indexes:
-            rows.append((options[index].label, index))
-
-    model_proxy_indexes = [
-        index for index, option in enumerate(options)
-        if option.kind in {"variant-model-proxy", "variant-model-proxy-port"}
-    ]
-    if model_proxy_indexes:
-        rows.append(("OAuth architect proxy", None))
-        for index in model_proxy_indexes:
-            rows.append((options[index].label, index))
-
-    tweak_options = {
-        str(option.value): (index, option)
-        for index, option in enumerate(options)
-        if option.kind == "variant-tweak"
-    }
-    for group, tweak_ids in variant_tweak_groups(state):
-        group_rows = [
-            (tweak_id, tweak_options[tweak_id])
-            for tweak_id in tweak_ids
-            if tweak_id in tweak_options
-        ]
-        if not group_rows:
-            continue
-        rows.append((f"-- {group} --", None))
-        for _tweak_id, (index, option) in group_rows:
-            rows.append((option.label, index))
-
-    handled = set(architect_indexes) | set(model_proxy_indexes) | {index for index, _option in tweak_options.values()}
-    for index, option in enumerate(options):
-        if index not in handled:
-            rows.append((option.label, index))
-    return rows
-
-def variant_tweak_selector_labels(state):
-    return [label for label, _option_index in variant_tweak_selector_rows(state)]
-
-def variant_tweak_selected_label_index(state):
-    rows = variant_tweak_selector_rows(state)
-    if not rows:
-        return 0
-    for row_index, (_label, option_index) in enumerate(rows):
-        if option_index == state.selected_index:
-            return row_index
-    return 0
-
-def _unique_ordered(tweak_ids):
-    result = []
-    for tweak_id in tweak_ids:
-        if tweak_id not in result:
-            result.append(tweak_id)
-    return result
 
 def _variant_provider_row_label(provider):
     if not provider:
@@ -672,9 +565,6 @@ def _string_list(value):
 def _masked_secret(value):
     return "set" if str(value or "").strip() else "not set"
 
-def _provider_model_discovery_enabled(provider):
-    discovery = (provider or {}).get("modelDiscovery") or {}
-    return bool(discovery.get("enabled"))
 
 def _model_choice_selected(state, model_id):
     overrides = state.variant_model_overrides or {}
@@ -697,13 +587,6 @@ def _provider_markers(provider):
         markers.append("mcp")
     return "[" + ", ".join(markers) + "]"
 
-def variant_model_display_value(state, provider, key):
-    override = state.variant_model_overrides.get(key, "").strip()
-    if override:
-        return override
-    if not provider:
-        return ""
-    return str(provider.get("models", {}).get(key) or "")
 
 def selected_variant_option(state):
     options = variant_options(state)
@@ -712,87 +595,13 @@ def selected_variant_option(state):
     index = max(0, min(state.selected_index, len(options) - 1))
     return options[index]
 
-def selected_variant_provider(state):
-    if not state.variant_providers:
-        return None
-    index = max(0, min(state.variant_provider_index, len(state.variant_providers) - 1))
-    return state.variant_providers[index]
 
-def provider_for_setup(state, variant):
-    provider_key = str(((variant.manifest or {}).get("provider") or {}).get("key") or "")
-    for provider in state.variant_providers:
-        if provider.get("key") == provider_key:
-            return provider
-    return {
-        "key": provider_key,
-        "label": provider_key or "?",
-        "models": {},
-        "modelDiscovery": {},
-        "requiresModelMapping": bool((variant.manifest or {}).get("modelOverrides")),
-    }
 
-def models_edit_options(state):
-    variant = models_edit_variant(state)
-    if variant is None:
-        return [MenuOption("models-back", "Back to setup")]
-    provider = provider_for_setup(state, variant)
-    options = []
-    if _provider_model_discovery_enabled(provider):
-        options.append(MenuOption("models-refresh", "Refresh model list"))
-        if state.models_choices:
-            for model_id in state.models_choices:
-                marker = "*" if _models_choice_selected(state, model_id) else " "
-                options.append(MenuOption("models-choice", f"{marker} {model_id}", model_id))
-        else:
-            options.append(MenuOption("section", "No models loaded"))
-    for key, label in VARIANT_MODEL_FIELDS:
-        value = models_display_value(state, provider, key)
-        source = "override" if state.models_pending.get(key, "").strip() else "default"
-        options.append(MenuOption("models-field", f"{label}: {value or '(not set)'} ({source})", key))
-    options.append(MenuOption("models-apply", "Apply model changes"))
-    options.append(MenuOption("models-discard", "Discard model changes"))
-    return options
 
-def models_edit_variant(state):
-    if not state.models_variant_id:
-        return None
-    for variant in state.variants:
-        if variant.variant_id == state.models_variant_id:
-            return variant
-    return None
 
-def selected_models_edit_option(state):
-    options = models_edit_options(state)
-    if not options:
-        return None
-    index = max(0, min(state.selected_index, len(options) - 1))
-    return options[index]
 
-def models_display_value(state, provider, key):
-    override = state.models_pending.get(key, "").strip()
-    if override:
-        return override
-    return str((provider or {}).get("models", {}).get(key) or "")
 
-def models_pending_diff(state):
-    baseline = {
-        key: value
-        for key, value in (state.models_baseline or {}).items()
-        if str(value or "").strip()
-    }
-    pending = {
-        key: value
-        for key, value in (state.models_pending or {}).items()
-        if str(value or "").strip()
-    }
-    return {
-        "changed": sorted(key for key in set(baseline) | set(pending) if baseline.get(key) != pending.get(key)),
-        "pending": pending,
-    }
 
-def _models_choice_selected(state, model_id):
-    pending = state.models_pending or {}
-    return bool(pending) and all(pending.get(key) == model_id for key, _label in VARIANT_MODEL_FIELDS)
 
 def variant_title(state):
     return f"Create setup: {VARIANT_STEPS[state.variant_step]}"
