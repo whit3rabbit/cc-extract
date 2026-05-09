@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "key": "llamacpp",
+  "label": "llama.cpp",
+  "description": "Local GGUF models through a llama.cpp server",
+  "displayOrder": 201,
+  "baseUrl": "http://localhost:8080",
+  "auth": {
+    "mode": "authToken",
+    "apiKeyLabel": "llama.cpp API key",
+    "credentialEnv": "LLAMACPP_API_KEY",
+    "credentialOptional": true,
+    "authTokenFallback": "llamacpp",
+    "authTokenAlsoSetsApiKey": true
+  },
+  "models": {
+    "default": "",
+    "smallFast": "",
+    "opus": "",
+    "sonnet": "",
+    "haiku": "",
+    "subagent": "",
+    "requiresModelMapping": true
+  },
+  "env": {
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "variant": {
+    "defaultVariantName": "ccllamacpp",
+    "splashStyle": "llamacpp",
+    "noPromptPack": true,
+    "theme": {
+      "id": "llamacpp-variant",
+      "name": "llama.cpp",
+      "colors": {
+        "bashBorder": "rgb(132,204,22)",
+        "claude": "rgb(96,165,250)"
+      }
+    },
+    "promptOverlays": {}
+  },
+  "claudeConfig": {
+    "settingsPermissionsDeny": [],
+    "mcpServers": {}
+  },
+  "tui": {
+    "headline": "llama.cpp",
+    "section": "local",
+    "modelDiscovery": {
+      "enabled": true
+    },
+    "features": [
+      "Local llama.cpp server",
+      "OpenAI-compatible model list",
+      "Optional API key for protected local endpoints"
+    ],
+    "setupLinks": {
+      "docs": "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md",
+      "apiKey": "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md",
+      "subscribe": "https://github.com/ggml-org/llama.cpp"
+    },
+    "setupNote": "Run llama-server with an Anthropic-compatible route, then keep the default endpoint or edit the port."
+  }
+}

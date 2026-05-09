@@ -41,6 +41,9 @@
   },
   "tui": {
     "headline": "OpenRouter",
+    "modelDiscovery": {
+      "enabled": true
+    },
     "features": [
       "Gateway for many model providers",
       "Requires Opus, Sonnet, and Haiku model aliases",

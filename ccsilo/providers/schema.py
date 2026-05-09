@@ -159,7 +159,8 @@ def provider_from_json(payload: Dict[str, object]) -> ProviderTemplate:
     if "modelDiscovery" in tui:
         discovery = _object(tui, "modelDiscovery")
         _require_keys(discovery, MODEL_DISCOVERY_KEYS, f"{key}.tui.modelDiscovery")
-        _bool(discovery, "enabled")
+        if _bool(discovery, "enabled"):
+            env.setdefault("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1")
 
     credential_env = _optional_string(auth, "credentialEnv")
     if credential_env:

@@ -88,6 +88,7 @@ def test_provider_list_includes_cc_mirror_parity_presets():
         "anthropic",
         "gatewayz",
         "custom",
+        "llamacpp",
         "lmstudio",
         "omlx",
         "local-custom",
@@ -211,11 +212,48 @@ def test_provider_schema_rejects_malformed_mcp_servers():
         }))
 
 
+def test_provider_schema_model_discovery_sets_gateway_env_unless_explicit():
+    payload = _minimal_provider_payload({})
+    payload["tui"]["modelDiscovery"] = {"enabled": True}
+
+    provider = provider_from_json(payload)
+
+    assert provider.env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] == "1"
+
+    payload["env"]["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] = "0"
+    provider = provider_from_json(payload)
+
+    assert provider.env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] == "0"
+
+
+def test_model_discovery_providers_export_gateway_env():
+    providers = [
+        provider
+        for provider in list_providers()
+        if (provider.tui.get("modelDiscovery") or {}).get("enabled")
+    ]
+
+    assert {provider.key for provider in providers} == {
+        "llamacpp",
+        "lmstudio",
+        "local-custom",
+        "ollama",
+        "omlx",
+        "openrouter",
+    }
+    assert all(
+        provider.env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] == "1"
+        for provider in providers
+    )
+
+
 def test_model_mapping_providers_require_core_model_overrides():
     with pytest.raises(ValueError, match="requires model mapping"):
         build_provider_env("openrouter")
     with pytest.raises(ValueError, match="requires model mapping"):
         build_provider_env("9router")
+    with pytest.raises(ValueError, match="requires model mapping"):
+        build_provider_env("llamacpp")
 
     result = build_provider_env(
         "openrouter",
@@ -227,6 +265,7 @@ def test_model_mapping_providers_require_core_model_overrides():
     )
 
     assert result.env["ANTHROPIC_DEFAULT_SONNET_MODEL"] == "anthropic/claude-sonnet-4"
+    assert result.env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] == "1"
 
     router = build_provider_env(
         "9router",
@@ -398,12 +437,21 @@ def test_local_llm_provider_defaults_and_endpoint_override():
     assert ollama.env["ANTHROPIC_BASE_URL"] == "http://localhost:11434"
     assert ollama.env["ANTHROPIC_AUTH_TOKEN"] == "ollama"
     assert ollama.env["ANTHROPIC_API_KEY"] == "ollama"
+    assert ollama.env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] == "1"
+
+    llamacpp = build_provider_env("llamacpp", model_overrides=model_overrides)
+    assert llamacpp.credential == {"mode": "none", "targets": []}
+    assert llamacpp.env["ANTHROPIC_BASE_URL"] == "http://localhost:8080"
+    assert llamacpp.env["ANTHROPIC_AUTH_TOKEN"] == "llamacpp"
+    assert llamacpp.env["ANTHROPIC_API_KEY"] == "llamacpp"
+    assert llamacpp.env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] == "1"
 
     lmstudio = build_provider_env("lmstudio", model_overrides=model_overrides)
     assert lmstudio.credential == {"mode": "none", "targets": []}
     assert lmstudio.env["ANTHROPIC_BASE_URL"] == "http://localhost:1234"
     assert lmstudio.env["ANTHROPIC_AUTH_TOKEN"] == "lmstudio"
     assert lmstudio.env["ANTHROPIC_API_KEY"] == "lmstudio"
+    assert lmstudio.env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] == "1"
 
     omlx = build_provider_env("omlx", model_overrides=model_overrides)
     assert omlx.env["ANTHROPIC_BASE_URL"] == "http://localhost:8000"
@@ -440,6 +488,11 @@ def test_provider_payload_exposes_sections_and_model_discovery():
     assert providers["ccrouter"]["section"] == "pinned"
     assert providers["ccr-oauth"]["section"] == "pinned"
     assert "Claude Code OAuth" in providers["ccr-oauth"]["description"]
+    assert providers["openrouter"]["modelDiscovery"] == {"enabled": True}
+    assert providers["llamacpp"]["section"] == "local"
+    assert providers["llamacpp"]["baseUrl"] == "http://localhost:8080"
+    assert providers["llamacpp"]["defaultVariantName"] == "ccllamacpp"
+    assert providers["llamacpp"]["modelDiscovery"] == {"enabled": True}
     assert providers["lmstudio"]["section"] == "local"
     assert providers["lmstudio"]["modelDiscovery"] == {"enabled": True}
     assert providers["zai"]["section"] == "cloud"
@@ -448,6 +501,7 @@ def test_provider_payload_exposes_sections_and_model_discovery():
 def test_model_discovery_url_and_payload_parsing():
     assert provider_models_url("http://localhost:1234") == "http://localhost:1234/v1/models"
     assert provider_models_url("http://localhost:1234/v1") == "http://localhost:1234/v1/models"
+    assert provider_models_url("http://localhost:8080") == "http://localhost:8080/v1/models"
     assert parse_model_ids({"data": [{"id": "a"}, {"id": "a"}, {"id": "b"}]}) == ["a", "b"]
     assert parse_model_ids({"models": [{"key": "lmstudio-model"}, {"name": "fallback-name"}]}) == [
         "lmstudio-model",
