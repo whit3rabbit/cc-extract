@@ -94,10 +94,14 @@ Rules:
 * Validate generated prompt files before writing. Treat unnamed prompt entries as release blockers unless explicitly accepted. Use `--fail-on-unnamed` for release-prep runs.
 * Commit prompt JSON updates separately from unrelated patch, TUI, or feature changes.
 * Use Docker smoke for committed patch reports. It defaults to `DOCKER_PLATFORM=linux/amd64` and writes reports to `reports/patch-compat`.
+* `tools/check_patch_releases.py --latest` rewrites `reports/patch-compat/index.json` with only the versions processed in that run. If the index should keep multiple latest reports, run those versions together with `--versions <latest> <previous> --run-smoke`.
+* If `tools/run_patch_smoke_docker.sh` stalls while loading Docker base-image metadata and `ccsilo-patch-smoke:local` already exists, you can run the local image directly for verification:
+  `docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" -e CCSILO_WORKSPACE=/work/.ccsilo/docker-linux -e HOME=/tmp/ccsilo-home -v "$PWD:/work" ccsilo-patch-smoke:local --versions <v1> <v2> --run-smoke --smoke-timeout 60`.
 * Do not commit `.ccsilo/`.
 * Runtime smoke must prove Claude Code booted. `<binary> --version` must contain the expected Claude Code version, not only a Bun runtime version.
 * If the unpatched baseline repack does not boot, fix extract/repack infrastructure before blaming a patch.
 * Passing smoke reports are proof for that report artifact only. Do not widen `versions_tested` until tests or targeted real-version reports prove that concrete Claude Code version.
+* When widening tested patch ranges after a real-version smoke, update both shared defaults in `ccsilo/patches/_pinned_default.py` and any patch-specific `versions_tested` ranges. Keep unsupported patches such as `remember-skill` untested on versions outside their `versions_supported`.
 
 ## CI And Release
 
@@ -247,6 +251,7 @@ Important distinctions:
 * Do not enable `ratatui_py.App(clear_each_frame=True)` for steady-state TUI render loops. Use startup clear via `on_start` and keep constructor-flag tests.
 * Grouped selectors must keep selectable option order and rendered row order aligned. Add regression tests when group headers or selection mapping changes.
 * TUI MCP tests should use isolated `CCSILO_WORKSPACE`, named keys (`Down`, `Up`, `Tab`, `Enter`, `Space`, `Esc`, `q`), one key per send, and assertions on visible text/mode transitions.
+* For provider MCP TUI checks, verify both the MCP step provider servers and the later Tweaks step MCP rows. A Z.ai first-run flow should show provider MCP servers auto-enabled before continuing to tweaks where `mcp-non-blocking` and `mcp-batch-size` are visible.
 
 ## Patch Development
 

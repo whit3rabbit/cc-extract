@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-09T09:47:38.101201Z",
+  "generatedAt": "2026-05-10T16:07:17.000247Z",
   "reports": [
     {
       "ok": true,
@@ -17,7 +17,7 @@
         "skipped": 1,
         "total": 26,
         "unsupported": 1,
-        "untested": 23
+        "untested": 1
       },
       "version": "2.1.138"
     },
@@ -37,7 +37,7 @@
         "skipped": 1,
         "total": 26,
         "unsupported": 1,
-        "untested": 23
+        "untested": 1
       },
       "version": "2.1.137"
     }
