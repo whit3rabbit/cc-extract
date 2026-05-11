@@ -88,6 +88,11 @@ SYNTHETIC = {
         ',O=Pc.useCallback(async()=>{let D=await run();'
         'w((j)=>({...j,statusLineText:D}))},[w]),X=Gr(()=>O(A),300);'
     ),
+    "statusline-update-throttle-v2": (
+        ',I=xj.useCallback(async()=>{let D=await run();'
+        '$(($H)=>{if($H.statusLineText===D)return $H;return{...$H,statusLineText:D}})}},[H,$]),'
+        'u=Dr_(()=>{I()},300);'
+    ),
     "session-memory": (
         'function enabled(){return gate("tengu_session_memory",!1)}'
         'if(gate("tengu_coral_fern",!1)){searchPastSessions()}'

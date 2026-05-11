@@ -3,7 +3,6 @@
 import re
 
 from . import Patch, PatchContext, PatchOutcome
-from ._pinned_default import DEFAULT_VERSION_RANGES
 
 
 def _misc(ctx: PatchContext, key: str, default):
@@ -19,6 +18,7 @@ def _apply(js: str, ctx: PatchContext) -> PatchOutcome:
     pattern = re.compile(
         r'(,([$\w]+)=([$\w]+(?:\.default)?)\.useCallback.{0,1000}statusLineText.{0,200}?),'
         r'([$\w]+)=([$\w.]+\(\(\)=>(\2\(([$\w]+)\)),300\)|[$\w]+\(\2,300\)|'
+        r'[$\w]+\(\(\)=>\{\2\(\)\},300\)|'
         r'.{0,100}\{[$\w]+\.current=void 0,\2\(\)\},300\)\},\[\2\]\)|'
         r'[$\w]+\.useCallback\(\(\)=>\{if\([$\w]+\.current!==void 0\)'
         r'clearTimeout\([$\w]+\.current\);[$\w]+\.current=setTimeout\(\([$\w]+,[$\w]+\)=>'
@@ -67,7 +67,7 @@ PATCH = Patch(
     name="Statusline update throttling correction",
     group="ui",
     versions_supported=">=2.0.0,<3",
-    versions_tested=DEFAULT_VERSION_RANGES,
+    versions_tested=(">=2.0.20,<2.1", ">=2.1.0,<=2.1.139"),
     apply=_apply,
     description="Replace flawed statusline debounce behavior with throttle pacing. Defaults to 300ms.",
 )

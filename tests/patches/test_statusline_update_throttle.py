@@ -14,6 +14,36 @@ def test_synthetic_applies_throttle_default(cli_js_synthetic):
     assert "X=Pc.useCallback" in outcome.js
 
 
+def test_synthetic_v2_applies_throttle_default(cli_js_synthetic):
+    js = cli_js_synthetic("statusline-update-throttle-v2")
+    outcome = PATCH.apply(js, PatchContext(claude_version=None))
+    assert outcome.status == "applied"
+    assert "lastCall=xj.useRef(0)" in outcome.js
+    assert "now-lastCall.current>=300" in outcome.js
+    assert "u=xj.useCallback" in outcome.js
+
+
+def test_synthetic_v2_applies_fixed_interval_config(cli_js_synthetic):
+    js = cli_js_synthetic("statusline-update-throttle-v2")
+    outcome = PATCH.apply(
+        js,
+        PatchContext(
+            claude_version=None,
+            config={
+                "settings": {
+                    "misc": {
+                        "statuslineThrottleMs": 750,
+                        "statuslineUseFixedInterval": True,
+                    }
+                }
+            },
+        ),
+    )
+    assert outcome.status == "applied"
+    assert "setInterval(()=>I(),750)" in outcome.js
+    assert "u=xj.useCallback(()=>{},[])" in outcome.js
+
+
 def test_synthetic_applies_fixed_interval_config(cli_js_synthetic):
     js = cli_js_synthetic("statusline-update-throttle")
     outcome = PATCH.apply(
