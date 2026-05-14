@@ -853,7 +853,25 @@ def _prompt_match_indexes(prompts: Sequence[Prompt]) -> Tuple[PromptMatchIndex, 
 
 def _single_prompt_match(index: PromptMatchIndex, key: PromptMatchKey) -> Optional[Prompt]:
     matches = index.get(key, [])
-    return matches[0] if len(matches) == 1 else None
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        return None
+
+    first_signature = _metadata_signature(matches[0])
+    if all(_metadata_signature(match) == first_signature for match in matches[1:]):
+        return matches[0]
+    return None
+
+
+def _metadata_signature(prompt: Prompt) -> Tuple[Any, ...]:
+    return (
+        prompt.get("name", ""),
+        prompt.get("id", ""),
+        prompt.get("description", ""),
+        json.dumps(prompt.get("identifierMap", {}), sort_keys=True),
+        prompt.get("version"),
+    )
 
 
 def _find_pieces_in_source(

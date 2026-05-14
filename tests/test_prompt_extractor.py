@@ -186,6 +186,77 @@ def test_existing_metadata_is_preserved_for_matching_prompts(tmp_path):
     assert data["prompts"][0]["version"] == "2.1.112"
 
 
+def test_duplicate_existing_metadata_is_preserved_when_identical(tmp_path):
+    js_file = tmp_path / "cli.js"
+    js_file.write_text(
+        (
+            "const prompt = `Hello ${toolName}, you are a helpful assistant. "
+            "You should always follow instructions.`;"
+        ),
+        encoding="utf-8",
+    )
+    existing_prompt = {
+        "name": "Tool Prompt",
+        "id": "tool-prompt",
+        "description": "A prompt with a tool variable.",
+        "pieces": [
+            "Hello ${",
+            "}, you are a helpful assistant. You should always follow instructions.",
+        ],
+        "identifiers": [0],
+        "identifierMap": {"0": "TOOL_NAME"},
+        "version": "2.1.112",
+    }
+
+    data = prompt_extractor.extract_prompts(
+        str(js_file),
+        min_length=20,
+        version="2.1.113",
+        existing_prompts=[existing_prompt, dict(existing_prompt)],
+    )
+
+    assert data["prompts"][0]["id"] == "tool-prompt"
+    assert data["prompts"][0]["identifierMap"] == {"0": "TOOL_NAME"}
+
+
+def test_duplicate_existing_metadata_stays_unnamed_when_conflicting(tmp_path):
+    js_file = tmp_path / "cli.js"
+    js_file.write_text(
+        (
+            "const prompt = `Hello ${toolName}, you are a helpful assistant. "
+            "You should always follow instructions.`;"
+        ),
+        encoding="utf-8",
+    )
+    base_prompt = {
+        "name": "Tool Prompt",
+        "id": "tool-prompt",
+        "description": "A prompt with a tool variable.",
+        "pieces": [
+            "Hello ${",
+            "}, you are a helpful assistant. You should always follow instructions.",
+        ],
+        "identifiers": [0],
+        "identifierMap": {"0": "TOOL_NAME"},
+        "version": "2.1.112",
+    }
+    conflicting_prompt = {
+        **base_prompt,
+        "name": "Different Prompt",
+        "id": "different-prompt",
+    }
+
+    data = prompt_extractor.extract_prompts(
+        str(js_file),
+        min_length=20,
+        version="2.1.113",
+        existing_prompts=[base_prompt, conflicting_prompt],
+    )
+
+    assert data["prompts"][0]["name"] == ""
+    assert data["prompts"][0]["id"] == ""
+
+
 def test_existing_metadata_matches_decoded_template_escape_equivalents(tmp_path):
     js_file = tmp_path / "cli.js"
     js_file.write_text(
