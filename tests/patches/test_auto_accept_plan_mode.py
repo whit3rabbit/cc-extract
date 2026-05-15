@@ -12,6 +12,18 @@ def test_synthetic_applies(cli_js_synthetic):
     assert 'onPick("yes-accept-edits");return null;return R.createElement' in outcome.js
 
 
+def test_react_compiler_output_applies():
+    js = (
+        'function plan(){let card;if(x)card=create({title:"Ready to code?"});'
+        'let B$;if($[88]!==H$)B$=(tH)=>void H$(tH),$[88]=H$,$[89]=B$;'
+        'else B$=$[89];let d$;d$=create(U8,{options:F,onChange:B$,onCancel:D$});'
+        'return d$}'
+    )
+    outcome = PATCH.apply(js, PatchContext(claude_version="2.1.142"))
+    assert outcome.status == "applied"
+    assert 'else B$=$[89];B$("yes-accept-edits");return null;let d$;' in outcome.js
+
+
 def test_metadata():
     assert PATCH.id == "auto-accept-plan-mode"
     assert PATCH.group == "ui"

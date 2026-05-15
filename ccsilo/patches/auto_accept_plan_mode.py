@@ -10,7 +10,7 @@ def _apply(js: str, ctx: PatchContext) -> PatchOutcome:
     ready_idx = js.find('title:"Ready to code?"')
     if ready_idx == -1:
         return PatchOutcome(js=js, status="missed")
-    if re.search(r"[$\w]+(?:\.current)?\(\"yes-accept-edits\"\);return null;return", js):
+    if re.search(r"[$\w]+(?:\.current)?\(\"yes-accept-edits\"\);return null;", js):
         return PatchOutcome(js=js, status="skipped")
     after = js[ready_idx:ready_idx + 3000]
     accept_func = None
@@ -31,7 +31,16 @@ def _apply(js: str, ctx: PatchContext) -> PatchOutcome:
     before = js[before_start:ready_idx]
     return_idx = before.rfind("return ")
     if return_idx == -1:
-        return PatchOutcome(js=js, status="missed")
+        fallback = re.search(
+            rf"else {re.escape(accept_func)}=\$\[\d+\];",
+            after[: match.start()],
+        )
+        if not fallback:
+            return PatchOutcome(js=js, status="missed")
+        insert_at = ready_idx + fallback.end()
+        insertion = f'{accept_func}("yes-accept-edits");return null;'
+        new_js = js[:insert_at] + insertion + js[insert_at:]
+        return PatchOutcome(js=new_js, status="applied")
     insert_at = before_start + return_idx
     insertion = f'{accept_func}("yes-accept-edits");return null;'
     new_js = js[:insert_at] + insertion + js[insert_at:]
