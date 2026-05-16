@@ -32,7 +32,7 @@ def _apply(js: str, ctx: PatchContext) -> PatchOutcome:
     return_idx = before.rfind("return ")
     if return_idx == -1:
         fallback = re.search(
-            rf"else {re.escape(accept_func)}=\$\[\d+\];",
+            rf"else {re.escape(accept_func)}=[$\w]+\[\d+\];",
             after[: match.start()],
         )
         if not fallback:

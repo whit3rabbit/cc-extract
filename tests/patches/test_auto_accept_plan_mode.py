@@ -24,6 +24,18 @@ def test_react_compiler_output_applies():
     assert 'else B$=$[89];B$("yes-accept-edits");return null;let d$;' in outcome.js
 
 
+def test_react_compiler_underscore_cache_output_applies():
+    js = (
+        'function plan(){let card;if(x)card=create({title:"Ready to code?"});'
+        'let p_;if(_[88]!==H_)p_=(tH)=>void H_(tH),_[88]=H_,_[89]=p_;'
+        'else p_=_[89];let d_;d_=create(U8,{options:F,onChange:p_,onCancel:D_,onImagePaste:I});'
+        'return d_}'
+    )
+    outcome = PATCH.apply(js, PatchContext(claude_version="2.1.143"))
+    assert outcome.status == "applied"
+    assert 'else p_=_[89];p_("yes-accept-edits");return null;let d_;' in outcome.js
+
+
 def test_metadata():
     assert PATCH.id == "auto-accept-plan-mode"
     assert PATCH.group == "ui"
